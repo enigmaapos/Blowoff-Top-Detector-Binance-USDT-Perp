@@ -738,10 +738,22 @@ async function runScan(once=false){
     renderResults(results);
     alertIfNeeded(results);
 
-    // schedule next run
-    if(!once && running){
-      if(autoTimer) clearInterval(autoTimer);
-      autoTimer = setInterval(()=> runScan(false), intervalSec*1000);
+    // schedule next run (use setTimeout to avoid running-flag race)
+    if (!once) {
+      // if safety triggered (high request usage) don't schedule — auto-pause handled separately
+      if (requestsThisWindow > SAFETY_MAX) {
+        el.debug.innerText += `\nNot scheduling next run: safety auto-paused (req/min ${requestsThisWindow})`;
+        // do not schedule; auto-pause handler will resume later
+      } else {
+        // clear previous timer if any, then schedule the next run with setTimeout
+        if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+        autoTimer = setTimeout(()=> {
+          // only call runScan if not currently auto-paused
+          if (requestsThisWindow <= SAFETY_MAX) runScan(false);
+        }, intervalSec * 1000);
+        // update countdown immediately
+        startCountdown(intervalSec);
+      }
     }
 
   } catch(e){
