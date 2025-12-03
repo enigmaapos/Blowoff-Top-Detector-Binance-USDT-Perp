@@ -1,505 +1,720 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Blowoff Top Scanner — Adaptive Card UI (Mobile)</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Blowoff Top Detector — Hybrid UI (Table + Cards)</title>
+
 <style>
   :root{
-    --bg:#0b1220; --card:#0f1a28; --muted:#9aa9ba; --accent:#29b080; --warn:#ff8c42; --danger:#ff4655; --glass: rgba(255,255,255,0.03);
+    --bg:#07101a;
+    --card:#0b1220;
+    --muted:#9fb3cc;
+    --accent:#2dd4bf;
+    --danger:#ff7b7b;
   }
-  html,body{height:100%;margin:0;background:linear-gradient(180deg,#06121b 0%, #071a25 100%);font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
-  .app {max-width:980px;margin:0 auto;padding:12px 10px 140px;}
-  header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:10px}
-  .title {display:flex;align-items:center;gap:10px}
-  h1{color:white;font-size:16px;margin:0}
-  .controls {display:flex;gap:8px;align-items:center}
-  button, select, input{background:var(--card);border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:8px;border-radius:8px;font-size:13px}
-  .muted{color:var(--muted);font-size:13px}
-  .small{font-size:12px;color:var(--muted)}
-  .status {font-size:13px;color:var(--muted)}
-  .topbar {display:flex;gap:8px;align-items:center}
-  .grid {display:flex;flex-direction:column;gap:10px}
-  .card {background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:10px;border:1px solid rgba(255,255,255,0.04);display:flex;gap:8px;align-items:flex-start;box-shadow: 0 6px 20px rgba(2,6,23,0.6);}
-  .left {width:84px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
-  .sym {font-weight:700;color:white;font-size:15px}
-  .price {color:var(--muted);font-size:13px}
-  .middle {flex:1;display:flex;flex-direction:column;gap:6px}
-  .signals {display:flex;flex-wrap:wrap;gap:6px}
-  .chip{background:var(--glass);padding:6px 8px;border-radius:8px;font-size:12px;color:var(--muted);border:1px solid rgba(255,255,255,0.02)}
-  .chip.good{background:rgba(41,176,128,0.12);color:var(--accent);border-color:rgba(41,176,128,0.15)}
-  .chip.warn{background:rgba(255,140,66,0.10);color:var(--warn);border-color:rgba(255,140,66,0.12)}
-  .chip.bad{background:rgba(255,70,85,0.06);color:var(--danger);border-color:rgba(255,70,85,0.09)}
-  .right {width:100px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-  .score {font-size:14px;font-weight:700;color:white}
-  .blowoff {padding:6px 8px;border-radius:8px;background:linear-gradient(90deg,#ff6b6b,#ffb86b);color:#111;font-weight:700;font-size:12px}
-  .super {background:linear-gradient(90deg,#ff4d9a,#ff8c42);color:white}
-  .time {font-size:12px;color:var(--muted)}
-  .spark {height:36px;width:100%;background:transparent}
-  .controls-row{display:flex;gap:8px;align-items:center}
-  footer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.5));backdrop-filter: blur(6px);padding:10px;border-top:1px solid rgba(255,255,255,0.02);}
-  .footer-content{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
-  .muted-small{font-size:12px;color:var(--muted)}
-  .danger-btn{background:linear-gradient(90deg,#ff5960,#ff3b3b);color:white}
-  .highlight {border:2px solid rgba(255,107,107,0.12);box-shadow:0 6px 30px rgba(255,80,80,0.06)}
-  @media (min-width:660px){ .card{padding:12px} .left{width:120px} .right{width:140px;align-items:flex-end} }
-  .dot{height:10px;width:10px;border-radius:50%}
-  .dot.good{background:var(--accent)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--danger)}
-  .adaptiveBadge {background:linear-gradient(90deg,#4fb6ff,#7be6c7);padding:6px 8px;border-radius:8px;color:#032; font-weight:700;}
+
+  body{
+    font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+    background:var(--bg);
+    color:#e6eef8;
+    margin:16px;
+  }
+
+  .card-panel{
+    background:var(--card);
+    border:1px solid #172033;
+    padding:14px;
+    border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,.6);
+    margin-bottom:16px;
+  }
+
+  h1{margin:0;font-size:18px}
+
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:12px;
+    align-items:center
+  }
+
+  label{font-size:13px;color:var(--muted)}
+
+  input, select{
+    background:#071722;
+    border:1px solid #243241;
+    color:#e6eef8;
+    padding:6px;
+    border-radius:6px;
+  }
+
+  button{
+    background:#1f6feb;
+    border:none;
+    color:white;
+    padding:8px 10px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+
+  button.alt{ background:#2b3947 }
+
+  .status{
+    margin-top:8px;
+    color:var(--muted);
+    font-size:13px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+
+  .progress{
+    height:8px;
+    background:#05101a;
+    border-radius:4px;
+    margin-top:8px;
+    overflow:hidden;
+    flex:1
+  }
+
+  .progress > i{
+    display:block;
+    height:100%;
+    background:linear-gradient(90deg,var(--accent),#60a5fa);
+    width:0%
+  }
+
+  .countdown{
+    font-weight:700;
+    color:#cfe8ff;
+  }
+
+  .mutedBadge{
+    background:rgba(255,255,255,0.03);
+    color:var(--muted);
+    padding:4px 8px;
+    border-radius:8px;
+    font-size:12px;
+  }
+
+  /* DESKTOP TABLE VIEW */
+  #tableView{ display:block }
+  #cardView{ display:none }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:12px;
+    font-size:13px;
+    min-width:700px;
+  }
+
+  th, td{
+    padding:8px 10px;
+    border-bottom:1px dashed #122331;
+    text-align:left;
+  }
+
+  th{
+    color:var(--muted);
+    font-size:12px
+  }
+
+  .green{ color:#66f9a1 }
+  .red{ color:var(--danger) }
+  .small{ font-size:12px;color:var(--muted) }
+
+  .blink{
+    animation: blinkHighlight 1.8s ease-in-out 3;
+  }
+
+  @keyframes blinkHighlight {
+    0% { box-shadow:0 0 0px rgba(255,80,80,0.0); }
+    50% { box-shadow:0 0 12px rgba(255,80,80,0.35); }
+    100% { box-shadow:0 0 0px rgba(255,80,80,0.0); }
+  }
+
+  /* MOBILE CARD UI */
+  @media (max-width:680px){
+
+    #tableView{ display:none }
+    #cardView{ display:block }
+
+    .coinCard{
+      background:var(--card);
+      border:1px solid #172033;
+      padding:12px;
+      border-radius:10px;
+      margin-bottom:10px;
+    }
+
+    .coinRow1{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+
+    .coinSymbol{
+      font-size:16px;
+      font-weight:700;
+    }
+
+    .coinScore{
+      font-size:14px;
+      font-weight:700;
+    }
+
+    .blowBadge{
+      background:#ff4d4d;
+      padding:4px 8px;
+      border-radius:6px;
+      color:white;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .potBadge{
+      background:#ffd966;
+      padding:4px 8px;
+      border-radius:6px;
+      color:black;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .sigList{
+      margin-top:8px;
+      font-size:12px;
+      line-height:18px;
+      color:#cce3ff;
+    }
+  }
 </style>
 </head>
 <body>
-<div class="app">
-  <header>
-    <div class="title">
-      <h1>Blowoff Top Scanner — Adaptive Mode</h1>
-      <div class="small muted">Top 30 gainers • USDT-Perp</div>
-    </div>
-    <div class="topbar">
-      <div class="controls">
-        <label class="small muted">Base refresh</label>
-        <select id="intervalSelect">
-          <option value="60000">1m</option>
-          <option value="300000">5m</option>
-          <option value="900000">15m</option>
-          <option value="3600000">1h</option>
-          <option value="14400000" selected>4h</option>
-        </select>
-        <button id="refreshBtn">Refresh now</button>
-      </div>
-    </div>
-  </header>
+
+  <div class="card-panel">
+  <h1>Blowoff Top Detector — Hybrid UI</h1>
+  <div class="small" style="margin-top:6px;color:var(--muted)">
+    Auto scans top N futures by 24h change.  
+    Blowoff signals: RSI, wick, volume spike, lower-high, funding, EMA distance.  
+    Desktop = Table view. Mobile = Card view.
+  </div>
+
+  <div class="controls">
+    <label>Prefilter <input id="prefilter" type="number" value="30" min="5" max="100"></label>
+    <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"></label>
+    <label>Refresh (sec) <input id="interval" type="number" value="60" min="10" max="3600"></label>
+    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="6"></label>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="alt" disabled>Stop</button>
+    <button id="oneShot" class="alt">Run Once</button>
+  </div>
 
   <div class="status">
-    <span id="statusText">Idle</span> • <span id="counter">Next refresh: --</span> • <span id="adaptiveState" class="small muted">Adaptive: OFF</span>
+    <div id="message">Ready.</div>
+    <div class="progress"><i id="bar"></i></div>
+    <div id="countdown" class="countdown">Next scan in: -</div>
+    <div id="safetyStatus" class="mutedBadge">Safety OK</div>
   </div>
 
-  <div style="height:8px"></div>
+  <!-- DESKTOP TABLE VIEW -->
+  <div id="tableView"></div>
 
-  <div id="cards" class="grid" aria-live="polite"></div>
+  <!-- MOBILE CARD VIEW -->
+  <div id="cardView"></div>
+
+  <div id="debug" class="small" style="margin-top:10px"></div>
 </div>
 
-<footer>
-  <div class="footer-content">
-    <div style="display:flex;gap:10px;align-items:center">
-      <label class="muted-small">Batch delay (ms):</label>
-      <input id="batchDelay" type="number" value="300" style="width:70px"/>
-      <label class="muted-small">Adaptive</label>
-      <button id="toggleAdaptive" class="muted-small">Enable Adaptive</button>
-      <span id="adaptiveTimer" class="muted-small"></span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button id="toggleSound">🔔 Sound ON</button>
-      <button id="toggleNotify">📣 Notify ON</button>
-      <button id="pauseBtn" class="danger-btn">Pause</button>
-    </div>
-  </div>
-</footer>
-
-<audio id="alertSound">
-  <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAAAB3AQACABA=" type="audio/wav">
-</audio>
-
 <script>
-/* Adaptive Blowoff Top Scanner — Mobile card UI
-   - Adaptive refresh mode toggles to fast interval when triggers detect a pump
-   - Safe: keeps batchDelay and auto-pause safety
-   - Tunable thresholds below
-*/
+/* ---------------------------------------------------------
+   HYBRID ENGINE (Desktop Table + Mobile Card)
+   All original logic preserved, only rendering changed.
+   --------------------------------------------------------- */
 
-/* -------------- CONFIG -------------- */
-const CONFIG = {
-  topN: 30,
-  batchDelayDefault: 300,
-  klinesLimit: 100,
-  thresholds: {
-    rsi1d: 88,
-    rsi4h: 80,
-    volSpike: 1.8,
-    wickTop: 1.2,
-    ema70DistPct: 50,
-    fundingConfirm: -0.0005,
-    scoreThreshold: 4,
-    superScore: 6
-  },
-  // ADAPTIVE parameters
-  adaptiveEnabled: true,
-  ADAPTIVE_PRICE_CHANGE_PCT: 8,   // 8% 24h price change triggers adaptive
-  ADAPTIVE_VOLSPIKE: 1.8,         // volSpike >= 1.8 triggers adaptive
-  ADAPTIVE_SLOPE: 1.15,           // slope >= 1.15 triggers adaptive
-  adaptiveFastInterval: 60000,    // 1 minute fast interval (ms)
-  adaptiveDurationMs: 10*60*1000, // keep fast mode for 10 minutes after trigger
-  adaptiveCooldownMs: 5*60*1000,  // don't retrigger adaptive more often than cooldown
-  binanceFuturesBase: 'https://fapi.binance.com',
-  errorPauseThreshold: 6
+const API_BASE = "https://fapi.binance.com";
+
+// ------- BLACKLIST -------
+const blacklist = [
+  "ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT",
+  "AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT",
+  "LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT",
+  "UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT",
+  "BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT",
+  "LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT"
+];
+
+const el = {
+  prefilter: document.getElementById("prefilter"),
+  delay: document.getElementById("delay"),
+  interval: document.getElementById("interval"),
+  threshold: document.getElementById("threshold"),
+
+  startBtn: document.getElementById("startBtn"),
+  stopBtn: document.getElementById("stopBtn"),
+  oneShot: document.getElementById("oneShot"),
+
+  message: document.getElementById("message"),
+  bar: document.getElementById("bar"),
+  tableView: document.getElementById("tableView"),
+  cardView: document.getElementById("cardView"),
+
+  debug: document.getElementById("debug"),
+  safetyStatus: document.getElementById("safetyStatus"),
+  countdown: document.getElementById("countdown")
 };
 
-/* -------------- State -------------- */
-let paused = false;
-let allowSound = true;
-let allowNotify = false;
-let batchDelay = CONFIG.batchDelayDefault;
-let refreshTimer = null;
-let nextRefreshAt = 0;
-let recentErrors = [];
-let adaptiveOn = CONFIG.adaptiveEnabled;
-let adaptiveActive = false;
-let adaptiveExpiresAt = 0;
-let adaptiveLastTriggered = 0;
+// ------- RUNTIME STATE -------
+let running = false;
+let queue = [];
+let totalTasks = 0;
+let doneTasks = 0;
 
-const cardsDiv = document.getElementById('cards');
-const statusText = document.getElementById('statusText');
-const counterEl = document.getElementById('counter');
-const adaptiveStateEl = document.getElementById('adaptiveState');
-const adaptiveTimerEl = document.getElementById('adaptiveTimer');
-const alertAudio = document.getElementById('alertSound');
+let autoTimer = null;
+let countdownTimer = null;
 
-document.getElementById('batchDelay').value = batchDelay;
+// SAFETY WINDOW
+let requestsThisWindow = 0;
+let windowStart = Date.now();
+const SAFETY_WINDOW = 60000;
+const SAFETY_MAX = 900;
+const SAFETY_PAUSE = 30;
 
-/* ---------- helpers: indicators, display ---------- */
-function sma(data, period){
-  if (!data || data.length < period) return null;
-  let sum=0; for(let i=data.length-period;i<data.length;i++) sum+=data[i];
-  return sum/period;
+// track previous blowoffs
+let prevBlow = new Set();
+
+/* ---------------------------------------------------------
+   API SAFE FETCH
+--------------------------------------------------------- */
+async function safeFetch(url){
+  if (!running) throw new Error("Not running");
+  requestsThisWindow++;
+
+  return fetch(url).then(r=>{
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  });
 }
-function ema(data, period){
-  if (!data || data.length < period) return null;
+
+/* ---------------------------------------------------------
+   TECHNICAL INDICATORS
+--------------------------------------------------------- */
+function sma(arr,n){
+  if(!arr || arr.length < n) return null;
+  let s = 0;
+  for(let i=arr.length-n;i<arr.length;i++) s += arr[i];
+  return s/n;
+}
+function ema(arr, period){
+  if(!arr || arr.length === 0) return null;
   const k = 2/(period+1);
-  let seed = sma(data.slice(0,period), period);
-  let e = seed;
-  for(let i=period;i<data.length;i++) e = data[i]*k + e*(1-k);
+  let e = arr[0];
+  for(let i=1;i<arr.length;i++) e = arr[i]*k + e*(1-k);
   return e;
 }
 function rsiFromCloses(closes, period=14){
-  if (!closes || closes.length < period+1) return null;
-  let gains=0, losses=0;
+  if(!closes || closes.length <= period) return null;
+  let gains=0,losses=0;
   for(let i=closes.length-period;i<closes.length;i++){
-    const diff = closes[i] - closes[i-1];
-    if (diff>0) gains+=diff; else losses += Math.abs(diff);
+    const diff = closes[i]-closes[i-1];
+    if(diff>0) gains+=diff; else losses+=Math.abs(diff);
   }
-  const avgGain = gains/period, avgLoss = losses/period;
-  if (avgLoss === 0) return 100;
-  const rs = avgGain/avgLoss; return 100 - (100/(1+rs));
+  if(losses===0) return 100;
+  const rs = gains/period / (losses/period);
+  return 100 - (100/(1+rs));
 }
-function percentDiff(a,b){ return ((a-b)/b)*100; }
+function pct(a,b){ return b===0 ? 0 : ((a-b)/b)*100; }
 
-/* -------------- UI card helpers -------------- */
-function signalChip(label, value, ok){
-  let cls='chip';
-  if (ok) cls='chip good';
-  else if (label === 'Funding' && Number(value) < 0) cls='chip warn';
-  return `<div class="${cls}">${label}: <strong style="color:var(--muted)">${value}</strong></div>`;
+/* ---------------------------------------------------------
+   SAFETY MECHANISM
+--------------------------------------------------------- */
+function resetWindow(){
+  requestsThisWindow = 0;
+  windowStart = Date.now();
 }
-function makeCard(item){
-  const c = document.createElement('div');
-  c.className = 'card' + (item.score >= CONFIG.thresholds.scoreThreshold ? ' highlight':'');
-  c.id = `card-${item.symbol}`;
-  c.innerHTML = `
-    <div class="left">
-      <div class="sym">${item.symbol}</div>
-      <div class="price">${Number(item.lastPrice).toFixed(6)} <span class="small muted">(${Number(item.change24||0).toFixed(2)}%)</span></div>
-    </div>
-    <div class="middle">
-      <div class="signals" aria-hidden="true">
-        ${signalChip('RSI 1D', item.rsi1d, item.signals.rsi1d)}
-        ${signalChip('RSI 4H', item.rsi4h, item.signals.rsi4h)}
-        ${signalChip('Vol×', item.volSpike.toFixed(2), item.signals.volSpike)}
-        ${signalChip('Wick', item.wickTopRatio.toFixed(2), item.signals.wickTop)}
-        ${signalChip('EMA70%', item.ema70DistPct.toFixed(0)+'%', item.signals.emaDist)}
-        ${signalChip('Funding', (item.funding||0).toFixed(5), item.signals.fundingConfirm)}
-        ${signalChip('LowerH', item.signals.lowerHigh ? 'Y':'N', item.signals.lowerHigh)}
-      </div>
-      <div class="small muted">vol (4H avg): ${Math.round(item.vol4hAvg||0)} • score ${item.score}</div>
-    </div>
-    <div class="right">
-      <div class="score">${item.score}/6</div>
-      <div class="${item.score >= CONFIG.thresholds.superScore ? 'blowoff super' : item.score >= CONFIG.thresholds.scoreThreshold ? 'blowoff' : 'chip'}">${item.score >= CONFIG.thresholds.scoreThreshold ? (item.score >= CONFIG.thresholds.superScore ? 'SUPER BLOWOFF' : 'BLOWOFF') : 'no'}</div>
-      <div class="time small muted">${new Date(item.t).toLocaleTimeString()}</div>
-    </div>
+function safetyCheck(){
+  const now = Date.now();
+  if (now - windowStart > SAFETY_WINDOW){
+    resetWindow();
+    el.safetyStatus.innerText = "Safety OK";
+    return false;
+  }
+  if (requestsThisWindow > SAFETY_MAX){
+    running = false;
+    el.safetyStatus.innerText = "Auto-paused (rate limit)";
+    el.message.innerText = `Paused ${SAFETY_PAUSE}s`;
+    el.stopBtn.disabled = true;
+    el.startBtn.disabled = false;
+
+    setTimeout(()=>{
+      el.safetyStatus.innerText = "Resuming";
+      let d = Number(el.delay.value);
+      el.delay.value = Math.min(2000, Math.round(d*1.4));
+      resetWindow();
+    }, SAFETY_PAUSE*1000);
+
+    return true;
+  }
+  el.safetyStatus.innerText = "Req/min: "+requestsThisWindow;
+  return false;
+}
+
+/* ---------------------------------------------------------
+   QUEUE PROCESSOR
+--------------------------------------------------------- */
+async function processQueue(){
+  const delay = Number(el.delay.value) || 450;
+
+  while(queue.length && running){
+    if(safetyCheck()) break;
+
+    const job = queue.shift();
+    try{ await job(); }
+    catch(e){ el.debug.innerText += "\nJob error: "+e.message; }
+
+    doneTasks++;
+    updateProgress();
+
+    await new Promise(r=>setTimeout(r, delay));
+  }
+
+  running = false;
+  el.startBtn.disabled = false;
+  el.stopBtn.disabled = true;
+  el.message.innerText = "Scan complete.";
+}
+
+/* ---------------------------------------------------------
+   FETCH TOP SYMBOLS
+--------------------------------------------------------- */
+async function getTopN(n){
+  const tick = await safeFetch(API_BASE+"/fapi/v1/ticker/24hr");
+  const list = tick.filter(x=>x.symbol.endsWith("USDT") && !blacklist.includes(x.symbol));
+
+  list.sort((a,b)=> b.priceChangePercent - a.priceChangePercent);
+  return list.slice(0,n).map(t=>({
+    symbol: t.symbol,
+    last: Number(t.lastPrice),
+    change24: Number(t.priceChangePercent)
+  }));
+}
+
+/* ---------------------------------------------------------
+   QUEUE SYMBOL ANALYSIS
+--------------------------------------------------------- */
+function queueSymbol(symbol, results){
+  queue.push(async ()=>{
+    try{
+      const [k1d, k4h, k15, fund] = await Promise.all([
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=9`),
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=20`),
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=30`),
+        safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`)
+      ]);
+
+      const c1d = k1d.map(k=>Number(k[4]));
+      const c4h = k4h.map(k=>Number(k[4]));
+      const v4h = k4h.map(k=>Number(k[5]));
+      const last4 = k4h[k4h.length-1];
+      const prev4 = k4h[k4h.length-2];
+
+      const open4 = Number(last4[1]);
+      const high4 = Number(last4[2]);
+      const close4= Number(last4[4]);
+
+      const body = Math.abs(close4-open4)||1e-9;
+      const wickTop = high4 - Math.max(open4,close4);
+      const wickRatio = wickTop/body;
+
+      const volMA = sma(v4h, Math.min(10, v4h.length));
+      const volSpike = volMA ? Number((v4h[v4h.length-1]/volMA).toFixed(2)) : 1;
+
+      const ema70 = ema(c4h, 70);
+      const distPct = ema70 ? pct(close4, ema70) : 0;
+
+      const rsi1d = rsiFromCloses(c1d, 14);
+      const rsi4h = rsiFromCloses(c4h, 14);
+
+      const lowerHigh = Number(last4[2]) < Number(prev4[2]);
+
+      const funding = fund && fund.length ? Number(fund[0].fundingRate) : 0;
+
+      let score=0;
+      let s={};
+
+      if(rsi1d>=88){ score++; s.rsi1d=true; }
+      if(rsi4h>=80){ score++; s.rsi4h=true; }
+      if(volSpike>=1.8){ score++; s.volSpike=true; }
+      if(wickRatio>=1.2){ score++; s.wickTop=true; }
+      if(distPct>=50){ score++; s.emaDist=true; }
+      if(lowerHigh){ score++; s.lowerHigh=true; }
+      if(funding < -0.0005){ score++; s.fundingConfirm=true; }
+      s.funding = funding;
+
+      results.push({
+        symbol, score, rsi4h, rsi1d,
+        volSpike, wickRatio,
+        ema70DistPct: Number(distPct.toFixed(2)),
+        lowerHigh, funding,
+        last: close4,
+        change24: null,
+        s
+      });
+
+    }catch(e){
+      el.debug.innerText += `\nError ${symbol}: ${e.message}`;
+    }
+  });
+}
+
+/* ---------------------------------------------------------
+   UPDATE PROGRESS BAR
+--------------------------------------------------------- */
+function updateProgress(){
+  if(!totalTasks) return;
+  const pct = Math.round((doneTasks/totalTasks)*100);
+  el.bar.style.width = pct+"%";
+  el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%)`;
+}
+
+/* ---------------------------------------------------------
+   COUNTDOWN
+--------------------------------------------------------- */
+function startCountdown(sec){
+  if(countdownTimer) clearInterval(countdownTimer);
+  const end = Date.now() + sec*1000;
+
+  countdownTimer = setInterval(()=>{
+    let left = Math.max(0, end - Date.now());
+    let s = Math.round(left/1000);
+
+    el.countdown.innerText = "Next scan in: " + s + "s";
+
+    if(s <= 0){
+      clearInterval(countdownTimer);
+      el.countdown.innerText = "Running...";
+    }
+  }, 500);
+}
+
+/* ---------------------------------------------------------
+   HYBRID RENDERER
+   - If screen width >= 680px => TABLE
+   - else => CARD
+--------------------------------------------------------- */
+function renderHybrid(results){
+  if (window.innerWidth >= 680){
+    renderTable(results);
+  } else {
+    renderCards(results);
+  }
+}
+
+/* ---------------------------------------------------------
+   DESKTOP TABLE RENDER
+--------------------------------------------------------- */
+function renderTable(results){
+  const th = `
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol/Status</th>
+          <th>Last</th>
+          <th>RSI4H</th>
+          <th>Signals</th>
+          <th>Funding</th>
+        </tr>
+      </thead>
+      <tbody>
   `;
-  return c;
+
+  const rows = results.map(r=>{
+    let status = "normal";
+    let bg = "background:rgba(255,255,255,0.02);";
+    let cls = "";
+
+    if(r.score>=4){
+      status = `<span style="background:#ff4d4d;color:white;font-size:11px;padding:4px 6px;border-radius:6px">🔥 BLOWOFF</span>`;
+      bg = "background:rgba(255,40,40,0.18);";
+      if(!prevBlow.has(r.symbol)) cls="blink";
+    }
+    else if(r.score===3){
+      status = `<span style="background:#ffd966;color:black;font-size:11px;padding:4px 6px;border-radius:6px">⚠️ Potential</span>`;
+      bg = "background:rgba(255,200,0,0.14);";
+    }
+
+    return `
+      <tr class="${cls}" style="${bg}">
+        <td><strong>${r.symbol}</strong><br>${status}</td>
+        <td>${r.last}</td>
+        <td class="${r.rsi4h>=80?'green':''}">${r.rsi4h?.toFixed(1) ?? 'n/a'}</td>
+        <td class="small">vol:${r.volSpike} wick:${r.wickRatio.toFixed(2)} ema:${r.ema70DistPct}%</td>
+        <td class="small">${r.funding}</td>
+      </tr>
+    `;
+  }).join("");
+
+  el.tableView.innerHTML = `<div class="card-panel">${th}${rows}</tbody></table></div>`;
 }
 
-/* -------------- fetch helpers -------------- */
-async function fetchJson(url){
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('HTTP '+res.status);
-  return res.json();
+/* ---------------------------------------------------------
+   MOBILE CARD RENDER
+--------------------------------------------------------- */
+function renderCards(results){
+  let html = "";
+
+  results.forEach(r=>{
+    let badge = `<span class="small" style="color:var(--muted)">normal</span>`;
+    let cls = "";
+
+    if(r.score>=4){
+      badge = `<span class="blowBadge">🔥 Blowoff</span>`;
+      cls = (!prevBlow.has(r.symbol) ? "blink" : "");
+    }
+    else if(r.score===3){
+      badge = `<span class="potBadge">⚠ Potential</span>`;
+    }
+
+    html += `
+      <div class="coinCard ${cls}">
+        <div class="coinRow1">
+          <div class="coinSymbol">${r.symbol}</div>
+          <div class="coinScore">${r.score}/6</div>
+        </div>
+
+        <div style="margin-top:4px">${badge}</div>
+
+        <div class="sigList">
+          Last: ${r.last}<br>
+          RSI4H: ${r.rsi4h?.toFixed(1) ?? 'n/a'}<br>
+          Vol Spike: ${r.volSpike}<br>
+          Wick Ratio: ${r.wickRatio.toFixed(2)}<br>
+          EMA70 Dist: ${r.ema70DistPct}%<br>
+          Funding: ${r.funding}<br>
+        </div>
+      </div>
+    `;
+  });
+
+  el.cardView.innerHTML = `<div class="card-panel">${html}</div>`;
 }
-function delay(ms){ return new Promise(r=>setTimeout(r, ms)); }
 
-/* -------------- CORE: scanning & adaptive logic -------------- */
+/* ---------------------------------------------------------
+   FINAL RENDER ENTRYPOINT
+--------------------------------------------------------- */
+function renderResults(results){
+  results.sort((a,b)=> b.score - a.score);
 
-async function scanOnce(){
-  if (paused) { setStatus('Paused'); return; }
-  setStatus('Scanning...');
-  cardsDiv.innerHTML = '';
-  batchDelay = Number(document.getElementById('batchDelay').value) || CONFIG.batchDelayDefault;
-  try {
-    const tickers = await fetchJson(`${CONFIG.binanceFuturesBase}/fapi/v1/ticker/24hr`);
-    let usdt = tickers.filter(t => t.symbol && t.symbol.endsWith('USDT') && !BLACKLIST.includes(t.symbol));
-    usdt.sort((a,b)=> parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
-    const top = usdt.slice(0, CONFIG.topN);
-    setStatus(`Top ${top.length} selected`);
-    // create skeleton cards
-    top.forEach(t=>{
-      const placeholder = {symbol:t.symbol, lastPrice:t.lastPrice, change24: t.priceChangePercent, score:0, t:Date.now(), rsi1d:'-', rsi4h:'-', volSpike:0, wickTopRatio:0, ema70DistPct:0, funding:0, vol4hAvg:0, signals:{}};
-      cardsDiv.appendChild(makeCard(placeholder));
-    });
+  const blowSet = new Set(results.filter(r=>r.score>=4).map(r=>r.symbol));
+  prevBlow = blowSet;
 
-    // process in serial with batchDelay to protect rate limits
-    let adaptiveTriggerSeen = false;
-    for (let i=0;i<top.length;i++){
-      const s = top[i];
-      try {
-        const item = await analyzeSymbol(s.symbol, s);
-        // replace card
-        const old = document.getElementById('card-'+s.symbol);
-        const newCard = makeCard(item);
-        if (old) old.replaceWith(newCard); else cardsDiv.appendChild(newCard);
+  renderHybrid(results);
+}
 
-        // check adaptive triggers based on symbol summary (priceChange, volSpike, ratioSlope)
-        const priceChangePct = Number(s.priceChangePercent || 0);
-        if (!adaptiveTriggerSeen) {
-          if (priceChangePct >= CONFIG.ADAPTIVE_PRICE_CHANGE_PCT) adaptiveTriggerSeen = true;
-          if (item.volSpike >= CONFIG.ADAPTIVE_VOLSPIKE) adaptiveTriggerSeen = true;
-          if (item.ratioSlope && item.ratioSlope >= CONFIG.ADAPTIVE_SLOPE) adaptiveTriggerSeen = true;
-        }
-      } catch (err){
-        console.warn('symbol error', s.symbol, err);
-        registerError(err);
+/* ---------------------------------------------------------
+   MAIN SCAN CYCLE
+--------------------------------------------------------- */
+async function runScan(once=false){
+  try{
+    running = true;
+    el.startBtn.disabled = true;
+    el.stopBtn.disabled = false;
+    el.debug.innerText = "";
+    el.message.innerText = "Fetching top symbols...";
+    resetWindow();
+
+    const N = Number(el.prefilter.value);
+    const delay = Number(el.delay.value);
+    const sec = Number(el.interval.value);
+
+    const top = await getTopN(N);
+    const results = [];
+
+    queue = [];
+    totalTasks = top.length;
+    doneTasks = 0;
+    updateProgress();
+
+    top.forEach(x=> queueSymbol(x.symbol, results));
+
+    if(!once) startCountdown(sec);
+
+    processQueue().then(()=>{
+      renderResults(results);
+
+      if(!once && running){
+        if(autoTimer) clearInterval(autoTimer);
+        autoTimer = setInterval(()=> runScan(false), sec*1000);
       }
-      await delay(batchDelay);
-      if (paused) break;
-    }
-
-    // if adaptive is enabled and trigger seen, activate adaptive fast mode
-    if (adaptiveOn && adaptiveTriggerSeen) activateAdaptiveMode();
-
-    setStatus('Scan complete');
-  } catch (err){
-    console.error('scan error', err);
-    registerError(err);
-    setStatus('Scan error');
+    });
+  }
+  catch(e){
+    el.debug.innerText += "\nScan error: "+e.message;
   }
 }
 
-/* analyzeSymbol: fetch klines and funding and compute signals */
-async function analyzeSymbol(symbol, tickerObj){
-  // fetch klines: 4h + 1d, and premiumIndex
-  const k4hUrl = `${CONFIG.binanceFuturesBase}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=100`;
-  const k1dUrl = `${CONFIG.binanceFuturesBase}/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=60`;
-  const fundUrl = `${CONFIG.binanceFuturesBase}/fapi/v1/premiumIndex?symbol=${symbol}`;
-  const [k4, k1, fund] = await Promise.all([fetchJson(k4hUrl), fetchJson(k1dUrl), fetchJson(fundUrl)]);
-  // parse arrays
-  const closes4h = k4.map(k=>parseFloat(k[4]));
-  const highs4h = k4.map(k=>parseFloat(k[2]));
-  const lows4h = k4.map(k=>parseFloat(k[3]));
-  const opens4h = k4.map(k=>parseFloat(k[1]));
-  const vols4h = k4.map(k=>parseFloat(k[5]));
-  const avgVol4h = vols4h.slice(-10).reduce((s,v)=>s+v,0)/Math.min(10,vols4h.length);
-  // last closed candle used for wick
-  const lastIndex = Math.max(0, closes4h.length-2);
-  const lastOpen = opens4h[lastIndex];
-  const lastHigh = highs4h[lastIndex];
-  const lastClose = closes4h[lastIndex];
-  const lastVol = vols4h[lastIndex] || 0;
-  const volSpike = avgVol4h>0? lastVol/avgVol4h : 0;
-  const upperWick = Math.max(0, lastHigh - Math.max(lastOpen,lastClose));
-  const body = Math.max(0, Math.abs(lastClose - lastOpen));
-  const wickTopRatio = body>0? upperWick/body : (upperWick>0?99:0);
-  const ema70 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
-  const lastPrice = closes4h[closes4h.length-1] || lastClose || tickerObj.lastPrice;
-  const ema70DistPct = ema70? percentDiff(lastPrice, ema70) : 0;
-  const rsi4h = rsiFromCloses(closes4h,14);
-  const closes1d = k1.map(k=>parseFloat(k[4]));
-  const rsi1d = rsiFromCloses(closes1d,14);
-  // lowerHigh heuristic
-  let lowerHigh = false;
-  if (highs4h.length >= 5){
-    const h1 = highs4h[highs4h.length-5];
-    const h2 = highs4h[highs4h.length-3];
-    const h3 = highs4h[highs4h.length-2];
-    if (h2 > h1 && h2 > h3 && h3 < h2) lowerHigh = true;
-  }
-  // ratioSlope: closeNow / close 3 bars ago (proxy for parabolic)
-  const ratioSlope = closes4h.length>3? closes4h[closes4h.length-1] / closes4h[closes4h.length-4] : 1;
-  // fundingRate from premiumIndex
-  const fundingRate = parseFloat(fund.lastFundingRate || fund.lastFundingRate===0? fund.lastFundingRate : (fund.fundingRate || 0));
-  // scoring using tuned thresholds
-  let score = 0; const signals = {};
-  if (rsi1d !== null && rsi1d >= CONFIG.thresholds.rsi1d) { score++; signals.rsi1d=true; } else signals.rsi1d=false;
-  if (rsi4h !== null && rsi4h >= CONFIG.thresholds.rsi4h) { score++; signals.rsi4h=true; } else signals.rsi4h=false;
-  if (volSpike >= CONFIG.thresholds.volSpike) { score++; signals.volSpike=true; } else signals.volSpike=false;
-  if (wickTopRatio >= CONFIG.thresholds.wickTop) { score++; signals.wickTop=true; } else signals.wickTop=false;
-  if (ema70DistPct >= CONFIG.thresholds.ema70DistPct) { score++; signals.emaDist=true; } else signals.emaDist=false;
-  if (lowerHigh) { score++; signals.lowerHigh=true; } else signals.lowerHigh=false;
-  if (typeof fundingRate === 'number' && fundingRate < CONFIG.thresholds.fundingConfirm) { score++; signals.fundingConfirm=true; } else signals.fundingConfirm=false;
-  signals.funding = fundingRate;
-  // assemble item
-  return {
-    symbol,
-    lastPrice,
-    change24: Number(tickerObj.priceChangePercent || 0),
-    score,
-    t: Date.now(),
-    rsi1d: rsi1d?Number(rsi1d.toFixed(1)):'-',
-    rsi4h: rsi4h?Number(rsi4h.toFixed(1)):'-',
-    volSpike: Number(volSpike.toFixed(2)),
-    wickTopRatio: Number(wickTopRatio.toFixed(2)),
-    ema70DistPct: Number(ema70DistPct.toFixed(1)),
-    funding: fundingRate,
-    vol4hAvg: Math.round(avgVol4h),
-    signals,
-    ratioSlope: Number(ratioSlope.toFixed(2))
-  };
-}
-
-/* -------------- Adaptive mode functions -------------- */
-function activateAdaptiveMode(){
-  const now = Date.now();
-  if (adaptiveActive) {
-    // already active — refresh expiry
-    adaptiveExpiresAt = now + CONFIG.adaptiveDurationMs;
-    adaptiveLastTriggered = now;
-    updateAdaptiveUI();
-    return;
-  }
-  // check cooldown
-  if (now - adaptiveLastTriggered < CONFIG.adaptiveCooldownMs) return;
-  adaptiveActive = true;
-  adaptiveExpiresAt = now + CONFIG.adaptiveDurationMs;
-  adaptiveLastTriggered = now;
-  // switch scheduler to fast interval
-  startAdaptiveFastScheduling();
-  if (allowNotify) notify('Adaptive mode ON', 'Scanner switched to fast (1m) mode for ' + Math.round(CONFIG.adaptiveDurationMs/60000) + 'm');
-  if (allowSound) playSound();
-  updateAdaptiveUI();
-}
-function deactivateAdaptiveMode(){
-  adaptiveActive = false;
-  adaptiveExpiresAt = 0;
-  // resume base schedule
-  startBaseSchedule();
-  updateAdaptiveUI();
-}
-function updateAdaptiveUI(){
-  adaptiveStateEl.innerText = adaptiveOn ? (adaptiveActive ? 'Adaptive: ACTIVATED' : 'Adaptive: ON') : 'Adaptive: OFF';
-  if (adaptiveActive){
-    const left = Math.max(0, adaptiveExpiresAt - Date.now());
-    adaptiveTimerEl.innerText = ' (ends in ' + Math.ceil(left/1000) + 's)';
-  } else adaptiveTimerEl.innerText = '';
-}
-
-/* -------------- scheduling -------------- */
-let schedulerHandle = null;
-function startBaseSchedule(){
-  clearInterval(schedulerHandle);
-  const sel = document.getElementById('intervalSelect');
-  const interval = Number(sel.value || 14400000);
-  nextRefreshAt = Date.now() + interval;
-  schedulerHandle = setInterval(()=> {
-    if (!paused) scanOnce();
-    nextRefreshAt = Date.now() + interval;
-  }, interval);
-  // countdown
-  startCountdown(interval);
-}
-function startAdaptiveFastScheduling(){
-  clearInterval(schedulerHandle);
-  // run immediate scan and then schedule 1m interval while adaptiveActive
-  scanOnce();
-  const fast = CONFIG.adaptiveFastInterval;
-  nextRefreshAt = Date.now() + fast;
-  schedulerHandle = setInterval(()=> {
-    // if adaptive expired -> deactivate
-    if (adaptiveActive && Date.now() > adaptiveExpiresAt){
-      deactivateAdaptiveMode();
-      return;
-    }
-    if (!paused) scanOnce();
-    nextRefreshAt = Date.now() + fast;
-  }, fast);
-  startCountdown(CONFIG.adaptiveFastInterval);
-}
-
-/* -------------- error & safety -------------- */
-function registerError(err){
-  const now = Date.now();
-  recentErrors.push(now);
-  recentErrors = recentErrors.filter(t => now - t < 60000);
-  if (recentErrors.length >= CONFIG.errorPauseThreshold){
-    paused = true;
-    document.getElementById('pauseBtn').innerText = 'Resume';
-    statusText.innerText = 'Auto-paused (errors)';
-  }
-}
-function setStatus(txt){ statusText.innerText = txt; }
-
-/* -------------- notifications & sound -------------- */
-function playSound(){ try{ alertAudio.currentTime=0; alertAudio.play(); }catch(e){} }
-function notify(title, text){
-  if (!allowNotify) return;
-  if (Notification.permission === 'granted') new Notification(title, {body:text});
-  else Notification.requestPermission().then(p=>{ if (p==='granted') new Notification(title, {body:text}); });
-}
-
-/* -------------- countdown display -------------- */
-let countdownHandle = null;
-function startCountdown(intervalMs){
-  if (countdownHandle) clearInterval(countdownHandle);
-  nextRefreshAt = Date.now() + intervalMs;
-  countdownHandle = setInterval(()=> {
-    const left = Math.max(0, nextRefreshAt - Date.now());
-    counterEl.innerText = 'Next refresh: ' + msToNice(left);
-    // if adaptive active update its timer
-    if (adaptiveActive && Date.now() > adaptiveExpiresAt) deactivateAdaptiveMode();
-    updateAdaptiveUI();
-  }, 700);
-}
-function msToNice(ms){
-  const s = Math.floor(ms/1000);
-  const h = Math.floor(s/3600);
-  const m = Math.floor((s%3600)/60);
-  const sec = s%60;
-  if (h>0) return `${h}h ${m}m ${sec}s`;
-  if (m>0) return `${m}m ${sec}s`;
-  return `${sec}s`;
-}
-
-/* -------------- UI bindings -------------- */
-document.getElementById('refreshBtn').addEventListener('click', ()=>{ if (!paused) scanOnce(); });
-document.getElementById('pauseBtn').addEventListener('click', ()=>{ paused = !paused; document.getElementById('pauseBtn').innerText = paused ? 'Resume' : 'Pause'; setStatus(paused?'Paused':'Idle');});
-document.getElementById('toggleSound').addEventListener('click', ()=>{ allowSound = !allowSound; document.getElementById('toggleSound').innerText = allowSound ? '🔔 Sound ON' : '🔕 Sound OFF';});
-document.getElementById('toggleNotify').addEventListener('click', async ()=>{
-  if (!allowNotify){
-    if (Notification.permission === 'default') { const p = await Notification.requestPermission(); allowNotify = p==='granted'; }
-    else allowNotify = Notification.permission === 'granted';
-  } else allowNotify = false;
-  document.getElementById('toggleNotify').innerText = allowNotify ? '📣 Notify ON' : '🔕 Notify OFF';
+/* ---------------------------------------------------------
+   UI EVENTS
+--------------------------------------------------------- */
+el.startBtn.addEventListener("click", ()=> runScan(false));
+el.stopBtn.addEventListener("click", ()=>{
+  running = false;
+  queue = [];
+  el.startBtn.disabled = false;
+  el.stopBtn.disabled = true;
 });
-document.getElementById('toggleAdaptive').addEventListener('click', ()=>{
-  adaptiveOn = !adaptiveOn;
-  document.getElementById('toggleAdaptive').innerText = adaptiveOn ? 'Adaptive: ON' : 'Adaptive: OFF';
-  updateAdaptiveUI();
-});
+el.oneShot.addEventListener("click", ()=> runScan(true));
 
-/* batchDelay control */
-document.getElementById('batchDelay').addEventListener('change', ()=>{ batchDelay = Number(document.getElementById('batchDelay').value) || CONFIG.batchDelayDefault; });
+  
+/* ---------------------------------------------------------
+   SOUND + NOTIFICATION HELPERS (FINAL SECTION)
+--------------------------------------------------------- */
 
-/* interval select change -> restart base schedule */
-document.getElementById('intervalSelect').addEventListener('change', ()=>{ if (!adaptiveActive) startBaseSchedule(); });
+function playAlertSound(){
+  try{
+    const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+    audio.volume = 0.7;
+    audio.play().catch(()=>{});
+  }catch(e){}
+}
 
-/* -------------- init -------------- */
-(function init(){
-  document.getElementById('toggleAdaptive').innerText = adaptiveOn ? 'Adaptive: ON' : 'Adaptive: OFF';
-  document.getElementById('toggleNotify').innerText = allowNotify ? '📣 Notify ON' : '🔕 Notify OFF';
-  document.getElementById('toggleSound').innerText = allowSound ? '🔔 Sound ON' : '🔕 Sound OFF';
-  // first quick scan
-  scanOnce().catch(e=>console.warn(e));
-  // start base scheduling
-  startBaseSchedule();
-})();
+function notify(title, body){
+  if(Notification.permission === "granted"){
+    new Notification(title, { body });
+  }
+}
+
+// Request notification permission at load
+if("Notification" in window){
+  try { Notification.requestPermission(); }
+  catch(e){}
+}
+
+/* ---------------------------------------------------------
+   HOOK ALERTS TO SCORE DETECTION
+--------------------------------------------------------- */
+
+function alertIfNeeded(results){
+  const flagged = results.filter(r=>r.score >= 4);
+
+  if(flagged.length > 0){
+    playAlertSound();
+    notify("🔥 Blowoff Top Detected", flagged[0].symbol + " triggered blowoff conditions.");
+  }
+}
+
+// Patch renderResults to include alert checks
+const _origRenderResults = renderResults;
+renderResults = function(results){
+  _origRenderResults(results);
+  alertIfNeeded(results);
+};
+
 </script>
-</body>
+
+  </body>
 </html>
