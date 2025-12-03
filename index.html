@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Blowoff Top Scanner — Card UI (Mobile)</title>
+<style>
+  :root{
+    --bg:#0b1220;
+    --card:#0f1a28;
+    --muted:#9aa9ba;
+    --accent:#29b080;
+    --warn:#ff8c42;
+    --danger:#ff4655;
+    --glass: rgba(255,255,255,0.03);
+    color-scheme: dark;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#06121b 0%, #071a25 100%);font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  .app {
+    max-width:980px;margin:0 auto;padding:12px 10px 120px;
+  }
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .title {display:flex;align-items:center;gap:10px}
+  h1{color:white;font-size:16px;margin:0}
+  .controls {display:flex;gap:8px;align-items:center}
+  button, select, input{background:var(--card);border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:8px;border-radius:8px;font-size:13px}
+  .muted{color:var(--muted);font-size:13px}
+  .small{font-size:12px;color:var(--muted)}
+  .status {font-size:13px;color:var(--muted)}
+  .topbar {display:flex;gap:8px;align-items:center}
+  .grid {display:flex;flex-direction:column;gap:10px}
+  /* Card layout mobile-first */
+  .card {
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;padding:10px;border:1px solid rgba(255,255,255,0.04);
+    display:flex;gap:8px;align-items:flex-start;
+    box-shadow: 0 6px 20px rgba(2,6,23,0.6);
+  }
+  .left {width:84px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+  .sym {font-weight:700;color:white;font-size:15px}
+  .price {color:var(--muted);font-size:13px}
+  .middle {flex:1;display:flex;flex-direction:column;gap:6px}
+  .signals {display:flex;flex-wrap:wrap;gap:6px}
+  .chip{background:var(--glass);padding:6px 8px;border-radius:8px;font-size:12px;color:var(--muted);border:1px solid rgba(255,255,255,0.02)}
+  .chip.good{background:rgba(41,176,128,0.12);color:var(--accent);border-color:rgba(41,176,128,0.15)}
+  .chip.warn{background:rgba(255,140,66,0.10);color:var(--warn);border-color:rgba(255,140,66,0.12)}
+  .chip.bad{background:rgba(255,70,85,0.06);color:var(--danger);border-color:rgba(255,70,85,0.09)}
+  .right {width:100px;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .score {font-size:14px;font-weight:700;color:white}
+  .blowoff {padding:6px 8px;border-radius:8px;background:linear-gradient(90deg,#ff6b6b,#ffb86b);color:#111;font-weight:700;font-size:12px}
+  .super {background:linear-gradient(90deg,#ff4d9a,#ff8c42);color:white}
+  .time {font-size:12px;color:var(--muted)}
+  .spark {height:36px;width:100%;background:transparent}
+  .controls-row{display:flex;gap:8px;align-items:center}
+  footer{position:fixed;left:0;right:0;bottom:0;background:linear-gradient(180deg, rgba(2,6,23,0.2), rgba(2,6,23,0.5));backdrop-filter: blur(6px);padding:10px;border-top:1px solid rgba(255,255,255,0.02);}
+  .footer-content{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .muted-small{font-size:12px;color:var(--muted)}
+  .danger-btn{background:linear-gradient(90deg,#ff5960,#ff3b3b);color:white}
+  /* blowoff highlight */
+  .highlight {border:2px solid rgba(255,107,107,0.12);box-shadow:0 6px 30px rgba(255,80,80,0.06)}
+  /* responsive tweaks */
+  @media (min-width:660px){
+    .card{padding:12px}
+    .left{width:120px}
+    .right{width:140px;align-items:flex-end}
+  }
+  /* small icon */
+  .dot{height:10px;width:10px;border-radius:50%}
+  .dot.good{background:var(--accent)}
+  .dot.warn{background:var(--warn)}
+  .dot.bad{background:var(--danger)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">
+      <h1>Blowoff Top Scanner — Cards (Mobile)</h1>
+      <div class="small muted">Top 30 gainers • USDT-Perp</div>
+    </div>
+    <div class="topbar">
+      <div class="controls">
+        <label class="small muted">Refresh</label>
+        <select id="intervalSelect">
+          <option value="60000">1m</option>
+          <option value="300000">5m</option>
+          <option value="900000">15m</option>
+          <option value="3600000">1h</option>
+          <option value="14400000" selected>4h</option>
+        </select>
+        <button id="refreshBtn">Refresh now</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="status">
+    <span id="statusText">Idle</span> • <span id="counter">Next refresh: --</span>
+  </div>
+
+  <div style="height:8px"></div>
+
+  <div id="cards" class="grid" aria-live="polite"></div>
+</div>
+
+<footer>
+  <div class="footer-content">
+    <div>
+      <label class="muted-small">Auto-pause on errors:</label>
+      <span id="autoPause" class="muted-small">OFF</span>
+      &nbsp;•&nbsp;
+      <label class="muted-small">Batch delay (ms):</label>
+      <input id="batchDelay" type="number" value="300" style="width:70px"/>
+    </div>
+    <div>
+      <button id="toggleSound">🔔 Sound ON</button>
+      <button id="toggleNotify">📣 Notify ON</button>
+      <button id="pauseBtn" class="danger-btn">Pause</button>
+    </div>
+  </div>
+</footer>
+
+<!-- sound -->
+<audio id="alertSound">
+  <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAAAB3AQACABA=" type="audio/wav">
+</audio>
+
+<script>
+/*
+  Blowoff Top Scanner — Client-only
+  - Scans Binance USDT-M futures (public endpoints)
+  - Top N (30) gainers by 24h change
+  - Blacklist applied
+  - Card UI (mobile)
+  - Blowoff detection with thresholds (tunable in CONFIG)
+  - Auto pause on errors and rate limit safety
+  - Notifications and sound
+  - Countdown timer
+*/
+
+/* ---------------- CONFIG ---------------- */
+const CONFIG = {
+  topN: 30,                       // top N by 24h change
+  batchDelay: 300,                // ms between each symbol's klines request
+  refreshInterval: 14400000,      // default 4h in ms (not Kline inside; overall refresh interval)
+  klinesLimit: 100,               // how many candles to request (used for EMA)
+  debug: false,
+  thresholds: {
+    rsi1d: 88,
+    rsi4h: 80,
+    volSpike: 1.8,
+    wickTop: 1.2,
+    ema70DistPct: 50,
+    fundingConfirm: -0.0005,     // -0.05% funding
+    scoreThreshold: 4,
+    superScore: 6
+  },
+  // API base
+  binanceFuturesBase: 'https://fapi.binance.com',
+  // auto-pause settings
+  errorPauseThreshold: 6,        // pause if >= errors within rolling window
+  maxRequestsPerMinuteEstimate: 1100   // very rough upper bound; we use delay to be safe
+};
+
+/* ---------------- BLACKLIST ---------------- */
+const BLACKLIST = ["ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT","AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT","LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT","UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT","BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT","LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT"];
+
+/* ---------------- STATE ---------------- */
+let running = true;
+let paused = false;
+let allowSound = true;
+let allowNotify = false;
+let refreshTimer = null;
+let nextRefreshAt = 0;
+let errorCount = 0;
+let recentErrors = []; // timestamps
+let batchDelayInput = document.getElementById('batchDelay');
+const cardsDiv = document.getElementById('cards');
+const statusText = document.getElementById('statusText');
+const counterEl = document.getElementById('counter');
+const alertAudio = document.getElementById('alertSound');
+document.getElementById('batchDelay').value = CONFIG.batchDelay;
+
+/* -------------- UTILS: EMA, RSI, helpers ---------------- */
+function sma(data, period){
+  if (!data || data.length < period) return null;
+  let sum = 0;
+  for(let i=data.length-period;i<data.length;i++) sum += data[i];
+  return sum/period;
+}
+function ema(data, period){
+  if (!data || data.length < period) return null;
+  // simple EMA with seed = SMA(period)
+  const k = 2/(period+1);
+  let seed = sma(data.slice(0,period), period);
+  let emaVal = seed;
+  for(let i=period;i<data.length;i++){
+    emaVal = data[i]*k + emaVal*(1-k);
+  }
+  return emaVal;
+}
+function rsiFromCloses(closes, period=14){
+  if (!closes || closes.length < period+1) return null;
+  let gains=0, losses=0;
+  for(let i=1;i<=period;i++){
+    const diff = closes[i] - closes[i-1];
+    if (diff>0) gains += diff; else losses += Math.abs(diff);
+  }
+  let avgGain = gains/period, avgLoss = losses/period;
+  for(let i=period+1;i<closes.length;i++){
+    const diff = closes[i] - closes[i-1];
+    avgGain = (avgGain*(period-1) + (diff>0?diff:0))/period;
+    avgLoss = (avgLoss*(period-1) + (diff<0?Math.abs(diff):0))/period;
+  }
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100/(1+rs));
+}
+function percentDiff(a,b){ return ((a-b)/b)*100; }
+
+/* -------------- DISPLAY helpers ---------------- */
+function makeCard(item){
+  const c = document.createElement('div');
+  c.className = 'card' + (item.score >= CONFIG.thresholds.scoreThreshold ? ' highlight':'');
+  c.id = `card-${item.symbol}`;
+  c.innerHTML = `
+    <div class="left">
+      <div class="sym">${item.symbol}</div>
+      <div class="price">$${Number(item.lastPrice).toFixed(6)} <span class="small muted">(${Number(item.change24).toFixed(2)}%)</span></div>
+    </div>
+    <div class="middle">
+      <div class="signals" aria-hidden="true">
+        ${signalChip('RSI 1D', item.rsi1d, item.signals.rsi1d)}
+        ${signalChip('RSI 4H', item.rsi4h, item.signals.rsi4h)}
+        ${signalChip('Vol×', item.volSpike.toFixed(2), item.signals.volSpike)}
+        ${signalChip('Wick', item.wickTopRatio.toFixed(2), item.signals.wickTop)}
+        ${signalChip('EMA70%', item.ema70DistPct.toFixed(0)+'%', item.signals.emaDist)}
+        ${signalChip('Funding', (item.funding||0).toFixed(5), item.signals.fundingConfirm)}
+        ${signalChip('LowerH', item.signals.lowerHigh ? 'Y':'N', item.signals.lowerHigh)}
+      </div>
+      <div class="small muted">vol (4h avg): ${Math.round(item.vol4hAvg||0)} • score ${item.score}</div>
+    </div>
+    <div class="right">
+      <div class="score">${item.score}/6</div>
+      <div class="${item.score >= CONFIG.thresholds.superScore ? 'blowoff super' : item.score >= CONFIG.thresholds.scoreThreshold ? 'blowoff' : 'chip'}">${item.score >= CONFIG.thresholds.scoreThreshold ? (item.score >= CONFIG.thresholds.superScore ? 'SUPER BLOWOFF' : 'BLOWOFF') : 'no'}</div>
+      <div class="time small muted">${new Date(item.t).toLocaleTimeString()}</div>
+    </div>
+  `;
+  return c;
+}
+function signalChip(label, value, ok){
+  let cls='chip';
+  if (ok) cls='chip good';
+  else if (label==='Funding' && value<0) cls='chip warn';
+  return `<div class="${cls}">${label}: <strong style="color:var(--muted)">${value}</strong></div>`;
+}
+
+/* -------------- Core logic ---------------- */
+
+/*
+Flow:
+1) Fetch /fapi/v1/ticker/24hr -> get all USDT perpetual pairs
+2) Filter symbols with USDT and not in blacklist
+3) Sort by priceChangePercent (24h) desc -> pick topN
+4) For each symbol in batches, fetch:
+   - /fapi/v1/klines?symbol=...&interval=4h&limit=KLIMES -> for vol, wick, ema70
+   - /fapi/v1/klines?symbol=...&interval=1d&limit=... -> for rsi1d (small)
+   - /fapi/v1/premiumIndex?symbol=... -> funding rate
+5) Compute signals and display cards
+6) If score >= threshold -> highlight + notify
+7) Safety: batchDelay between each symbol's kline/funding fetch
+*/
+
+async function fetchJson(url){
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    return await res.json();
+  } catch (e) {
+    throw e;
+  }
+}
+
+async function scanOnce(){
+  if (paused) { setStatus('Paused'); return; }
+  setStatus('Scanning...');
+  errorCount = 0;
+  recentErrors = [];
+  cardsDiv.innerHTML = '';
+  // update batchDelay from UI
+  CONFIG.batchDelay = Number(batchDelayInput.value) || CONFIG.batchDelay;
+  try {
+    // 1: get all tickers
+    const tickers = await fetchJson(`${CONFIG.binanceFuturesBase}/fapi/v1/ticker/24hr`);
+    // filter USDT perpetuals (symbol endsWith USDT) and remove blacklist
+    let usdt = tickers.filter(t => t.symbol && t.symbol.endsWith('USDT') && !BLACKLIST.includes(t.symbol));
+    // sort by priceChangePercent desc
+    usdt.sort((a,b)=> parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+    const top = usdt.slice(0, CONFIG.topN);
+    setStatus(`Top ${top.length} selected`);
+    // Create skeleton cards while fetching details
+    top.forEach(t => {
+      const placeholder = {symbol:t.symbol, lastPrice: t.lastPrice, change24: t.priceChangePercent, score:0,t:Date.now(), rsi1d:'-', rsi4h:'-', volSpike:0, wickTopRatio:0, ema70DistPct:0, funding:0, vol4hAvg:0, signals:{}, lowerHigh:false};
+      cardsDiv.appendChild(makeCard(placeholder));
+    });
+
+    // Now fetch details in serial (to limit concurrent requests)
+    for(let i=0;i<top.length;i++){
+      const tk = top[i];
+      try {
+        await processSymbol(tk.symbol);
+      } catch(err){
+        console.error('Symbol fail', tk.symbol, err);
+        registerError(err);
+      }
+      await delay(CONFIG.batchDelay);
+      if (paused) { setStatus('Paused'); break; }
+    }
+
+    setStatus('Scan complete');
+  } catch (err){
+    console.error('scanOnce error', err);
+    registerError(err);
+    setStatus('Error during scan, auto-pausing if needed');
+  }
+}
+
+/* Process a single symbol: fetch klines (4h + 1d), premiumIndex */
+async function processSymbol(symbol){
+  const cardEl = document.getElementById('card-'+symbol) || null;
+  // fetch klines 4h and 1d
+  // 4h klines
+  const k4hUrl = `${CONFIG.binanceFuturesBase}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=${CONFIG.klinesLimit}`;
+  const k1dUrl = `${CONFIG.binanceFuturesBase}/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=60`;
+  const fundUrl = `${CONFIG.binanceFuturesBase}/fapi/v1/premiumIndex?symbol=${symbol}`;
+
+  const [k4, k1, fund] = await Promise.all([
+    fetchJson(k4hUrl),
+    fetchJson(k1dUrl),
+    fetchJson(fundUrl)
+  ]);
+
+  // parse k4 into arrays
+  const closes4h = k4.map(k=>parseFloat(k[4]));
+  const highs4h = k4.map(k=>parseFloat(k[2]));
+  const lows4h = k4.map(k=>parseFloat(k[3]));
+  const opens4h = k4.map(k=>parseFloat(k[1]));
+  const volumes4h = k4.map(k=>parseFloat(k[5]));
+  const avgVol4h = volumes4h.slice(-10).reduce((s,v)=>s+v,0)/Math.min(10,volumes4h.length);
+  // compute volSpike: lastVolume / avgVol
+  const lastVol = volumes4h[volumes4h.length-2] || volumes4h[volumes4h.length-1] || 0; // use last closed
+  const volSpike = avgVol4h>0? lastVol/avgVol4h : 0;
+
+  // wickTopRatio: using last closed candle
+  const lastOpen = opens4h[closes4h.length-2] || opens4h[closes4h.length-1];
+  const lastHigh = highs4h[highs4h.length-2] || highs4h[highs4h.length-1];
+  const lastClose = closes4h[closes4h.length-2] || closes4h[closes4h.length-1];
+  const upperWick = Math.max(0,(lastHigh - Math.max(lastOpen,lastClose)));
+  const body = Math.max(0, Math.abs(lastClose - lastOpen));
+  const wickTopRatio = body>0? upperWick/body : (upperWick>0? 99 : 0);
+
+  // ema70 distance: compute ema70 on closes (4h)
+  const ema70 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
+  const lastPrice = closes4h[closes4h.length-1] || closes4h[closes4h.length-2];
+  const ema70DistPct = ema70? percentDiff(lastPrice, ema70) : 0;
+
+  // RSI 4h: from closes
+  const rsi4h = rsiFromCloses(closes4h,14) || null;
+  // RSI 1d from k1 closes
+  const closes1d = k1.map(k=>parseFloat(k[4]));
+  const rsi1d = rsiFromCloses(closes1d,14) || null;
+
+  // lowerHigh: quick heuristic
+  // check last three highs (4h): if we have high1 < high2 (peak) and high3 < high2 => lower high after peak
+  let lowerHigh = false;
+  if (highs4h.length >= 5){
+    const h1 = highs4h[highs4h.length-5];
+    const h2 = highs4h[highs4h.length-3];
+    const h3 = highs4h[highs4h.length-2];
+    if (h2 > h1 && h2 > h3 && h3 < h2) lowerHigh = true;
+  }
+
+  // funding rate
+  const fundingRate = parseFloat(fund.lastFundingRate || fund.lastFundingRate === 0 ? fund.lastFundingRate : (fund.fundingRate || 0));
+
+  // score calculation (your tuned thresholds)
+  let score = 0;
+  const signals = {};
+  if (rsi1d !== null && rsi1d >= CONFIG.thresholds.rsi1d){ score++; signals.rsi1d=true; } else signals.rsi1d=false;
+  if (rsi4h !== null && rsi4h >= CONFIG.thresholds.rsi4h){ score++; signals.rsi4h=true; } else signals.rsi4h=false;
+  if (volSpike >= CONFIG.thresholds.volSpike){ score++; signals.volSpike=true; } else signals.volSpike=false;
+  if (wickTopRatio >= CONFIG.thresholds.wickTop){ score++; signals.wickTop=true; } else signals.wickTop=false;
+  if (ema70DistPct >= CONFIG.thresholds.ema70DistPct){ score++; signals.emaDist=true; } else signals.emaDist=false;
+  if (lowerHigh){ score++; signals.lowerHigh=true; } else signals.lowerHigh=false;
+  if (typeof fundingRate === 'number' && fundingRate < CONFIG.thresholds.fundingConfirm){ score++; signals.fundingConfirm=true; } else signals.fundingConfirm=false;
+  signals.funding = fundingRate;
+
+  const item = {
+    symbol,
+    lastPrice: lastPrice||0,
+    change24: null,
+    score,
+    t: Date.now(),
+    rsi1d: rsi1d?Number(rsi1d.toFixed(1)):'-',
+    rsi4h: rsi4h?Number(rsi4h.toFixed(1)):'-',
+    volSpike: Number(volSpike.toFixed(2)),
+    wickTopRatio: Number(wickTopRatio.toFixed(2)),
+    ema70DistPct: Number(ema70DistPct.toFixed(1)),
+    funding: fundingRate,
+    vol4hAvg: Math.round(avgVol4h),
+    signals
+  };
+
+  // update card
+  const newCard = makeCard(item);
+  if (cardEl) cardEl.replaceWith(newCard);
+  else cardsDiv.appendChild(newCard);
+
+  // alert logic
+  if (score >= CONFIG.thresholds.scoreThreshold) {
+    // visual + audio + notification
+    if (allowSound) playSound();
+    if (allowNotify) notify(`${symbol} Blowoff score ${score}`, `RSI1D ${item.rsi1d}, vol×${item.volSpike}, wick ${item.wickTopRatio}`);
+  }
+}
+
+/* -------------- helpers: notifications, sound, delay, errors ---------------- */
+function playSound(){ try{ alertAudio.currentTime=0; alertAudio.play(); }catch(e){} }
+function notify(title, text){
+  if (!allowNotify) return;
+  if (Notification.permission === 'granted'){
+    const n = new Notification(title, {body:text, silent:false});
+    n.onclick = ()=>window.focus();
+  } else {
+    // try requesting
+    Notification.requestPermission().then(p=>{
+      if (p==='granted') new Notification(title, {body:text});
+    });
+  }
+}
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function setStatus(txt){ statusText.innerText = txt; }
+function registerError(err){
+  const now=Date.now();
+  recentErrors.push(now);
+  // keep only last 60s window
+  recentErrors = recentErrors.filter(t => now - t < 60000);
+  if (recentErrors.length >= CONFIG.errorPauseThreshold){
+    paused = true;
+    document.getElementById('autoPause').innerText = 'PAUSED (errors)';
+    setStatus('Auto-paused due to repeated errors');
+  }
+}
+
+/* -------------- timer and controls ---------------- */
+function scheduleRefresh(interval){
+  clearInterval(refreshTimer);
+  nextRefreshAt = Date.now() + interval;
+  refreshTimer = setInterval(()=> {
+    if (!paused) scanOnce();
+    nextRefreshAt = Date.now() + interval;
+  }, interval);
+  // also show countdown
+  setInterval(()=> {
+    const left = Math.max(0, nextRefreshAt - Date.now());
+    counterEl.innerText = 'Next refresh: ' + (left>0?msToTime(left):'now');
+  }, 700);
+}
+function msToTime(ms){
+  const s = Math.floor(ms/1000);
+  const m = Math.floor(s/60);
+  const sec = s%60;
+  return `${m}m ${sec}s`;
+}
+
+/* UI control bindings */
+document.getElementById('refreshBtn').addEventListener('click', ()=>{ if (!paused) scanOnce(); });
+document.getElementById('pauseBtn').addEventListener('click', ()=>{ paused = !paused; document.getElementById('pauseBtn').innerText = paused ? 'Resume' : 'Pause'; setStatus(paused?'Paused':'Idle');});
+document.getElementById('toggleSound').addEventListener('click', ()=>{ allowSound = !allowSound; document.getElementById('toggleSound').innerText = allowSound ? '🔔 Sound ON' : '🔕 Sound OFF';});
+document.getElementById('toggleNotify').addEventListener('click', async ()=>{
+  if (!allowNotify){
+    if (Notification.permission === 'default'){
+      const p = await Notification.requestPermission();
+      allowNotify = p==='granted';
+    } else allowNotify = Notification.permission === 'granted';
+  } else allowNotify = false;
+  document.getElementById('toggleNotify').innerText = allowNotify ? '📣 Notify ON' : '🔕 Notify OFF';
+});
+
+batchDelayInput.addEventListener('change', ()=> {
+  CONFIG.batchDelay = Number(batchDelayInput.value) || CONFIG.batchDelay;
+});
+
+/* -------------- init ---------------- */
+(function init(){
+  // initial UI
+  document.getElementById('autoPause').innerText = 'OFF';
+  // try a first scan on load
+  scanOnce().catch(e=>console.error(e));
+  // schedule repeated scans - by default use selected interval in select (ms)
+  const sel = document.getElementById('intervalSelect');
+  const baseInterval = Number(sel.value);
+  scheduleRefresh(baseInterval);
+  sel.addEventListener('change', ()=> {
+    const interval = Number(sel.value);
+    scheduleRefresh(interval);
+  });
+})();
+
+</script>
+</body>
+</html>
