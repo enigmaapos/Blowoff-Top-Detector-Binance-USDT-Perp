@@ -200,14 +200,15 @@ function queueSymbolAnalysis(symbol, results){
       // Score rules (tunable)
       let score = 0;
       const signals = {};
-      if(rsi1d !== null && rsi1d >= 85){ score++; signals.rsi1d = true; } else signals.rsi1d=false;
-      if(rsi4h !== null && rsi4h >= 80){ score++; signals.rsi4h=true; } else signals.rsi4h=false;
-      if(volSpike >= 2.0){ score++; signals.volSpike=true; } else signals.volSpike=false;
-      if(wickTopRatio >= 1.5){ score++; signals.wickTop=true; } else signals.wickTop=false;
-      if(ema70DistPct >= 150){ score++; signals.emaDist=true; } else signals.emaDist=false; // 150% = extremely above (tunable)
-      if(lowerHigh){ score++; signals.lowerHigh=true; } else signals.lowerHigh=false;
-      // funding negative is a strong confirming sign but kept separate
-      signals.funding = fundingRate;
+      if(rsi1d !== null && rsi1d >= 88){ score++; signals.rsi1d = true; } // slightly higher for 1D
+if(rsi4h !== null && rsi4h >= 80){ score++; signals.rsi4h=true; }
+if(volSpike >= 1.8){ score++; signals.volSpike=true; } // easier to trigger
+if(wickTopRatio >= 1.2){ score++; signals.wickTop=true; }
+if(ema70DistPct >= 50){ score++; signals.emaDist=true; } // price 50% above ema70
+if(lowerHigh){ score++; signals.lowerHigh=true; }
+// extra: treat negative funding as confirmation
+if(fundingRate < -0.0005){ score++; signals.fundingConfirm = true; }
+signals.funding = fundingRate;
 
       results.push({
         symbol,
