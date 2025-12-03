@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Blowoff Top Detector — Phase, PIPPIN, Multi-TF Accumulation, & Alerts</title>
+<style>
+  :root{
+    --bg:#07101a;
+    --card:#0b1220;
+    --muted:#9fb3cc;
+    --accent:#2dd4bf;
+    --danger:#ff7b7b;
+    --glass: rgba(255,255,255,0.03);
+  }
+  body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:#e6eef8;margin:12px}
+  .card-panel{background:var(--card);border:1px solid #172033;padding:12px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.6);margin-bottom:14px}
+  h1{margin:0;font-size:18px}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
+  label{font-size:13px;color:var(--muted)}
+  input,select{background:#071722;border:1px solid #243241;color:#e6eef8;padding:6px;border-radius:6px}
+  button{background:#1f6feb;border:none;color:white;padding:8px 10px;border-radius:6px;cursor:pointer}
+  button.alt{background:#2b3947}
+  .status{margin-top:8px;color:var(--muted);font-size:13px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .progress{height:8px;background:#05101a;border-radius:4px;margin-top:8px;overflow:hidden;flex:1}
+  .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);width:0%}
+  .countdown{font-weight:700;color:#cfe8ff}
+  .mutedBadge{background:var(--glass);color:var(--muted);padding:4px 8px;border-radius:8px;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px;min-width:720px}
+  th,td{padding:8px 10px;border-bottom:1px dashed #122331;text-align:left;vertical-align:top}
+  th{color:var(--muted);font-size:12px}
+  .green{color:#66f9a1}
+  .red{color:var(--danger)}
+  .small{font-size:12px;color:var(--muted)}
+  .badge{display:inline-block;padding:4px 8px;border-radius:12px;background:#0f2430;color:#bfeee1;font-size:12px}
+  .blink{animation: blinkHighlight 1.8s ease-in-out 3}
+  @keyframes blinkHighlight {0%{box-shadow:0 0 0 rgba(255,80,80,0)}50%{box-shadow:0 0 12px rgba(255,80,80,0.35)}100%{box-shadow:0 0 0 rgba(255,80,80,0)}}
+  /* mobile card UI */
+  #tableView{display:block} #cardView{display:none}
+  @media (max-width:680px){
+    #tableView{display:none} #cardView{display:block}
+    .coinCard{background:var(--card);border:1px solid #172033;padding:12px;border-radius:10px;margin-bottom:10px}
+    .coinRow1{display:flex;justify-content:space-between;align-items:center}
+    .coinSymbol{font-size:16px;font-weight:700}
+    .coinScore{font-size:14px;font-weight:700}
+    .blowBadge{background:#ff4d4d;padding:4px 8px;border-radius:6px;color:white;font-size:12px;font-weight:700}
+    .potBadge{background:#ffd966;padding:4px 8px;border-radius:6px;color:black;font-size:12px;font-weight:700}
+    .accBadge{background:#2dd4bf;padding:4px 8px;border-radius:6px;color:#04221a;font-size:12px;font-weight:700}
+    .sigList{margin-top:8px;font-size:13px;line-height:18px;color:#cfe8ff}
+  }
+  footer.small{margin-top:12px;color:var(--muted);font-size:12px}
+  .phaseTag{display:inline-block;padding:4px 8px;border-radius:8px;font-weight:700;font-size:12px;margin-left:6px}
+  .tfToggle{display:inline-flex;gap:6px;align-items:center;margin-left:8px}
+  .sensitivity{width:160px}
+</style>
+</head>
+<body>
+<div class="card-panel">
+  <h1>Blowoff Top Detector — Multi-TF Accumulation & Conditional Alerts</h1>
+  <div class="small" style="margin-top:6px;color:var(--muted)">
+    New controls: multi-timeframe accumulation detector (15m / 1h / 4h), sensitivity slider, and conditional alert (blowoff + accumulation).
+    Run on a local server to avoid CORS (e.g., <code>python -m http.server</code>).
+  </div>
+
+  <div class="controls">
+    <label>Prefilter (top by 24h) <input id="prefilter" type="number" value="30" min="5" max="60"/></label>
+    <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"/></label>
+    <label>Refresh (sec) <input id="interval" type="number" value="60" min="10" max="3600"/></label>
+    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="8"/></label>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="alt" disabled>Stop</button>
+    <button id="oneShot" class="alt">Run Once</button>
+  </div>
+
+  <div class="controls" style="margin-top:10px">
+    <label style="margin-right:8px">Accumulation TFs:</label>
+    <div class="tfToggle">
+      <label><input type="checkbox" id="tf15" checked> 15m</label>
+      <label><input type="checkbox" id="tf1h" checked style="margin-left:6px"> 1h</label>
+      <label><input type="checkbox" id="tf4h" checked style="margin-left:6px"> 4h</label>
+    </div>
+
+    <label style="margin-left:12px">Sensitivity <span id="sensVal" class="small" style="margin-left:6px">50</span></label>
+    <input id="sensitivity" class="sensitivity" type="range" min="0" max="100" value="50" style="margin-left:8px">
+
+    <label style="margin-left:12px">Alert when:</label>
+    <label style="margin-left:6px"><input type="checkbox" id="condAlert"> Blowoff HIGH + Accum ≥</label>
+    <input id="accumAlertThreshold" type="number" value="50" min="0" max="100" style="width:64px;margin-left:6px">
+  </div>
+
+  <div class="status">
+    <div id="message">Ready.</div>
+    <div class="progress"><i id="bar"></i></div>
+    <div id="countdown" class="countdown">Next scan in: -</div>
+    <div id="safetyStatus" class="mutedBadge">Safety OK</div>
+  </div>
+
+  <div id="tableView"></div>
+  <div id="cardView"></div>
+  <div id="debug" class="small" style="margin-top:8px"></div>
+</div>
+
+<script>
+/* ======================================================
+   Full detector with:
+   - multi-TF accumulation (15m / 1h / 4h)
+   - sensitivity slider to tune accumulation strictness
+   - conditional alert when blowoff high AND accumulation >= threshold
+   ====================================================== */
+
+const API_BASE = 'https://fapi.binance.com';
+const blacklist = ["ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT","AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT","LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT","UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT","BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT","LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT"];
+
+const el = {
+  prefilter: document.getElementById('prefilter'),
+  delay: document.getElementById('delay'),
+  interval: document.getElementById('interval'),
+  threshold: document.getElementById('threshold'),
+  startBtn: document.getElementById('startBtn'),
+  stopBtn: document.getElementById('stopBtn'),
+  oneShot: document.getElementById('oneShot'),
+  message: document.getElementById('message'),
+  bar: document.getElementById('bar'),
+  tableView: document.getElementById('tableView'),
+  cardView: document.getElementById('cardView'),
+  debug: document.getElementById('debug'),
+  safetyStatus: document.getElementById('safetyStatus'),
+  countdown: document.getElementById('countdown'),
+  tf15: document.getElementById('tf15'),
+  tf1h: document.getElementById('tf1h'),
+  tf4h: document.getElementById('tf4h'),
+  sensitivity: document.getElementById('sensitivity'),
+  sensVal: document.getElementById('sensVal'),
+  condAlert: document.getElementById('condAlert'),
+  accumAlertThreshold: document.getElementById('accumAlertThreshold')
+};
+
+let running=false, queue=[], totalTasks=0, doneTasks=0, autoTimer=null, countdownTimer=null;
+let requestsThisWindow=0, windowStart=Date.now(), SAFETY_WINDOW_MS=60000, SAFETY_MAX=900, SAFETY_PAUSE=30;
+let prevBlowoffSet = new Set();
+
+// UTIL
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+function sma(arr,n){ if(!arr||arr.length<n) return null; let s=0; for(let i=arr.length-n;i<arr.length;i++) s+=arr[i]; return s/n; }
+function ema(arr,p){ if(!arr||arr.length===0) return null; const k=2/(p+1); let e=arr[0]; for(let i=1;i<arr.length;i++) e = arr[i]*k + e*(1-k); return e; }
+function rsiFromCloses(closes,period=14){ if(!closes||closes.length<=period) return null; let g=0,l=0; for(let i=closes.length-period;i<closes.length;i++){ const d=closes[i]-closes[i-1]; if(d>0) g+=d; else l+=Math.abs(d);} const ag=g/period, al=l/period; if(al===0) return 100; const rs=ag/al; return 100 - (100/(1+rs)); }
+function pct(a,b){ return b===0?0:((a-b)/b)*100; }
+function stdDev(arr){ if(!arr||arr.length===0) return 0; const mean = arr.reduce((s,x)=>s+x,0)/arr.length; const v = arr.reduce((s,x)=>s+Math.pow(x-mean,2),0)/arr.length; return Math.sqrt(v); }
+function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
+function norm(a){ return Math.sqrt(a.reduce((s,x)=>s+x*x,0)); }
+function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0?0:n/d; }
+
+// SAFE FETCH counting
+async function safeFetch(url){
+  if(!running) throw new Error('Not running');
+  requestsThisWindow++;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+function resetWindow(){ requestsThisWindow=0; windowStart=Date.now(); }
+function checkSafetyAndMaybePause(){
+  const now=Date.now();
+  if(now-windowStart > SAFETY_WINDOW_MS){ resetWindow(); el.safetyStatus.innerText='Safety OK'; return false; }
+  if(requestsThisWindow > SAFETY_MAX){
+    running=false;
+    el.safetyStatus.innerText = `Auto-paused: ${requestsThisWindow} req/min`;
+    el.message.innerText = `Auto-paused ${SAFETY_PAUSE}s to avoid rate limit.`;
+    el.startBtn.disabled=false; el.stopBtn.disabled=true;
+    setTimeout(()=>{ resetWindow(); const cur = Math.max(200, parseInt(el.delay.value,10)||450); el.delay.value = Math.min(2000, Math.round(cur * 1.5)); el.safetyStatus.innerText='Resumed after pause'; el.message.innerText='Resumed'; }, SAFETY_PAUSE*1000);
+    return true;
+  }
+  el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`;
+  return false;
+}
+
+// GET top N by 24h change
+async function getTopN(n){
+  const tickers = await safeFetch(API_BASE + '/fapi/v1/ticker/24hr');
+  const usdt = tickers.filter(t => t.symbol && t.symbol.endsWith('USDT') && !blacklist.includes(t.symbol));
+  usdt.sort((a,b)=> parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+  return usdt.slice(0,n).map(x=>({symbol:x.symbol, last: Number(x.lastPrice), change24: Number(x.priceChangePercent)}));
+}
+
+/* ACCUMULATION DETECTOR (param: period, sensitivity)
+   sensitivity: 0..100, higher -> looser (easier to detect), lower -> stricter
+*/
+function detectAccumulationGeneric(closes, highs, lows, vols, period=30, sensitivity=50){
+  const len = Math.min(period, closes.length);
+  if(len < 10) return {isAccum:false, score:0, reasons:[], confidence:0};
+  const sliceC = closes.slice(-len), sliceH = highs.slice(-len), sliceL = lows.slice(-len), sliceV = vols.slice(-len);
+  const mean = sliceC.reduce((s,x)=>s+x,0)/sliceC.length;
+  const sd = stdDev(sliceC);
+  const relSD = mean? (sd/mean)*100 : 0;
+  const reasons = [];
+  let score = 0;
+
+  // Sensitivity adjustment: map sensitivity (0..100) to thresholds
+  // low sensitivity -> strict: relSD threshold lower, require more up-volume, etc.
+  const relSD_threshold_strict = 2.5; // default strict threshold
+  const relSD_threshold_loose = 6.0;
+  const relSD_threshold = relSD_threshold_strict + (1 - (sensitivity/100)) * (relSD_threshold_loose - relSD_threshold_strict); // higher sens -> looser threshold
+
+  if(relSD <= relSD_threshold){ score += 3; reasons.push(`low volatility ${relSD.toFixed(2)}% ≤ ${relSD_threshold.toFixed(2)}%`); }
+  else if(relSD <= relSD_threshold*1.6){ score += 1; reasons.push(`reduced volatility ${relSD.toFixed(2)}%`); }
+
+  // limited new lower-lows
+  let lowerLowCount=0;
+  for(let i=1;i<sliceL.length;i++) if(sliceL[i] < sliceL[i-1]) lowerLowCount++;
+  const lowerLow_max = 2 + Math.round((100 - sensitivity)/50); // lower sensitivity -> allow more lower-lows
+  if(lowerLowCount <= lowerLow_max){ score += 2; reasons.push(`limited lower-lows (${lowerLowCount} ≤ ${lowerLow_max})`); }
+  else reasons.push(`lower-lows (${lowerLowCount})`);
+
+  // up-bars with above-baseline volume
+  const volBaseline = sma(sliceV, Math.min(8, sliceV.length)) || 0.000001;
+  let upCount = 0, upVolHigher = 0;
+  for(let i=1;i<sliceC.length;i++){
+    if(sliceC[i] > sliceC[i-1]){ upCount++; if(sliceV[i] > volBaseline * (1 + (50 - sensitivity)/200)) upVolHigher++; }
+  }
+  if(upCount >= 3 && upVolHigher >= Math.max(1, Math.round(upCount*0.4))){ score += 3; reasons.push(`buyers on higher-volume up-bars (${upVolHigher}/${upCount})`); }
+  else if(upCount >= 2){ score += 1; reasons.push(`some up bars (${upCount})`); }
+
+  // EMAs flatten/turn up (short EMAs)
+  const e14 = ema(sliceC, Math.min(14, sliceC.length));
+  const e21 = ema(sliceC, Math.min(21, sliceC.length));
+  if(e14 && e21){
+    const slope = e14 - e21;
+    const slopeThreshold = (sensitivity/100) * (e21 * 0.01) ; // looser sens -> easier to satisfy
+    if(slope >= -slopeThreshold){ score += 2; reasons.push('EMAs flat/turning up'); }
+    else if(Math.abs(slope) < (e21*0.002 || 0.0001)){ score += 1; reasons.push('EMAs flattening'); }
+  }
+
+  // RSI stabilizing
+  const rsi = rsiFromCloses(closes, 14);
+  if(rsi && rsi >= 36 - (sensitivity/20)) { score += 1; reasons.push(`RSI stabilizing (${rsi.toFixed(1)})`); }
+
+  // must follow a drop (makes sense for accumulation); looser sensitivity relaxes requirement
+  const peak = Math.max(...sliceC);
+  const latest = sliceC[sliceC.length-1];
+  const dropPct = peak? ((peak - latest)/peak)*100 : 0;
+  const requiredDrop = 8 - Math.round(sensitivity/20); // higher sensitivity -> smaller required drop
+  if(dropPct >= Math.max(4, requiredDrop)){ score += 1; reasons.push(`follows drop ${dropPct.toFixed(1)}% (req ${Math.max(4, requiredDrop)}%)`); }
+
+  // final confidence
+  const maxScore = 12;
+  const confidence = Math.min(99, Math.round((score/maxScore)*100));
+  const isAccum = score >= Math.max(6, Math.round(6 * (0.8 + (50 - sensitivity)/200))); // dynamic threshold: lower sens => need more score
+  return {isAccum, score, reasons, confidence, relSD};
+}
+
+// queue analysis for symbol for multiple TF accumulation checks
+function queueSymbolAnalysis(symbol, results, settings){
+  queue.push(async ()=>{
+    try{
+      // fetch klines for needed TFs: always get 4h, 1h, 15m as needed to allow multi-TF
+      // limit sizes sensibly to avoid too many requests/timeouts
+      const promises = [];
+      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=40`));
+      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1h&limit=60`));
+      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=80`));
+      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=30`)); // duplicate to compute 4h features easily
+      promises.push(safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`));
+      const [k4h, k1h, k15, _k4h2, f] = await Promise.all(promises);
+
+      // normalize arrays
+      const closes4h = k4h.map(k=>Number(k[4])); const highs4h = k4h.map(k=>Number(k[2])); const lows4h = k4h.map(k=>Number(k[3])); const vols4h = k4h.map(k=>Number(k[5]));
+      const closes1h = k1h.map(k=>Number(k[4])); const highs1h = k1h.map(k=>Number(k[2])); const lows1h = k1h.map(k=>Number(k[3])); const vols1h = k1h.map(k=>Number(k[5]));
+      const closes15 = k15.map(k=>Number(k[4])); const highs15 = k15.map(k=>Number(k[2])); const lows15 = k15.map(k=>Number(k[3])); const vols15 = k15.map(k=>Number(k[5]));
+
+      // basic blowoff features using 4h (existing logic)
+      const last4 = k4h[k4h.length-1], prev4 = k4h[k4h.length-2] || last4;
+      const open4 = Number(last4[1]), high4 = Number(last4[2]), low4 = Number(last4[3]), close4 = Number(last4[4]);
+      const body4 = Math.abs(close4 - open4) || 1e-9;
+      const wickTop4 = Math.max(0, high4 - Math.max(open4, close4));
+      const wickRatio4 = wickTop4 / body4;
+      const volMA4 = sma(vols4h, Math.min(10, vols4h.length)) || 1;
+      const volSpike4 = Number((Number(last4[5]) / volMA4).toFixed(2));
+      const ema70_4 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
+      const emaDistPct = ema70_4 ? Number(pct(close4, ema70_4).toFixed(2)) : 0;
+      const rsi4h = rsiFromCloses(closes4h, 14);
+      const rsi1d = rsiFromCloses(closes4h.slice(-9).map((v,i)=>v), 14); // rough stand-in for 1d using 4h closes
+      const lowerHigh = Number(high4) < Number(prev4[2]);
+      const fundingRate = (f && f.length) ? Number(f[0].fundingRate) : 0;
+
+      // blowoff scoring
+      let score=0;
+      const signals={};
+      if(rsi1d !== null && rsi1d >= 88){ score++; signals.rsi1d=true; } else signals.rsi1d=false;
+      if(rsi4h !== null && rsi4h >= 80){ score++; signals.rsi4h=true; } else signals.rsi4h=false;
+      if(volSpike4 >= 1.8){ score++; signals.volSpike=true; } else signals.volSpike=false;
+      if(wickRatio4 >= 1.2){ score++; signals.wickTop=true; } else signals.wickTop=false;
+      if(emaDistPct >= 50){ score++; signals.emaDist=true; } else signals.emaDist=false;
+      if(lowerHigh){ score++; signals.lowerHigh=true; } else signals.lowerHigh=false;
+      if(typeof fundingRate === 'number' && fundingRate < -0.0005){ score++; signals.fundingConfirm=true; } else signals.fundingConfirm=false;
+      signals.funding = fundingRate;
+
+      // multi-TF accumulation checks based on user toggles and sensitivity
+      const sens = parseInt(el.sensitivity.value,10) || 50;
+      const tfChecks = [];
+      if(el.tf15.checked){
+        const acc15 = detectAccumulationGeneric(closes15, highs15, lows15, vols15, 30, sens);
+        tfChecks.push({tf:'15m', result:acc15});
+      }
+      if(el.tf1h.checked){
+        const acc1h = detectAccumulationGeneric(closes1h, highs1h, lows1h, vols1h, 30, sens);
+        tfChecks.push({tf:'1h', result:acc1h});
+      }
+      if(el.tf4h.checked){
+        const acc4h = detectAccumulationGeneric(closes4h, highs4h, lows4h, vols4h, 20, sens);
+        tfChecks.push({tf:'4h', result:acc4h});
+      }
+
+      // combine confidences: simple weighted average where longer TFs weigh more
+      let combinedConfidence = 0;
+      if(tfChecks.length){
+        let weightSum = 0;
+        tfChecks.forEach(t=>{
+          const w = (t.tf === '4h') ? 1.2 : (t.tf === '1h' ? 1.0 : 0.8);
+          combinedConfidence += (t.result.confidence || 0) * w;
+          weightSum += w;
+        });
+        combinedConfidence = Math.round(combinedConfidence / weightSum);
+      }
+
+      // package result
+      results.push({
+        symbol,
+        score,
+        signals,
+        rsi1d, rsi4h,
+        volSpike4, volSpike15: (sma(vols15, Math.min(10, vols15.length))? Number((vols15[vols15.length-1] / (sma(vols15, Math.min(10, vols15.length))||1)).toFixed(2)) : 1),
+        wickRatio4,
+        ema70DistPct: emaDistPct,
+        lowerHigh,
+        fundingRate,
+        closeNow: close4,
+        k4h, k1h, k15m: k15,
+        accumChecks: tfChecks,
+        accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) } // dynamic threshold: lower sensitivity => require higher combined conf
+      });
+
+    } catch(err){
+      el.debug.innerText += `\nError ${symbol}: ${err.message}`;
+    }
+  });
+}
+
+// phase detection (uses accumCombined)
+function detectPhaseForSymbol(item){
+  try{
+    const k4 = item.k4h || [], k15 = item.k15m || [];
+    const rsi4h = item.rsi4h || 0;
+    const vol = item.volSpike4 || 1;
+    const wick = item.wickRatio4 || 0;
+    const reasons = [];
+    let score = 0;
+
+    // count lower highs on 4h
+    const highs = k4.slice(-8).map(k=>Number(k[2]));
+    let lowerHCount=0; for(let i=1;i<highs.length;i++) if(highs[i]<highs[i-1]) lowerHCount++;
+
+    // drop from local 4h high
+    const highest4h = k4.length ? Math.max(...k4.map(k=>Number(k[2]))) : (item.closeNow || 0);
+    const lastClose = item.closeNow || 0;
+    const dropPctFromPeak = highest4h ? Math.abs((lastClose - highest4h)/highest4h)*100 : 0;
+
+    // consider accumulation first
+    if(item.accumCombined && item.accumCombined.isAccum){
+      reasons.push(`Accumulation seen (combined ${item.accumCombined.confidence}%)`);
+      score += 4;
+    }
+
+    // other phases
+    if(wick >= 1.8 && vol >= 3 && rsi4h >= 85){ score += 3; reasons.push('Climax candle'); }
+    const recentHigh15 = k15.length ? Math.max(...k15.map(k=>Number(k[2]))) : 0;
+    const recentLow15 = k15.length ? Math.min(...k15.map(k=>Number(k[3]))) : 0;
+    const range15 = recentHigh15 - recentLow15;
+    if(range15 > 0 && (Math.abs(range15) / (recentLow15 || 1)) <= 0.12 && rsi4h >= 60){ score += 2; reasons.push('Distribution'); }
+    if(lowerHCount >= 3){ score += 2; reasons.push('Breakdown: lower highs'); }
+    if(dropPctFromPeak >= 20 && vol >= 2.5){ score += 3; reasons.push('Capitulation A'); }
+    if(k15.length > 20){
+      const closes15 = k15.map(k=>Number(k[4]));
+      const recentSlice = closes15.slice(-20);
+      const localMin = Math.min(...recentSlice);
+      const afterMin = recentSlice.slice(recentSlice.indexOf(localMin)+1);
+      if(afterMin.length){
+        const bouncePct = ((afterMin[afterMin.length-1] - localMin)/localMin)*100;
+        if(bouncePct >= 8 && bouncePct <= 60){ score += 1; reasons.push(`Dead-cat bounce ${bouncePct.toFixed(1)}%`); }
+      }
+    }
+
+    // determine phase candidates (incl accumulation)
+    const candidates = [];
+    if(item.accumCombined && item.accumCombined.isAccum) candidates.push({phase:'Accumulation / Re-accumulation', priority:9});
+    if(score >= 9 && reasons.some(r=>r.includes('Final capitulation'))) candidates.push({phase:'Final capitulation wick', priority:8});
+    if(score >= 7 && reasons.some(r=>r.includes('Capitulation'))) candidates.push({phase:'Capitulation A', priority:7});
+    if(score >= 5 && reasons.some(r=>r.includes('Breakdown'))) candidates.push({phase:'Breakdown', priority:6});
+    if(score >= 5 && reasons.some(r=>r.includes('Distribution'))) candidates.push({phase:'Distribution / sideways top', priority:5});
+    if(score >= 4 && reasons.some(r=>r.includes('Climax'))) candidates.push({phase:'Climax candle (blowoff wick)', priority:5});
+    if(score >= 3 && reasons.some(r=>r.includes('Acceleration'))) candidates.push({phase:'Acceleration (vertical move)', priority:4});
+    if(reasons.some(r=>r.includes('Dead-cat'))) candidates.push({phase:'Dead-cat bounce', priority:3});
+    if(candidates.length === 0){
+      if(dropPctFromPeak >= 25 && vol >= 1.8) candidates.push({phase:'Capitulation A', priority:7});
+      else if(wick >= 1.6 && rsi4h >= 85) candidates.push({phase:'Climax candle (blowoff wick)', priority:6});
+      else if(item.accumCombined && item.accumCombined.confidence >= 55) candidates.push({phase:'Accumulation / Re-accumulation',priority:5});
+      else if(range15 <= (Math.max(1,Math.abs(recentLow15||1))*0.08) && rsi4h >= 60) candidates.push({phase:'Distribution / sideways top',priority:5});
+      else if(lowerHCount>=2) candidates.push({phase:'Breakdown',priority:6});
+      else candidates.push({phase:'Normal/Trending',priority:1});
+    }
+    candidates.sort((a,b)=> b.priority - a.priority);
+    const chosen = candidates[0].phase || 'Unknown';
+    const conf = Math.min(98, Math.round((score/14)*100) + (item.accumCombined && item.accumCombined.confidence ? Math.round(item.accumCombined.confidence*0.2) : 0));
+    return {phase: chosen, confidence: conf, reasons: reasons, dropPctFromPeak: Math.round(dropPctFromPeak*100)/100};
+  } catch(e){
+    return {phase:'Unknown', confidence:0, reasons:[], dropPctFromPeak:0};
+  }
+}
+
+// feature vector includes accum confidence
+function makeFeatureVector(item){
+  const rsi4h = Math.min(100, item.rsi4h || 0)/100;
+  const vol = Math.min(10, item.volSpike4 || 1)/5;
+  const wick = Math.min(10, item.wickRatio4 || 0)/5;
+  const ema = Math.min(500, Math.abs(item.ema70DistPct || 0))/200;
+  const funding = (item.fundingRate || 0) * 1000;
+  const slope = Math.min(4, Math.max(0, (item.slope15 || 1)/1.5))/2;
+  const drop = Math.min(100, item.dropPctFromPeak || 0)/100;
+  const accumConf = item.accumCombined ? (item.accumCombined.confidence || 0)/100 : 0;
+  return [rsi4h, vol, wick, ema, funding, slope, drop, accumConf];
+}
+
+function explainBlowoff(item){
+  const p = item;
+  let pts=0; const reasons=[];
+  if(p.rsi1d !== null && p.rsi1d >= 88){ pts+=2; reasons.push(`1D RSI ${p.rsi1d.toFixed(1)}`); } else if(p.rsi1d !== null && p.rsi1d >= 80){ pts+=1; reasons.push(`1D RSI ${p.rsi1d.toFixed(1)}`); }
+  if(p.rsi4h !== null && p.rsi4h >= 85){ pts+=1; reasons.push(`4H RSI ${p.rsi4h.toFixed(1)}`); }
+  if(p.volSpike4 >= 3){ pts+=2; reasons.push(`Vol climax ×${p.volSpike4}`);} else if(p.volSpike4 >= 1.8){ pts+=1; reasons.push(`Vol spike ×${p.volSpike4}`);}
+  if(p.wickRatio4 >= 2.0){ pts+=2; reasons.push(`Upper wick ratio ${p.wickRatio4.toFixed(2)}`);} else if(p.wickRatio4 >= 1.2){ pts+=1; reasons.push(`Upper wick ${p.wickRatio4.toFixed(2)}`);}
+  if(p.ema70DistPct >= 150){ pts+=2; reasons.push(`EMA stretch ${p.ema70DistPct}%`);} else if(p.ema70DistPct >= 50){ pts+=1; reasons.push(`EMA stretch ${p.ema70DistPct}%`);}
+  if(typeof p.fundingRate === 'number'){ if(p.fundingRate < -0.001){ pts+=2; reasons.push(`Funding strongly negative ${(p.fundingRate*100).toFixed(3)}%`);} else if(p.fundingRate < -0.0005){ pts+=1; reasons.push(`Funding negative ${(p.fundingRate*100).toFixed(3)}%`);} }
+  if(p.lowerHigh){ pts+=1; reasons.push('Lower high'); }
+  if(typeof p.score === 'number'){ if(p.score >= 6) pts+=2; else if(p.score >= 4) pts+=1; }
+  let label='None', color='#9fb3cc', prob=5;
+  if(pts >= 10){ label='Extreme'; color='#e74c3c'; prob=92; } else if(pts >= 7){ label='High'; color='#ff6b43'; prob=78; } else if(pts >= 4){ label='Medium'; color='#ffd966'; prob=55; } else if(pts >= 2){ label='Low'; color='#7bd389'; prob=25; }
+  const topReasons = reasons.slice(0,4);
+  const explanation = topReasons.length ? `${topReasons.join('; ')}. Estimated reversal probability: ${prob}%.` : `No clear exhaustion signals detected.`;
+  return {pts, label, color, prob, explanation, reasons: topReasons};
+}
+
+/* RENDERING */
+function renderTable(results){
+  results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
+  const threshold = parseInt(el.threshold.value,10)||4;
+  const rows = results.map(r=>{
+    const expl = explainBlowoff(r);
+    const phaseInfo = r.phase || {phase:'Unknown', confidence:0};
+    const accum = r.accumCombined || {confidence:0, isAccum:false};
+    let statusHtml = `<span class="small">normal</span>`; let bg='background:rgba(255,255,255,0.02)'; let cls='';
+    if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
+    else if(r.score === threshold-1){ statusHtml = `<span style="background:#ffd966;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;color:black;">⚠ POTENTIAL</span>`; bg='background:rgba(255,200,0,0.10)'; }
+    const simPct = r.similarity ? Math.round(r.similarity*100) : 0;
+    const accumHtml = accum.isAccum ? `<div class="small" style="color:#2dd4bf">Accum: ${accum.confidence}%</div>` : `<div class="small" style="color:var(--muted)">Accum: ${accum.confidence}%</div>`;
+    let phaseColor = '#9fb3cc';
+    if(phaseInfo.phase.includes('Capitulation')) phaseColor='#e74c3c';
+    else if(phaseInfo.phase.includes('Climax')||phaseInfo.phase.includes('Acceleration')) phaseColor='#ff6b43';
+    else if(phaseInfo.phase.includes('Distribution')) phaseColor='#ffd966';
+    else if(phaseInfo.phase.includes('Dead-cat')) phaseColor='#7bd389';
+
+    // show which TFs flagged accumulation
+    const tfList = (r.accumChecks || []).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ');
+
+    return `
+      <tr class="${cls}" style="${bg}">
+        <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span></td>
+        <td>${r.closeNow}</td>
+        <td class="${(r.rsi4h||0)>=80?'green':''}">${r.rsi4h? r.rsi4h.toFixed(1):'n/a'}</td>
+        <td class="small">vol×${r.volSpike4} wick:${(r.wickRatio4||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
+        <td class="small">${(r.fundingRate||0).toFixed(6)}<br>PIPPIN sim: <strong>${simPct}%</strong><br>${accumHtml}<div class="small" style="color:#9fb3cc">TFs: ${tfList || '—'}</div></td>
+      </tr>
+      <tr style="background:rgba(255,255,255,0.01)"><td colspan="5" style="padding:8px 12px;color:${expl.color}">
+        <strong>${expl.label}</strong> — ${expl.explanation}
+        ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
+        ${r.accumCombined && r.accumCombined.isAccum ? `<div style="margin-top:6px;color:#cfe8ff">Accumulation combined: ${r.accumCombined.confidence}% • reasons: ${ (r.accumChecks||[]).map(t => `${t.tf}:${t.result.reasons.join(',')}`).join(' || ') }</div>` : ''}
+      </td></tr>
+    `;
+  }).join('');
+  el.tableView.innerHTML = `<div class="card-panel"><table><thead><tr><th>Symbol / Status</th><th>Last</th><th>RSI4H</th><th>Signals</th><th>Funding / PIPPIN / Accum</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  setTimeout(()=>{ const nodes=document.querySelectorAll('tr.blink'); nodes.forEach(n=>n.classList.remove('blink')); }, 3000);
+}
+
+function renderCards(results){
+  results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)));
+  let html='';
+  results.forEach(r=>{
+    const expl = explainBlowoff(r); const phase = r.phase || {phase:'Unknown', confidence:0}; const accum = r.accumCombined || {confidence:0, isAccum:false};
+    const simPct = Math.round((r.similarity||0)*100);
+    let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
+    if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
+    const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
+    html += `
+      <div class="coinCard ${bc}">
+        <div class="coinRow1"><div class="coinSymbol">${r.symbol}</div><div class="coinScore">${r.score}/8</div></div>
+        <div style="margin-top:6px">${badge} ${accBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span></div>
+        <div class="sigList">
+          Last: ${r.closeNow}<br>
+          RSI4H: ${r.rsi4h? r.rsi4h.toFixed(1):'n/a'} • Vol×${r.volSpike4} • Wick:${(r.wickRatio4||0).toFixed(2)}<br>
+          EMA∆: ${r.ema70DistPct}% • Funding: ${(r.fundingRate||0).toFixed(6)}<br>
+          <small style="color:#cfe8ff">PIPPIN similarity: <strong>${simPct}%</strong></small>
+        </div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.03);">
+          <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% reversal chance</div>
+          <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
+          ${phase.reasons && phase.reasons.length ? `<div style="color:#cfe8ff;margin-top:6px">Phase reasons:<br>• ${phase.reasons.join('<br>• ')}</div>` : ''}
+          ${accum.isAccum ? `<div style="color:#cfe8ff;margin-top:6px">Accumulation combined: ${accum.confidence}% • TFs: ${(r.accumChecks||[]).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ')}</div>` : ''}
+        </div>
+      </div>
+    `;
+  });
+  el.cardView.innerHTML = `<div class="card-panel">${html}</div>`;
+  setTimeout(()=>{ const nodes=document.querySelectorAll('.coinCard.blink'); nodes.forEach(n=>n.classList.remove('blink')); }, 3000);
+}
+
+function updateProgress(){ const pct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0; el.bar.style.width = pct + '%'; el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`; el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`; }
+function startCountdown(sec){ if(countdownTimer) clearInterval(countdownTimer); const end = Date.now() + sec*1000; countdownTimer = setInterval(()=>{ const left = Math.max(0, Math.round((end - Date.now())/1000)); el.countdown.innerText = `Next scan in: ${left}s`; if(left <= 0){ clearInterval(countdownTimer); el.countdown.innerText='Running...'; } }, 500); }
+
+/* MAIN RUN */
+async function runScan(once=false){
+  try{
+    running=true; el.startBtn.disabled=true; el.stopBtn.disabled=false; el.debug.innerText=''; resetWindow(); el.message.innerText='Fetching top symbols...';
+    const N = Math.max(5, Math.min(60, parseInt(el.prefilter.value,10) || 30));
+    const delayMs = Math.max(50, Math.min(2000, parseInt(el.delay.value,10) || 450));
+    const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 60));
+
+    const top = await getTopN(N);
+    queue = []; totalTasks = top.length; doneTasks = 0; updateProgress(); const results = [];
+
+    // prepare analysis jobs
+    top.forEach(t => queueSymbolAnalysis(t.symbol, results));
+
+    if(!once) startCountdown(intervalSec);
+
+    while(queue.length && running){
+      if(checkSafetyAndMaybePause()) break;
+      const job = queue.shift();
+      try{ await job(); } catch(e){ el.debug.innerText += `\nJob error: ${e.message}`; }
+      doneTasks++; updateProgress();
+      await delay(delayMs);
+    }
+
+    // post-process: detect phase and pippin similarity
+    results.forEach(r => { r.phase = detectPhaseForSymbol(r); r.dropPctFromPeak = r.phase.dropPctFromPeak || 0; });
+
+    // pippin vector: try to use PIPPINUSDT if present else attempt a lightweight fetch
+    let pippinVector = null;
+    const pippinEntry = results.find(x => x.symbol === 'PIPPINUSDT');
+    if(pippinEntry) pippinVector = makeFeatureVector(pippinEntry);
+    else {
+      // best-effort fetch (may be blocked by CORS; it's optional)
+      try{
+        const k4 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=4h&limit=30`);
+        const k15 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=15m&limit=40`);
+        const closes4 = k4.map(k=>Number(k[4])); const last4 = k4[k4.length-1];
+        const open4=Number(last4[1]), high4=Number(last4[2]), low4=Number(last4[3]), close4=Number(last4[4]);
+        const body4 = Math.abs(close4-open4)||1e-9;
+        const wick4 = Math.max(0, high4 - Math.max(open4,close4))/body4;
+        const volMA4 = sma(k4.map(k=>Number(k[5])), Math.min(10,k4.length))||1;
+        const volSpike4 = Number((Number(last4[5]) / volMA4).toFixed(2));
+        const ema70 = ema(closes4,70)||ema(closes4,Math.min(21,closes4.length));
+        const emaDist = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
+        const rsi4 = rsiFromCloses(k4.map(k=>Number(k[4])), 14);
+        const accumulation = detectAccumulationGeneric(k15.map(k=>Number(k[4])), k15.map(k=>Number(k[2])), k15.map(k=>Number(k[3])), k15.map(k=>Number(k[5])), 30, parseInt(el.sensitivity.value,10)||50);
+        pippinVector = makeFeatureVector({rsi4h:rsi4, volSpike4, wickRatio4:wick4, ema70DistPct:emaDist, fundingRate:0, slope15:1, dropPctFromPeak:0, accumCombined:{confidence:accumulation.confidence, isAccum:accumulation.isAccum}});
+      } catch(e){}
+    }
+
+    if(pippinVector){
+      results.forEach(r => { r.similarity = cosineSim(makeFeatureVector(r), pippinVector); });
+    } else results.forEach(r => r.similarity = 0);
+
+    prevBlowoffSet = new Set(results.filter(r=> r.score >= (parseInt(el.threshold.value,10)||4)).map(r=>r.symbol));
+
+    if(window.innerWidth >= 680) renderTable(results); else renderCards(results);
+
+    // CONDITIONAL ALERT: only when condAlert enabled and blowoff HIGH and accumCombined.confidence >= threshold
+    const condEnabled = el.condAlert.checked;
+    const accumThreshold = Math.max(0, Math.min(100, parseInt(el.accumAlertThreshold.value,10) || 50));
+    const blowoffThreshold = parseInt(el.threshold.value,10) || 4;
+    const flagged = results.filter(r => r.score >= blowoffThreshold);
+    const flaggedCond = flagged.filter(r => r.accumCombined && r.accumCombined.confidence >= accumThreshold);
+
+    if(condEnabled && flaggedCond.length){
+      try{ const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.volume=0.85; audio.play().catch(()=>{}); }catch(e){}
+      if(Notification && Notification.permission === 'granted') new Notification('Blowoff+Accum Alert', { body: flaggedCond.map(x => `${x.symbol} acc:${x.accumCombined.confidence}%`).slice(0,6).join(', ') });
+      else if(Notification && Notification.permission !== 'denied') Notification.requestPermission();
+    } else if(!condEnabled && flagged.length){
+      try{ const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.volume=0.7; audio.play().catch(()=>{}); }catch(e){}
+      if(Notification && Notification.permission === 'granted') new Notification('Blowoff Detected', { body: flagged.map(f=>f.symbol).slice(0,6).join(', ') });
+      else if(Notification && Notification.permission !== 'denied') Notification.requestPermission();
+    }
+
+    // schedule next
+    if(!once){
+      if(requestsThisWindow > SAFETY_MAX){ el.debug.innerText += '\nAuto-paused due to safety'; }
+      else { if(autoTimer) clearTimeout(autoTimer); autoTimer = setTimeout(()=>{ if(requestsThisWindow <= SAFETY_MAX) runScan(false); }, intervalSec * 1000); startCountdown(intervalSec); }
+    }
+
+    running=false; el.startBtn.disabled=false; el.stopBtn.disabled=true;
+  } catch(e){
+    el.debug.innerText += `\nRun error: ${e.message}`;
+    running=false; el.startBtn.disabled=false; el.stopBtn.disabled=true;
+  }
+}
+
+/* UI events */
+el.startBtn.addEventListener('click', ()=>{ if(running) return; prevBlowoffSet = new Set(); runScan(false); });
+el.stopBtn.addEventListener('click', ()=>{ running=false; queue=[]; el.startBtn.disabled=false; el.stopBtn.disabled=true; if(autoTimer) clearTimeout(autoTimer); if(countdownTimer) clearInterval(countdownTimer); el.countdown.innerText='Next scan in: -'; el.message.innerText='Stopped.'; });
+el.oneShot.addEventListener('click', ()=>{ if(running) return; runScan(true); });
+el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensitivity.value; });
+if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}); } catch(e){} }
+(async function ping(){ try{ await fetch(API_BASE + '/fapi/v1/ping'); } catch(e){ console.warn('ping failed', e); } })();
+
+</script>
+
+<footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts added. Tune the sensitivity slider and TF toggles for your timeframe and reduce false signals. Run from a local server to avoid CORS.</footer>
+</body>
+</html>
