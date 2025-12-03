@@ -50,7 +50,7 @@
     <label>Prefilter (top by 24h) <input id="prefilter" type="number" value="30" min="5" max="100"/></label>
     <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"/></label>
     <label>Auto update (sec) <input id="interval" type="number" value="60" min="10" max="3600"/></label>
-    <label>Score threshold <input id="threshold" type="number" value="3" min="1" max="6"/></label>
+    <label>Score threshold <input id="threshold" type="number" value="4" min="1" max="6"/></label>
     <button id="startBtn">Start</button>
     <button id="stopBtn" class="alt" disabled>Stop</button>
     <button id="oneShot" class="alt">Run Once</button>
@@ -277,16 +277,37 @@ function queueSymbolAnalysis(symbol, results){
       // slope proxy: closeNow / close 3 bars ago
       const ratioSlope = closes4h.length>3 ? closeNow / closes4h[closes4h.length-4] : 1;
 
-      // Score rules (defaults)
-      let score = 0;
-      const signals = {};
-      if(rsi1d !== null && rsi1d >= 85){ score++; signals.rsi1d = true; } else signals.rsi1d=false;
-      if(rsi4h !== null && rsi4h >= 80){ score++; signals.rsi4h=true; } else signals.rsi4h=false;
-      if(volSpike >= 2.0){ score++; signals.volSpike=true; } else signals.volSpike=false;
-      if(wickTopRatio >= 1.5){ score++; signals.wickTop=true; } else signals.wickTop=false;
-      if(ema70DistPct >= 150){ score++; signals.emaDist=true; } else signals.emaDist=false;
-      if(lowerHigh){ score++; signals.lowerHigh=true; } else signals.lowerHigh=false;
-      signals.funding = fundingRate;
+      // Score rules (tuned thresholds)
+let score = 0;
+const signals = {};
+if (rsi1d !== null && rsi1d >= 88) { score++; signals.rsi1d = true; } // stricter 1D
+else signals.rsi1d = false;
+
+if (rsi4h !== null && rsi4h >= 80) { score++; signals.rsi4h = true; }
+else signals.rsi4h = false;
+
+if (volSpike >= 1.8) { score++; signals.volSpike = true; } // easier to trigger than 2.0
+else signals.volSpike = false;
+
+if (wickTopRatio >= 1.2) { score++; signals.wickTop = true; } // more sensitive wick detection
+else signals.wickTop = false;
+
+if (ema70DistPct >= 50) { score++; signals.emaDist = true; } // price 50% above EMA70 (tunable)
+else signals.emaDist = false;
+
+if (lowerHigh) { score++; signals.lowerHigh = true; }
+else signals.lowerHigh = false;
+
+// Extra: treat meaningful negative funding as confirmation
+// fundingRate is decimal (e.g. -0.0005 = -0.05%)
+if (typeof fundingRate === 'number' && fundingRate < -0.0005) {
+  score++;
+  signals.fundingConfirm = true;
+} else {
+  signals.fundingConfirm = false;
+}
+
+signals.funding = fundingRate;
 
       results.push({
         symbol,
