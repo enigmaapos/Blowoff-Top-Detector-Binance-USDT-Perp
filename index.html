@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Blowoff Top Detector — Hybrid AI Mode + Phase Detector</title>
+<style>
+  :root{
+    --bg:#07101a;
+    --card:#0b1220;
+    --muted:#9fb3cc;
+    --accent:#2dd4bf;
+    --danger:#ff7b7b;
+  }
+  body{
+    font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+    background:var(--bg);
+    color:#e6eef8;
+    margin:16px;
+  }
+  .card-panel{
+    background:var(--card);
+    border:1px solid #172033;
+    padding:14px;
+    border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,.6);
+    margin-bottom:16px;
+  }
+  h1{margin:0;font-size:18px}
+  .controls{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;align-items:center}
+  label{font-size:13px;color:var(--muted)}
+  input, select{background:#071722;border:1px solid #243241;color:#e6eef8;padding:6px;border-radius:6px}
+  button{background:#1f6feb;border:none;color:white;padding:8px 10px;border-radius:6px;cursor:pointer}
+  button.alt{ background:#2b3947 }
+  .status{margin-top:8px;color:var(--muted);font-size:13px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .progress{height:8px;background:#05101a;border-radius:4px;margin-top:8px;overflow:hidden;flex:1}
+  .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);width:0%}
+  .countdown{font-weight:700;color:#cfe8ff}
+  .mutedBadge{background:rgba(255,255,255,0.03);color:var(--muted);padding:4px 8px;border-radius:8px;font-size:12px}
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px;min-width:700px}
+  th, td{padding:8px 10px;border-bottom:1px dashed #122331;text-align:left}
+  th{color:var(--muted);font-size:12px}
+  .green{ color:#66f9a1 }
+  .red{ color:var(--danger) }
+  .small{ font-size:12px;color:var(--muted) }
+  .blink{ animation: blinkHighlight 1.8s ease-in-out 3; }
+  @keyframes blinkHighlight {
+    0% { box-shadow:0 0 0px rgba(255,80,80,0.0); }
+    50% { box-shadow:0 0 12px rgba(255,80,80,0.35); }
+    100% { box-shadow:0 0 0px rgba(255,80,80,0.0); }
+  }
+  /* MOBILE CARD UI */
+  @media (max-width:680px){
+    #tableView{ display:none }
+    #cardView{ display:block }
+    .coinCard{ background:var(--card); border:1px solid #172033; padding:12px; border-radius:10px; margin-bottom:12px; }
+    .coinRow1{ display:flex; justify-content:space-between; align-items:center; }
+    .coinSymbol{ font-size:16px; font-weight:700; }
+    .coinScore{ font-size:14px; font-weight:700; }
+    .blowBadge{ background:#ff4d4d; padding:4px 8px; border-radius:6px; color:white; font-size:12px; font-weight:700; }
+    .potBadge{ background:#ffd966; padding:4px 8px; border-radius:6px; color:black; font-size:12px; font-weight:700; }
+    .sigList{ margin-top:8px; font-size:12px; line-height:18px; color:#cce3ff; }
+  }
+  /* DESKTOP: show table, hide cards */
+  #tableView{ display:block } #cardView{ display:none }
+  footer{margin-top:12px;color:var(--muted);font-size:12px}
+  .phaseBadge{display:inline-block;padding:4px 8px;border-radius:8px;font-weight:700;font-size:12px}
+</style>
+</head>
+<body>
+
+<div class="card-panel">
+  <h1>Blowoff Top Detector — Hybrid AI Mode + Phase Detector</h1>
+  <div class="small" style="margin-top:6px;color:var(--muted)">
+    Auto-scans top N Binance Futures coins for blowoff-top behavior and phases (Acceleration → Final Capitulation).  
+    Hybrid UI: Desktop = Table • Mobile = Card View.  
+    Includes phase labels, rule-based AI explanations, alerts & auto-pause safety.
+  </div>
+
+  <div class="controls">
+    <label>Prefilter <input id="prefilter" type="number" value="30" min="5" max="100"></label>
+    <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"></label>
+    <label>Refresh (sec) <input id="interval" type="number" value="60" min="10" max="3600"></label>
+    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="6"></label>
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" class="alt" disabled>Stop</button>
+    <button id="oneShot" class="alt">Run Once</button>
+  </div>
+
+  <div class="status">
+    <div id="message">Ready.</div>
+    <div class="progress"><i id="bar"></i></div>
+    <div id="countdown" class="countdown">Next scan in: -</div>
+    <div id="safetyStatus" class="mutedBadge">Safety OK</div>
+  </div>
+
+  <div id="tableView"></div>
+  <div id="cardView"></div>
+
+  <div id="debug" class="small" style="margin-top:10px"></div>
+</div>
+
+<script>
+/* ============================================================
+   JavaScript scanning + phase detection engine
+   Base derived from prior hybrid file. See original file reference. 1
+   ============================================================ */
+
+const API_BASE = "https://fapi.binance.com";
+
+const blacklist = [
+  "ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT",
+  "AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT",
+  "LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT",
+  "UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT",
+  "BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT",
+  "LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT"
+];
+
+const el = {
+  prefilter: document.getElementById("prefilter"),
+  delay: document.getElementById("delay"),
+  interval: document.getElementById("interval"),
+  threshold: document.getElementById("threshold"),
+  startBtn: document.getElementById("startBtn"),
+  stopBtn: document.getElementById("stopBtn"),
+  oneShot: document.getElementById("oneShot"),
+  message: document.getElementById("message"),
+  bar: document.getElementById("bar"),
+  tableView: document.getElementById("tableView"),
+  cardView: document.getElementById("cardView"),
+  debug: document.getElementById("debug"),
+  safetyStatus: document.getElementById("safetyStatus"),
+  countdown: document.getElementById("countdown")
+};
+
+let running=false, queue=[], totalTasks=0, doneTasks=0, autoTimer=null, countdownTimer=null;
+let requestsThisWindow=0, windowStart=Date.now();
+const SAFETY_WINDOW=60000, SAFETY_MAX=900, SAFETY_PAUSE=30;
+let prevBlow = new Set();
+
+// ---- helpers ----
+function sma(arr,n){ if(!arr||arr.length<n) return null; let s=0; for(let i=arr.length-n;i<arr.length;i++) s+=arr[i]; return s/n; }
+function ema(arr,period){ if(!arr||arr.length===0) return null; const k=2/(period+1); let e=arr[0]; for(let i=1;i<arr.length;i++) e=arr[i]*k + e*(1-k); return e; }
+function rsiFromCloses(closes,period=14){
+  if(!closes||closes.length<=period) return null;
+  let gains=0,losses=0;
+  for(let i=closes.length-period;i<closes.length;i++){ const d=closes[i]-closes[i-1]; if(d>0) gains+=d; else losses+=Math.abs(d); }
+  const avgG=gains/period, avgL=losses/period; if(avgL===0) return 100; const rs=avgG/avgL; return 100-(100/(1+rs));
+}
+function pct(a,b){ return b===0?0:((a-b)/b)*100; }
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ---- safe fetch (counts) ----
+async function safeFetch(url){
+  if(!running) throw new Error("Not running");
+  requestsThisWindow++;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  return res.json();
+}
+
+function resetWindow(){ requestsThisWindow=0; windowStart=Date.now(); }
+function safetyCheck(){
+  const now=Date.now();
+  if(now-windowStart>SAFETY_WINDOW){ resetWindow(); el.safetyStatus.innerText='Safety OK'; return false; }
+  if(requestsThisWindow>SAFETY_MAX){
+    running=false;
+    el.safetyStatus.innerText = `Auto-paused (req ${requestsThisWindow})`;
+    el.message.innerText = `Paused ${SAFETY_PAUSE}s to avoid rate limit.`;
+    el.stopBtn.disabled=true; el.startBtn.disabled=false;
+    setTimeout(()=>{ el.safetyStatus.innerText='Resuming'; const cur=Math.max(200,parseInt(el.delay.value,10)||450); el.delay.value=Math.min(2000,Math.round(cur*1.5)); resetWindow(); }, SAFETY_PAUSE*1000);
+    return true;
+  }
+  el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`;
+  return false;
+}
+
+// ---- queue processor ----
+async function processQueue(){
+  const d=Math.max(50,Math.min(2000,parseInt(el.delay.value,10)||450));
+  while(queue.length && running){
+    if(safetyCheck()) break;
+    const job = queue.shift();
+    try{ await job(); } catch(e){ el.debug.innerText += `\nJob error: ${e.message}`; }
+    doneTasks++; updateProgress();
+    await delay(d);
+  }
+  running=false;
+  el.startBtn.disabled=false;
+  el.stopBtn.disabled=true;
+  el.message.innerText = 'Scan complete.';
+}
+
+// ---- top N by 24h change ----
+async function getTopN(n){
+  const tick = await safeFetch(API_BASE + '/fapi/v1/ticker/24hr');
+  const list = tick.filter(t=>t.symbol && t.symbol.endsWith('USDT') && !blacklist.includes(t.symbol));
+  list.sort((a,b)=> parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+  return list.slice(0,n).map(x=>({symbol:x.symbol, last: Number(x.lastPrice), change24: Number(x.priceChangePercent)}));
+}
+
+// ---- phase detection logic ----
+/*
+Phases:
+1 Acceleration (vertical move) — high slope, rising vols
+2 Climax candle — large wick top + extreme volume
+3 Distribution — sideways top after climax (lower volatility, sideways range)
+4 Breakdown — lower highs and price crosses below short EMAs
+5 Capitulation A — fast steep drop with high volume
+6 Dead-cat bounce — quick recovery after capitulation, but weak volume
+7 Final capitulation wick — final large wick after bounce then lower low
+This function returns {phaseId, phaseLabel, explanation, confidencePct}
+*/
+function detectPhaseFromCandles(k15, k4h){
+  // k arrays: array of klines where each k = [ openTime, open, high, low, close, vol, ... ]
+  // We'll compute simple heuristics using 15m and 4h data:
+  const result = { phaseId:0, phaseLabel:'Unknown', explanation:'Insufficient data', confidence:10 };
+
+  if(!k4h || k4h.length < 6) return result;
+
+  // convert closes and volumes
+  const closes4 = k4h.map(k=>Number(k[4]));
+  const vols4 = k4h.map(k=>Number(k[5]));
+  const highs4 = k4h.map(k=>Number(k[2]));
+  const lows4 = k4h.map(k=>Number(k[3]));
+
+  // slope: ratio of last to 4 bars ago
+  const len = closes4.length;
+  const slope = len>4 ? closes4[len-1]/closes4[Math.max(0,len-5)] : 1;
+  // recent wick top and its ratio (last 3 bars)
+  const last = k4h[len-1], prev = k4h[len-2];
+  const openL = Number(last[1]), highL = Number(last[2]), closeL = Number(last[4]);
+  const body = Math.abs(closeL - openL) || 1e-9;
+  const upperWick = Math.max(0, highL - Math.max(openL, closeL));
+  const wickRatio = upperWick / body;
+  // volume spike ratio
+  const maVol = sma(vols4, Math.min(6, vols4.length)) || 1;
+  const volSpike = (Number(last[5]) / maVol);
+
+  // range and volatility
+  const rangeRecent = Math.max(...highs4.slice(-6)) - Math.min(...lows4.slice(-6));
+  const avgRange = sma(highs4.map((h,i)=>h - lows4[i]), Math.min(6, highs4.length)) || 1;
+
+  // EMA proxies (use close comparisons to short EMAs approximation via moving avgs)
+  const ema14 = ema(closes4.slice(Math.max(0,closes4.length-14)), 14) || closes4[0];
+  const ema21 = ema(closes4.slice(Math.max(0,closes4.length-21)), 21) || closes4[0];
+  const belowEMAs = closes4[len-1] < ema14 && closes4[len-1] < ema21;
+
+  // percent drop from local high
+  const localHigh = Math.max(...highs4.slice(-12));
+  const dropPctFromHigh = pct(closes4[len-1], localHigh);
+
+  // quick 15m check for immediate capitulation candle (long lower wick)
+  let last15 = null;
+  if(k15 && k15.length) {
+    const k = k15[k15.length-1];
+    last15 = { open:Number(k[1]), high:Number(k[2]), low:Number(k[3]), close:Number(k[4]), vol:Number(k[5]) };
+  }
+
+  // Heuristic rules order (most decisive first)
+  // Capitulation A detection: big fast drop (dropPctFromHigh < -20% within short period) + vol spike
+  if(dropPctFromHigh <= -20 && volSpike > 2.0){
+    result.phaseId = 5;
+    result.phaseLabel = 'Capitulation A';
+    result.confidence = Math.min(95, 40 + Math.round((Math.abs(dropPctFromHigh)-20) + (volSpike*10)));
+    result.explanation = `Price dropped ${dropPctFromHigh.toFixed(1)}% from local high with volume ×${volSpike.toFixed(2)} — strong capitulation.`;
+    return result;
+  }
+
+  // Climax candle: very large upper wick + very high vol and recent slope high
+  if(wickRatio >= 2.0 && volSpike >= 3.0){
+    result.phaseId = 2;
+    result.phaseLabel = 'Climax Candle (Blowoff)';
+    result.confidence = Math.min(95, 40 + Math.round((wickRatio-2)*10 + (volSpike*10) + ( (slope>1.6)?10:0 )));
+    result.explanation = `Large top wick (ratio ${wickRatio.toFixed(2)}) with volume ×${volSpike.toFixed(2)} — likely blowoff wick.`;
+    return result;
+  }
+
+  // Acceleration: steep slope up and rising volumes but not yet wick
+  if(slope >= 1.6 && volSpike >= 1.6 && wickRatio < 1.2){
+    result.phaseId = 1;
+    result.phaseLabel = 'Acceleration';
+    result.confidence = Math.min(85, 30 + Math.round((slope-1.6)*30 + (volSpike*10)));
+    result.explanation = `Strong upward acceleration (slope ${slope.toFixed(2)}) with elevated volumes — vertical move.`;
+    return result;
+  }
+
+  // Distribution: after climax, sideways, range contraction, multiple small wicks, lower vol
+  const recentHighs = highs4.slice(-6);
+  const recentLows = lows4.slice(-6);
+  const rangeSpan = Math.max(...recentHighs) - Math.min(...recentLows);
+  if(rangeSpan <= avgRange*1.5 && volSpike < 1.5 && slope <= 1.15){
+    result.phaseId = 3;
+    result.phaseLabel = 'Distribution (Sideways Top)';
+    result.confidence = 40 + Math.round( (avgRange - rangeSpan) * 10 );
+    result.explanation = `Price moving sideways after run-up; range contracting and volume moderate — potential distribution.`;
+    return result;
+  }
+
+  // Breakdown: price forming lower highs and below short EMAs
+  const lastHigh = highs4[highs4.length-1];
+  const prevHigh = highs4[Math.max(0,highs4.length-2)];
+  if(lastHigh < prevHigh && belowEMAs){
+    result.phaseId = 4;
+    result.phaseLabel = 'Breakdown (Lower Highs)';
+    result.confidence = 45 + Math.round((prevHigh-lastHigh)/prevHigh*100);
+    result.explanation = `Lower high formed and price below short EMAs — breakdown phase starting.`;
+    return result;
+  }
+
+  // Dead-cat bounce: after a drop, quick small recovery but volume weak
+  if(dropPctFromHigh <= -8 && last15 && (last15.close > closes4[len-1]) && last15.vol < maVol*1.5){
+    result.phaseId = 6;
+    result.phaseLabel = 'Dead-Cat Bounce';
+    result.confidence = 40 + Math.round((Math.abs(dropPctFromHigh)-8)*5);
+    result.explanation = `Price bounced after a sharp drop but bounce volume is weak — dead-cat bounce likely.`;
+    return result;
+  }
+
+  // Final capitulation: new lower wick after bounce with large vol and lower low
+  if(last15 && (last15.low < Math.min(...lows4.slice(-6))) && last15.vol > maVol*2.0){
+    result.phaseId = 7;
+    result.phaseLabel = 'Final Capitulation Wick';
+    result.confidence = 50 + Math.round(last15.vol/maVol*10);
+    result.explanation = `New lower wick on high volume after earlier drop — potential final capitulation.`;
+    return result;
+  }
+
+  // default: no clear phase detected
+  result.phaseId = 0; result.phaseLabel = 'Neutral/No-phase'; result.confidence = 12; result.explanation = 'No dominant phase signals detected.';
+  return result;
+}
+
+// ---- scoring and analysis for each symbol ----
+function queueSymbol(symbol, results){
+  queue.push(async ()=>{
+    try{
+      // fetch 1d,4h,15m klines + funding
+      const [k1d, k4h, k15, fund] = await Promise.all([
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=9`),
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=30`),
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=40`),
+        safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`)
+      ]);
+
+      const closes1d = k1d.map(k=>Number(k[4]));
+      const closes4h = k4h.map(k=>Number(k[4]));
+      const vols4h = k4h.map(k=>Number(k[5]));
+      const last4 = k4h[k4h.length-1];
+      const prev4 = k4h[k4h.length-2] || last4;
+
+      // compute signals
+      const rsi1d = rsiFromCloses(closes1d,14);
+      const rsi4h = rsiFromCloses(closes4h,14);
+      const volMA4 = sma(vols4h, Math.min(10, vols4h.length)) || 0;
+      const volSpike = volMA4 ? Number((Number(last4[5]) / volMA4).toFixed(2)) : 1;
+
+      const open4 = Number(last4[1]), high4 = Number(last4[2]), low4 = Number(last4[3]), close4 = Number(last4[4]);
+      const body4 = Math.abs(close4 - open4) || 1e-9;
+      const wickTop = high4 - Math.max(open4, close4);
+      const wickTopRatio = wickTop / body4;
+
+      const ema70 = ema(closes4h, 70) || ema(closes4h, Math.min(21,closes4h.length));
+      const ema70DistPct = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
+      const lowerHigh = Number(high4) < Number(prev4[2]);
+
+      const fundingRate = (fund && fund.length) ? Number(fund[0].fundingRate) : 0;
+
+      let score=0; const signals={};
+      if(rsi1d !== null && rsi1d >= 88){ score++; signals.rsi1d=true;} else signals.rsi1d=false;
+      if(rsi4h !== null && rsi4h >= 80){ score++; signals.rsi4h=true;} else signals.rsi4h=false;
+      if(volSpike >= 1.8){ score++; signals.volSpike=true;} else signals.volSpike=false;
+      if(wickTopRatio >= 1.2){ score++; signals.wickTop=true;} else signals.wickTop=false;
+      if(ema70DistPct >= 50){ score++; signals.emaDist=true;} else signals.emaDist=false;
+      if(lowerHigh){ score++; signals.lowerHigh=true;} else signals.lowerHigh=false;
+      if(typeof fundingRate === 'number' && fundingRate < -0.0005){ score++; signals.fundingConfirm=true;} else signals.fundingConfirm=false;
+      signals.funding = fundingRate;
+
+      // phase detection using 4h and 15m candles
+      const phase = detectPhaseFromCandles(k15, k4h);
+
+      results.push({
+        symbol,
+        score,
+        rsi1d,
+        rsi4h,
+        volSpike,
+        wickTopRatio,
+        ema70DistPct,
+        lowerHigh,
+        fundingRate,
+        last: close4,
+        phase
+      });
+
+    } catch(err){
+      el.debug.innerText += `\nError ${symbol}: ${err.message}`;
+    }
+  });
+}
+
+function updateProgress(){ if(!totalTasks) return; const pct=Math.round((doneTasks/totalTasks)*100); el.bar.style.width = pct+'%'; el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`; el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`; }
+
+function startCountdown(sec){ if(countdownTimer) clearInterval(countdownTimer); const end=Date.now()+sec*1000; countdownTimer=setInterval(()=>{ const left=Math.max(0, end-Date.now()); const s=Math.round(left/1000); el.countdown.innerText = `Next scan in: ${s}s`; if(s<=0){ clearInterval(countdownTimer); el.countdown.innerText = 'Running...'; } },500); }
+
+// rule-based explainer (existing logic reused)
+function explainBlowoff(item){
+  const p = item;
+  let pts = 0; const reasons=[];
+  if(p.rsi1d!==null && p.rsi1d>=88){ pts+=2; reasons.push(`1D RSI very high (${p.rsi1d})`); }
+  else if(p.rsi1d!==null && p.rsi1d>=80){ pts+=1; reasons.push(`1D RSI high (${p.rsi1d})`); }
+  if(p.rsi4h!==null && p.rsi4h>=85){ pts+=1; reasons.push(`4H RSI overbought (${p.rsi4h})`); }
+  if(p.volSpike>=3){ pts+=2; reasons.push(`Volume climax ×${p.volSpike}`); } else if(p.volSpike>=1.8){ pts+=1; reasons.push(`Volume spike ×${p.volSpike}`); }
+  if(p.wickTopRatio>=2){ pts+=2; reasons.push(`Large upper wick (ratio ${p.wickTopRatio.toFixed(2)})`); } else if(p.wickTopRatio>=1.2){ pts+=1; reasons.push(`Upper wick present (ratio ${p.wickTopRatio.toFixed(2)})`); }
+  if(p.ema70DistPct>=150){ pts+=2; reasons.push(`Extreme EMA stretch (${p.ema70DistPct}% above EMA70)`); } else if(p.ema70DistPct>=50){ pts+=1; reasons.push(`Price stretched from EMA (${p.ema70DistPct}% )`); }
+  if(typeof p.fundingRate==='number'){ if(p.fundingRate < -0.001){ pts+=2; reasons.push(`Funding strongly negative (${(p.fundingRate*100).toFixed(3)}%)`);} else if(p.fundingRate < -0.0005){ pts+=1; reasons.push(`Funding negative (${(p.fundingRate*100).toFixed(3)}%)`);} }
+  if(p.lowerHigh){ pts+=1; reasons.push('Lower high formed'); }
+  if(typeof p.score==='number'){ if(p.score>=6) pts+=2; else if(p.score>=4) pts+=1; }
+  let label='None', color='#9fb3cc', prob=5;
+  if(pts>=10){ label='Extreme'; color='#e74c3c'; prob=92; } else if(pts>=7){ label='High'; color='#ff6b43'; prob=78; } else if(pts>=4){ label='Medium'; color='#ffd966'; prob=55; } else if(pts>=2){ label='Low'; color='#7bd389'; prob=25; } else { label='None'; color='#9fb3cc'; prob=5; }
+  const topReasons = reasons.slice(0,4);
+  const explanation = topReasons.length ? `${topReasons.join('; ')}. Estimated reversal probability: ${prob}%.` : `No clear exhaustion signals detected.`;
+  return { pts, label, color, prob, explanation, reasons: topReasons };
+}
+
+// ---- render table and cards (include phase) ----
+function renderTable(results){
+  const th = `
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol / Status</th>
+          <th>Last</th>
+          <th>RSI4H</th>
+          <th>Signals</th>
+          <th>Funding</th>
+          <th>Phase</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  const rows = results.map(r=>{
+    let status = "normal", bg="background:rgba(255,255,255,0.02);", cls="";
+    if(r.score>=4){ status = `<span style="background:#ff4d4d;color:white;font-size:11px;padding:4px 6px;border-radius:6px">🔥 BLOWOFF</span>`; bg="background:rgba(255,40,40,0.18);"; if(!prevBlow.has(r.symbol)) cls="blink"; }
+    else if(r.score===3){ status = `<span style="background:#ffd966;color:black;font-size:11px;padding:4px 6px;border-radius:6px">⚠️ Potential</span>`; bg="background:rgba(255,200,0,0.14);"; }
+
+    const expl = explainBlowoff(r);
+    const phase = r.phase || { phaseLabel:'Unknown', explanation:'', confidence:10 };
+    const phaseBadge = `<span class="phaseBadge" style="background:${phase.phaseId===1? '#2dd4bf': (phase.phaseId===2? '#ff7b7b': (phase.phaseId===3? '#ffd966': (phase.phaseId===4? '#ff9f43': (phase.phaseId===5? '#e74c3c': (phase.phaseId===6? '#7bd389':'#9fb3cc')))))) }; color:#000">${phase.phaseLabel}</span>`;
+
+    const explRow = `<tr style="background:rgba(255,255,255,0.02)"><td colspan="6" style="padding:8px 12px;color:${expl.color}"><strong>${expl.label}</strong> — ${expl.explanation} <span style="margin-left:12px;color:#cfe8ff">Phase: ${phase.phaseLabel} (${phase.confidence}%) — ${phase.explanation}</span></td></tr>`;
+
+    return `
+      <tr class="${cls}" style="${bg}">
+        <td><strong>${r.symbol}</strong><br>${status}</td>
+        <td>${r.last}</td>
+        <td class="${r.rsi4h>=80?'green':''}">${r.rsi4h!==undefined && r.rsi4h!==null? r.rsi4h.toFixed(1):'n/a'}</td>
+        <td class="small">vol:${r.volSpike} wick:${(r.wickTopRatio||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
+        <td class="small">${(r.fundingRate!==undefined?r.fundingRate:0).toFixed(6)}</td>
+        <td>${phaseBadge} <div class="small" style="margin-top:6px;color:var(--muted)">${phase.explanation}</div></td>
+      </tr>
+      ${explRow}
+    `;
+  }).join("");
+  el.tableView.innerHTML = `<div class="card-panel">${th}${rows}</tbody></table></div>`;
+  setTimeout(()=>{ const nodes = document.querySelectorAll('tr.blink'); nodes.forEach(n=>n.classList.remove('blink')); },4000);
+}
+
+function renderCards(results){
+  let html="";
+  results.forEach(r=>{
+    let badge = `<span class="small" style="color:var(--muted)">normal</span>`;
+    let cls="";
+    if(r.score>=4){ badge=`<span class="blowBadge">🔥 Blowoff</span>`; cls = (!prevBlow.has(r.symbol) ? "blink":""); }
+    else if(r.score===3){ badge=`<span class="potBadge">⚠ Potential</span>`; }
+    const expl = explainBlowoff(r);
+    const phase = r.phase || { phaseLabel:'Unknown', explanation:'', confidence:10 };
+    html += `
+      <div class="coinCard ${cls}">
+        <div class="coinRow1">
+          <div class="coinSymbol">${r.symbol}</div>
+          <div class="coinScore">${r.score}/6</div>
+        </div>
+        <div style="margin-top:6px">${badge}</div>
+        <div class="sigList" style="margin-top:6px">
+          Last: ${r.last}<br>
+          RSI4H: ${r.rsi4h!==undefined && r.rsi4h!==null? r.rsi4h.toFixed(1):'n/a'} • Vol×: ${r.volSpike} • Wick: ${(r.wickTopRatio||0).toFixed(2)}<br>
+          EMA70∆: ${r.ema70DistPct}% • Funding: ${(r.fundingRate!==undefined? r.fundingRate:0).toFixed(6)}
+        </div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.03);">
+          <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% chance of near-term reversal</div>
+          <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
+          <div style="margin-top:8px;color:#cfe8ff"><strong>Phase:</strong> ${phase.phaseLabel} (${phase.confidence}%)</div>
+          <div style="color:#cfe8ff;margin-top:6px;font-size:12px">${phase.explanation}</div>
+        </div>
+      </div>
+    `;
+  });
+  el.cardView.innerHTML = `<div class="card-panel">${html}</div>`;
+  setTimeout(()=>{ const nodes = document.querySelectorAll('.coinCard.blink'); nodes.forEach(n=>n.classList.remove('blink')); },4000);
+}
+
+function alertIfNeeded(results){ const flagged = results.filter(r=>r.score >= (parseInt(el.threshold.value,10)||4)); if(flagged.length>0){ playAlertSound(); notify('🔥 Blowoff Top Detected', flagged.map(f=>f.symbol).slice(0,6).join(', ')); } }
+function playAlertSound(){ try{ const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg"); audio.volume=0.8; audio.play().catch(()=>{});}catch(e){} }
+function notify(title,body){ if(Notification.permission==='granted') new Notification(title,{body}); else if(Notification.permission!=='denied') Notification.requestPermission(); }
+
+// ---- main scan runner ----
+async function runScan(once=false){
+  try{
+    running=true; el.startBtn.disabled=true; el.stopBtn.disabled=false; el.debug.innerText=''; el.message.innerText='Fetching top symbols...';
+    resetWindow();
+    const N = Math.max(5,Math.min(100,parseInt(el.prefilter.value,10)||30));
+    const delayMs = Math.max(50,Math.min(2000,parseInt(el.delay.value,10)||450));
+    const intervalSec = Math.max(10,Math.min(3600,parseInt(el.interval.value,10)||60));
+
+    const top = await getTopN(N);
+    queue=[]; totalTasks=top.length; doneTasks=0; updateProgress();
+    const results=[];
+    top.forEach(x=>queueSymbol(x.symbol, results));
+
+    if(!once) startCountdown(intervalSec);
+    await processQueue();
+    // render
+    // sort
+    results.sort((a,b)=> (b.score - a.score) || (b.volSpike - a.volSpike) || (b.ema70DistPct - a.ema70DistPct));
+    // update prevBlow set (for highlights)
+    prevBlow = new Set(results.filter(r=>r.score >= (parseInt(el.threshold.value,10)||4)).map(r=>r.symbol));
+    if(window.innerWidth >= 680) renderTable(results); else renderCards(results);
+    alertIfNeeded(results);
+
+    // schedule next run
+    if(!once){
+      if(requestsThisWindow > SAFETY_MAX){ el.debug.innerText += `\nNot scheduling next run: safety auto-paused (req ${requestsThisWindow})`; }
+      else {
+        if(autoTimer) clearTimeout(autoTimer);
+        autoTimer = setTimeout(()=>{ if(requestsThisWindow <= SAFETY_MAX) runScan(false); }, intervalSec*1000);
+        startCountdown(intervalSec);
+      }
+    }
+  } catch(e){
+    el.debug.innerText += `\nScan error: ${e.message}`;
+  }
+}
+
+// ---- UI bindings ----
+el.startBtn.addEventListener('click', ()=>{ if(running) return; prevBlow = new Set(); runScan(false); });
+el.stopBtn.addEventListener('click', ()=>{ running=false; queue=[]; el.startBtn.disabled=false; el.stopBtn.disabled=true; if(autoTimer) { clearInterval(autoTimer); autoTimer=null; } });
+el.oneShot.addEventListener('click', ()=>{ if(running) return; runScan(true); });
+
+if("Notification" in window){ try{ Notification.requestPermission(); }catch(e){} }
+
+// ping
+(async function ping(){ try{ await fetch(API_BASE + '/fapi/v1/ping'); }catch(e){ console.warn('ping failed', e); } })();
+
+</script>
+
+<footer class="small" style="margin-top:20px;color:var(--muted)">
+  Blowoff Top Detector — Hybrid AI Mode • Phase detection added (Acceleration → Final Capitulation).  
+  Run from a local server (e.g. <code>python -m http.server</code>) to avoid CORS restrictions.
+</footer>
+
+</body>
+</html>
