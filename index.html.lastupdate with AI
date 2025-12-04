@@ -159,14 +159,22 @@ function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; 
 function norm(a){ return Math.sqrt(a.reduce((s,x)=>s+x*x,0)); }
 function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0?0:n/d; }
 
-/* ---------- SAFE FETCH ---------- */
-async function safeFetch(url){
-  if(!running) throw new Error('Not running');
-  requestsThisWindow++;
-  const r = await fetch(url);
-  if(!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
+/* ---------- SAFE FETCH (hardened) ---------- */
+async function safeFetch(url, opts = { allowIfNotRunning: false }) {
+  if(!running && !opts.allowIfNotRunning) throw new Error('Not running (call Start first)');
+  try {
+    requestsThisWindow++;
+    const r = await fetch(url);
+    if(!r.ok) {
+      const body = await r.text().catch(()=>'<no body>');
+      throw new Error(`HTTP ${r.status} ${r.statusText} — ${body.slice(0,200)}`);
+    }
+    return await r.json();
+  } catch (err) {
+    throw new Error(`fetch error for ${url} → ${err.message}`);
+  }
 }
+
 function resetWindow(){ requestsThisWindow=0; windowStart=Date.now(); }
 function checkSafetyAndMaybePause(){
   const now=Date.now();
@@ -334,10 +342,7 @@ function queueSymbolAnalysis(symbol, results){
   });
 }
 
-/* ---------- PHASE DETECTION & EXISTING HELPERS (unchanged logic) ---------- */
-/* ... keep detectPhaseForSymbol, makeFeatureVector, explainBlowoff as in previous file ... */
-/* For brevity I will include them now exactly as before (they are unchanged) */
-
+/* ---------- PHASE DETECTION & HELPERS ---------- */
 function detectPhaseForSymbol(item){
   try{
     const k4 = item.k4h || [], k15 = item.k15m || [];
@@ -431,8 +436,7 @@ function explainBlowoff(item){
 }
 
 /* ============================================================
-   FINAL AI recommendation layer (long-term) -- unchanged
-   function getFinalRecommendation(item) {...}
+   FINAL AI recommendation layer (long-term)
    ============================================================ */
 function getFinalRecommendation(item){
   const sim = Math.round((item.similarity||0)*100);
@@ -479,11 +483,8 @@ function getFinalRecommendation(item){
 
 /* ============================================================
    NEW: Short-term recommendation generator
-   - getShortTermRecommendation(item): short bias sentence + quick plan + targets
-   - Uses short-term signals (15m/1h/4h RSI, dead-cat, wick rejection, vol×)
    ============================================================ */
 function getShortTermRecommendation(item){
-  // inputs (already computed)
   const rsi15 = item.rsi15 || 0;
   const rsi1h = item.rsi1h || 0;
   const rsi4h = item.rsi4h || 0;
@@ -492,39 +493,32 @@ function getShortTermRecommendation(item){
   const wick = item.wickRatio4 || 0;
   const accum = item.accumCombined ? item.accumCombined.confidence : 0;
   const phase = item.phase && item.phase.phase ? item.phase.phase : item.phase || 'Unknown';
-
-  // bias rules
   let bias = 'Neutral';
   let sentence = '';
   let plan = '';
   let targets = [];
-
-  // Strong short-term bearish signals
   if(phase.includes('Dead-cat') || phase.includes('Breakdown') || (rsi4h >= 78 && accum < 50) || (wick >= 1.0 && vol4 < 1.0 && rsi4h >= 75)){
     bias = 'Bearish';
     sentence = `Short-term bias: Bearish — bounce likely temporary; prefer shorting the rally or waiting for lower re-entry.`;
     plan = `If shorting: enter on a failed bounce or rejection; stop above the recent 4H swing high; take partial profits at first support, trail rest.`;
     targets = ['0.02600', '0.02480–0.02520', '0.02350–0.02400'];
   }
-  // Short-term bullish (rare here): clean pullback + rising accum + rsi15 low
   else if(accum >= 60 && rsi15 <= 45 && rsi4h < 65){
     bias = 'Bullish';
     sentence = `Short-term bias: Bullish — corrective pullback with rising accumulation; consider small scalp/long with tight stop.`;
     plan = `Starter on confirmed 15m higher low + green-volume; stop below local 15m low; target near prior 15m/1h resistance.`;
     targets = ['intraday resistance', 'next 4H resistance'];
   }
-  // Neutral / wait
   else {
     bias = 'Neutral';
     sentence = `Short-term: Neutral—no clean short or long edge. Prefer to wait for a tradeable structure (rejection or 15m higher-low).`;
     plan = `Wait for either a clear rejection (short) or 15m/1h higher-low with volume (long).`;
     targets = ['—'];
   }
-
   return {bias, sentence, plan, targets, accum, rsi15, rsi1h, rsi4h, vol15, vol4};
 }
 
-/* ---------- RENDER TABLE & CARDS (renderShortTerm box depends on toggle) ---------- */
+/* ---------- RENDER TABLE & CARDS ---------- */
 function renderTable(results){
   results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
   const threshold = parseInt(el.threshold.value,10)||4;
@@ -535,22 +529,17 @@ function renderTable(results){
     const accum = r.accumCombined || {confidence:0, isAccum:false};
     const rec = getFinalRecommendation(r);
     const shortRec = getShortTermRecommendation(r);
-
     let statusHtml = `<span class="small">normal</span>`; let bg='background:rgba(255,255,255,0.02)'; let cls='';
     if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
     else if(r.score === threshold-1){ statusHtml = `<span style="background:#ffd966;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;color:black;">⚠ POTENTIAL</span>`; bg='background:rgba(255,200,0,0.10)'; }
-
     const simPct = r.similarity ? Math.round(r.similarity*100) : 0;
     const accumHtml = accum.isAccum ? `<div class="small" style="color:#2dd4bf">Accum: ${accum.confidence}%</div>` : `<div class="small" style="color:var(--muted)">Accum: ${accum.confidence}%</div>`;
     const tfList = (r.accumChecks || []).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ');
-
     let phaseColor = '#9fb3cc';
     if(phaseInfo.phase.includes('Capitulation')) phaseColor='#e74c3c';
     else if(phaseInfo.phase.includes('Climax')||phaseInfo.phase.includes('Acceleration')) phaseColor='#ff6b43';
     else if(phaseInfo.phase.includes('Distribution')) phaseColor='#ffd966';
     else if(phaseInfo.phase.includes('Dead-cat')) phaseColor='#7bd389';
-
-    // short-term HTML (conditionally rendered)
     const shortHtml = showShort ? `
       <div class="shortRec">🔎 Short-term: ${shortRec.sentence}</div>
       <div class="recBox" style="background:rgba(255,255,255,0.01)">
@@ -559,7 +548,6 @@ function renderTable(results){
         <br><em style="color:var(--muted)">Short-term bias: ${shortRec.bias} • RSI15:${Math.round(shortRec.rsi15||0)} • accum:${shortRec.accum}%</em>
       </div>
     ` : '';
-
     return `
       <tr class="${cls}" style="${bg}">
         <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span></td>
@@ -594,7 +582,6 @@ function renderCards(results){
     let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
     if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
     const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
-
     const shortHtml = showShort ? `
       <div class="shortRec">🔎 Short-term: ${srec.sentence}</div>
       <div class="recBox" style="background:rgba(255,255,255,0.01)">
@@ -603,7 +590,6 @@ function renderCards(results){
         <br><em style="color:var(--muted)">Bias: ${srec.bias} • RSI15:${Math.round(srec.rsi15||0)} • accum:${srec.accum}%</em>
       </div>
     ` : '';
-
     html += `
       <div class="coinCard ${bc}">
         <div class="coinRow1"><div class="coinSymbol">${r.symbol}</div><div class="coinScore">${r.score}/8</div></div>
@@ -658,26 +644,55 @@ async function runScan(once=false){
 
     results.forEach(r => { r.phase = detectPhaseForSymbol(r); r.dropPctFromPeak = r.phase.dropPctFromPeak || 0; });
 
-    // PIPPIN vector (best effort)
+    // PIPPIN vector (best effort) — defensive build to avoid undefined errors
     let pippinVector = null;
     const pippinEntry = results.find(x => x.symbol === 'PIPPINUSDT');
     if(pippinEntry) pippinVector = makeFeatureVector(pippinEntry);
     else {
       try{
-        const k4 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=4h&limit=30`);
-        const k15 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=15m&limit=40`);
-        const closes4 = k4.map(k=>Number(k[4])); const last4 = k4[k4.length-1];
-        const open4=Number(last4[1]), high4=Number(last4[2]), low4=Number(last4[3]), close4=Number(last4[4]);
-        const body4 = Math.abs(close4-open4)||1e-9;
-        const wick4 = Math.max(0, high4 - Math.max(open4,close4))/body4;
-        const volMA4 = sma(k4.map(k=>Number(k[5])), Math.min(10,k4.length))||1;
-        const volSpike4 = Number((Number(last4[5]) / volMA4).toFixed(2));
-        const ema70 = ema(closes4,70)||ema(closes4,Math.min(21,closes4.length));
-        const emaDist = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
-        const rsi4 = rsiFromCloses(k4.map(k=>Number(k[4])), 14);
-        const accumulation = detectAccumulationGeneric(k15.map(k=>Number(k[4])), k15.map(k=>Number(k[2])), k15.map(k=>Number(k[3])), k15.map(k=>Number(k[5])), 30, parseInt(el.sensitivity.value,10)||50);
-        pippinVector = makeFeatureVector({rsi4h:rsi4, volSpike4, wickRatio4:wick4, ema70DistPct:emaDist, fundingRate:0, slope15:1, dropPctFromPeak:0, accumCombined:{confidence:accumulation.confidence, isAccum:accumulation.isAccum}});
-      } catch(e){}
+        const k4 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=4h&limit=30`, {allowIfNotRunning:true}).catch(e=>{ console.warn('PIPPIN k4 fetch failed', e.message); return null; });
+        const k15 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=15m&limit=40`, {allowIfNotRunning:true}).catch(e=>{ console.warn('PIPPIN k15 fetch failed', e.message); return null; });
+
+        if(!k4 || !Array.isArray(k4) || k4.length === 0){
+          pippinVector = null;
+        } else {
+          const closes4 = (k4||[]).map(k=>Number((k && k[4])||0));
+          const last4 = k4[k4.length-1] || null;
+          if(!last4){
+            pippinVector = null;
+          } else {
+            const open4=Number(last4[1]||0), high4=Number(last4[2]||0), low4=Number(last4[3]||0), close4=Number(last4[4]||0);
+            const body4 = Math.max(1e-9, Math.abs(close4-open4));
+            const wick4 = Math.max(0, high4 - Math.max(open4,close4))/body4;
+            const volMA4 = Math.max(1, sma((k4||[]).map(k=>Number((k && k[5])||0)), Math.min(10,k4.length)) || 1);
+            const volSpike4 = Number(((Number(last4[5]||1)) / volMA4).toFixed(2));
+            const ema70 = ema(closes4,70) || ema(closes4,Math.min(21,closes4.length));
+            const emaDist = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
+            const rsi4 = rsiFromCloses(closes4, 14);
+            const accumulation = detectAccumulationGeneric(
+              (k15||[]).map(k=>Number((k&&k[4])||0)),
+              (k15||[]).map(k=>Number((k&&k[2])||0)),
+              (k15||[]).map(k=>Number((k&&k[3])||0)),
+              (k15||[]).map(k=>Number((k&&k[5])||0)),
+              30,
+              parseInt(el.sensitivity.value,10)||50
+            );
+            pippinVector = makeFeatureVector({
+              rsi4h:rsi4,
+              volSpike4,
+              wickRatio4:wick4,
+              ema70DistPct:emaDist,
+              fundingRate:0,
+              slope15:1,
+              dropPctFromPeak:0,
+              accumCombined:{confidence:accumulation.confidence, isAccum:accumulation.isAccum}
+            });
+          }
+        }
+      } catch(e){
+        console.warn('PIPPIN vector build failed:', e.message);
+        pippinVector = null;
+      }
     }
 
     if(pippinVector){
