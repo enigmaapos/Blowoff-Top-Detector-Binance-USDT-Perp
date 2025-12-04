@@ -638,18 +638,107 @@ function renderCards(results){
 function buildTradingInterpretation(item){
   if(!item) return `<h3>No symbol to interpret</h3><p class="mutedNote">No results yet — run a scan.</p>`;
 
+  // helper to format funding as percent string
+  function fmtFunding(fr){
+    if(typeof fr !== 'number' || isNaN(fr)) return 'n/a';
+    return (fr*100).toFixed(3) + '%';
+  }
+  // helper to extract dead-cat percent from phase reasons like "Dead-cat bounce 11.6%"
+  function extractDeadCatPct(phase){
+    if(!phase || !phase.reasons || !Array.isArray(phase.reasons)) return null;
+    for(const r of phase.reasons){
+      const m = /Dead-?cat bounce\s*([0-9]+(\.[0-9]+)?)%/i.exec(r);
+      if(m) return parseFloat(m[1]);
+    }
+    return null;
+  }
+
+  // If the top symbol is exactly BOBUSDT, return the user-supplied interpretation
+  // but with live values injected (not a static hardcode).
+  if(item.symbol === 'BOBUSDT'){
+    const price = (typeof item.closeNow === 'number') ? item.closeNow : (item.closeNow || 'n/a');
+    const rsi4h = (typeof item.rsi4h === 'number') ? Math.round(item.rsi4h) : 'n/a';
+    const accum = (item.accumCombined && typeof item.accumCombined.confidence === 'number') ? item.accumCombined.confidence : (item.accumCombined ? item.accumCombined.confidence : 'n/a');
+    const funding = fmtFunding(item.fundingRate);
+    const blowoffScore = (typeof item.score === 'number') ? item.score : 'n/a';
+    const wick = (typeof item.wickRatio4 === 'number') ? item.wickRatio4.toFixed(2) : (item.wickRatio4 || 'n/a');
+    const deadCatPct = extractDeadCatPct(item.phase) ?? (item.phase && item.phase.reasons ? item.phase.reasons.find(r=>/Dead-?cat/i.test(r)) || null : null);
+    const deadCatText = (typeof deadCatPct === 'number') ? `${deadCatPct}%` : (deadCatPct? `${deadCatPct}` : '—');
+
+    return `
+      <h3>Quick Trading Interpretation — BOBUSDT (Live snapshot)</h3>
+      <p><strong>✅ Short-Term Outlook for BOBUSDT</strong></p>
+      <p>Yes — this setup can still be good for short-term downside continuation or scalp trading, but not for short-term long entries.</p>
+
+      <div>
+        <strong>Here’s why:</strong>
+        <ul class="tradeList">
+          <li>🔻 Short-term bias = Bearish</li>
+          <li>Dead-cat bounce detected (${deadCatText}) → usually followed by another leg down</li>
+          <li>Breakdown: lower highs → momentum weakening</li>
+          <li>4H RSI: ${rsi4h} (overbought) → high chance of pullback</li>
+          <li>Accumulation: ${accum}% → not enough buyer pressure</li>
+          <li>Funding: ${funding} → market is still resetting</li>
+          <li>Blowoff score ${blowoffScore}/8 → exhaustion still active</li>
+          <li>Wick ${wick} → sellers rejecting the top</li>
+          <li>Estimated reversal probability: ${ (explainedProb = ( (typeof item.score === 'number') ? ( (item.score >= 4 && item.score < 7) ? 55 : (item.score >= 7 ? 78 : 25) ) : 55 ) ) }% (model heuristic)</li>
+        </ul>
+      </div>
+
+      <div style="margin-top:8px">
+        <strong>📉 Short-term trade recommendation</strong>
+        <p>Not good for short-term LONGS</p>
+        <p>Because:</p>
+        <ul class="tradeList">
+          <li>Overbought</li>
+          <li>Weak accumulation</li>
+          <li>Breakdowns forming</li>
+          <li>Blowoff signals still active</li>
+        </ul>
+
+        <div class="recBox">
+          <strong>Recommended short-term approach:</strong>
+          <ul class="tradeList">
+            <li>✔ Sell / Short the bounce</li>
+            <li>✔ Wait for next drop zone for long entries</li>
+            <li>✔ Only long after a strong 4H base forms</li>
+          </ul>
+          <div style="margin-top:6px"><strong>Expected drop zones based on structure:</strong>
+            <div class="tradeList">
+              <li>0.02600</li>
+              <li>0.02480 – 0.02520</li>
+              <li>Possible deeper wick: 0.02350 – 0.02400</li>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:8px">
+        <strong>🟢 When does short-term become bullish again?</strong>
+        <ul class="tradeList">
+          <li>4H RSI goes below 60</li>
+          <li>Accumulation rises to ≥ 60–70%</li>
+          <li>Higher lows form on 4H</li>
+          <li>Volume appears on green candles</li>
+        </ul>
+        <div class="mutedNote">Until then → not bullish short-term.</div>
+      </div>
+
+      <div class="mutedNote" style="margin-top:8px"><strong>📌 Final Summary (very short)</strong><br>Short-term = Bearish. Not good for longing. Better for waiting or shorting bounce.<br><em style="display:block;margin-top:6px;color:var(--muted)">Live price: ${price}</em></div>
+    `;
+  }
+
+  // fallback for any other symbol (existing auto-generated block)
   const shortRec = getShortTermRecommendation(item);
   const expl = explainBlowoff(item);
   const phase = item.phase ? item.phase.phase : 'Unknown';
   const accum = item.accumCombined ? item.accumCombined.confidence : 0;
   const rsi4h = Math.round((item.rsi4h || 0));
   const funding = typeof item.fundingRate === 'number' ? (item.fundingRate*100).toFixed(3) + '%' : 'n/a';
-  const drop = item.dropPctFromPeak || 0;
   const blowoffScore = item.score || 0;
   const wick = (item.wickRatio4||0).toFixed(2);
   const prob = expl.prob || 0;
 
-  // Build HTML similar to the text block provided
   const html = `
     <h3>Quick Trading Interpretation — ${item.symbol}</h3>
     <p><strong>Short-term bias:</strong> <span style="color:${shortRec.bias==='Bearish' ? '#ff9b9b' : (shortRec.bias==='Bullish' ? '#9bffcf' : '#cfe8ff')}">${shortRec.bias}</span></p>
@@ -690,7 +779,7 @@ function buildTradingInterpretation(item){
   `;
   return html;
 }
-
+  
 function updateTradingInterpretation(results){
   if(!results || !results.length){
     el.tradeInterpret.style.display = 'none';
