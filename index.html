@@ -54,13 +54,14 @@
   .sensitivity{width:160px}
   .oneLineRec{font-weight:700;color:#cfe8ff;margin-top:6px}
   .recBox{margin-top:8px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);font-size:13px}
+  .finalRec{margin-top:8px;color:#8bffc0;font-weight:700}
 </style>
 </head>
 <body>
 <div class="card-panel">
   <h1>Blowoff Top Detector — Multi-TF Accumulation & Conditional Alerts</h1>
   <div class="small" style="margin-top:6px;color:var(--muted)">
-    New controls: multi-timeframe accumulation detector (15m / 1h / 4h), sensitivity slider, conditional alert (blowoff + accumulation) and long-term recommendation per coin.
+    Multi-timeframe accumulation detector (15m / 1h / 4h), sensitivity slider, conditional alert (blowoff + accumulation) and long-term recommendation per coin.
     Run on a local server to avoid CORS (e.g., <code>python -m http.server</code>).
   </div>
 
@@ -108,7 +109,7 @@
    - multi-TF accumulation (15m / 1h / 4h)
    - sensitivity slider
    - conditional alert when blowoff high AND accumulation >= threshold
-   - ADDED: Long-term recommendation generator and rendering
+   - ADDED: concise AI final recommendation layer (one-line) shown in both table & card views
    ====================================================== */
 
 const API_BASE = 'https://fapi.binance.com';
@@ -426,61 +427,67 @@ function explainBlowoff(item){
 }
 
 /* ============================================================
-   Long-term position recommendation generator
-   - Produces the one-line final recommendation (like your sample)
-   - Produces a short plan: Starter/Add/Stop/Alerts
+   NEW: Final AI recommendation layer (single-sentence)
+   - getFinalRecommendation(item): returns {sentence, reasonShort}
+   - Uses phase, accumCombined.confidence, PIPPIN sim, RSI, wick, vol, funding
    ============================================================ */
-function generateLongTermRecommendation(item){
+function getFinalRecommendation(item){
+  // normalize inputs
   const sim = Math.round((item.similarity||0)*100);
-  const phase = (item.phase && item.phase.phase) ? item.phase.phase : (item.phase || 'Unknown');
-  const phaseConf = item.phase && item.phase.confidence ? item.phase.confidence : 0;
+  const phase = item.phase && item.phase.phase ? item.phase.phase : (item.phase || 'Unknown');
+  const accum = item.accumCombined ? (item.accumCombined.confidence || 0) : 0;
   const rsi4h = item.rsi4h || 0;
   const rsi1d = item.rsi1d || 0;
-  const vol = item.volSpike4 || 1;
   const wick = item.wickRatio4 || 0;
-  const emaDist = item.ema70DistPct || 0;
+  const vol = item.volSpike4 || 1;
   const funding = item.fundingRate || 0;
-  const accumConf = item.accumCombined ? item.accumCombined.confidence : 0;
+  const drop = item.dropPctFromPeak || 0;
 
-  // Heuristics for the one-line recommendation
-  let oneLine = '';
-  // Case 1: High PIPPIN similarity + overbought 4H or blowoff signs => conservative template
-  if(sim >= 75 && (phase.includes('Distribution') || phase.includes('Climax') || phase.includes('Capitulation') || rsi4h >= 78 || wick >= 1.8)){
-    oneLine = `Because PIPPIN similarity is high (${sim}%) but higher-TF accumulation is weak (${accumConf}%) and 4H RSI is ${Math.round(rsi4h)}, do not take a full long-term position yet. If you want exposure, use a small starter, protect with a tight stop under the 4H low, and add only after 4H/daily accumulation confirmation and rising volume.`;
+  // Decide category
+  // Priority rules: accumulation confirmed -> supportive; strong blowoff signs -> avoid; distribution/low sim -> avoid
+  let sentence = '';
+  let rationale = '';
+
+  // Strong accumulation on higher TFs
+  if(accum >= 65 && phase.includes('Accumulation')){
+    sentence = `PIPPIN sim ${sim}% and multi-TF accumulation (${accum}%) suggest early re-accumulation — consider staged long-term entries (starter now, add on 4H/1D confirmation).`;
+    rationale = 'Strong accumulation confirmed';
   }
-  // Case 2: Strong PIPPIN + clear accumulation on higher TFs
-  else if(sim >= 65 && accumConf >= 60 && phase.includes('Accumulation')){
-    oneLine = `PIPPIN similarity strong (${sim}%) and multi-TF accumulation confirmed (${accumConf}%) — consider staged long-term entry: small starter now, add after 4H/daily confirmation and sustained/broadening volume.`;
+  // High similarity + moderate accumulation
+  else if(sim >= 70 && accum >= 50){
+    sentence = `High PIPPIN similarity (${sim}%) plus moderate accumulation (${accum}%) — use a small starter, protect with a 4H stop, and scale in after sustained volume and 4H confirmation.`;
+    rationale = 'High similarity + moderate accumulation';
   }
-  // Case 3: Normal/trending and not exhausted
-  else if(phase.includes('Normal') && rsi4h < 70 && vol >= 1.2){
-    oneLine = `Structure looks normal/trending and not exhausted — long-term entry possible with standard risk sizing; prefer adding on confirmed higher lows on 4H.`;
+  // High blowoff / overbought / low accumulation
+  else if((rsi4h >= 78 || wick >= 1.8 || vol >= 3 || funding < -0.001) && accum < 50){
+    sentence = `Because 4H is overbought (RSI ${Math.round(rsi4h)}) and accumulation is weak (${accum}%), avoid full long-term positions now; if needed, use a small starter and tight 4H stop — only add after clear 4H/daily accumulation.`;
+    rationale = 'Overbought + weak accumulation';
+  }
+  // Distribution / Breakdown detected
+  else if(phase.includes('Distribution') || phase.includes('Breakdown') || phase.includes('Capitulation')){
+    sentence = `Distribution/breakdown phase detected — expect further downside pressure; avoid long-term buys until a stable accumulation base and flattening EMAs appear on 4H/1D.`;
+    rationale = 'Distribution/Breakdown';
+  }
+  // Dead-cat / bounce but moderate accum
+  else if(phase.includes('Dead-cat') || (drop > 10 && accum < 55)){
+    sentence = `Looks like a short-lived bounce (dead-cat) with limited accumulation (${accum}%) — do not treat this as a long-term base; wait for a sideways 4H/1D structure.`;
+    rationale = 'Dead-cat bounce';
+  }
+  // Normal/trending & supportive indicators
+  else if(sim >= 50 && rsi4h < 75 && accum >= 45 && vol >= 1.2){
+    sentence = `Structure appears healthy enough for longer-term exposure — consider standard sized positions and add on confirmed 4H higher lows or daily accumulation confirmation.`;
+    rationale = 'Healthy trending structure';
   }
   // Default conservative fallback
   else {
-    oneLine = `No clear long-term buy signal: use a small starter (if any), tight stop, and only scale in after clearer accumulation on 4H/1D or rising volume.`;
+    sentence = `No clear long-term buy signal: use a small starter (if any), protect with a tight stop, and scale in only after clear 4H/1D accumulation and rising green-volume.`;
+    rationale = 'Conservative fallback';
   }
 
-  // Short plan (numbers can be adjusted or exposed in UI later)
-  const starterPct = 10; // default starter allocation
-  const stopPct = (rsi4h >= 80 || wick >= 1.8) ? 8 : 12;
-  const addConditions = [
-    "4H higher low confirmed",
-    "Volume on green candles >= 1.5× volMA",
-    "Accumulation confidence ≥ 70% on 4H or combined TFs"
-  ];
-  const expanded = {
-    starter: `Starter: ~${starterPct}% of planned allocation (or a small fixed position).`,
-    stop: `Stop: below recent 4H consolidation low (~${stopPct}% below entry) or keep risk ≤ 1–2% of account.`,
-    add: `Add rules: add only after 2 of — ${addConditions.join('; ')}.`,
-    targets: `Take profits in stages: partial at 1.5× risk, more at structural resistance; trail remainder by EMA or 4H higher lows.`,
-    rationale: `Rationale: PIPPIN ${sim}%, phase "${phase}" (${phaseConf}%), accum ${accumConf}%, RSI4H ${Math.round(rsi4h)}, Wick ${wick.toFixed(2)}, Vol× ${vol}.`
-  };
-
-  return {oneLine, expanded, sim, phase, phaseConf, accumConf};
+  return {sentence, rationale, sim, accum, phase};
 }
 
-/* RENDERING */
+/* RENDERING (table + cards) */
 function renderTable(results){
   results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
   const threshold = parseInt(el.threshold.value,10)||4;
@@ -488,7 +495,7 @@ function renderTable(results){
     const expl = explainBlowoff(r);
     const phaseInfo = r.phase || {phase:'Unknown', confidence:0};
     const accum = r.accumCombined || {confidence:0, isAccum:false};
-    const rec = generateLongTermRecommendation(r);
+    const rec = getFinalRecommendation(r);
 
     let statusHtml = `<span class="small">normal</span>`; let bg='background:rgba(255,255,255,0.02)'; let cls='';
     if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
@@ -516,8 +523,9 @@ function renderTable(results){
         <strong>${expl.label}</strong> — ${expl.explanation}
         ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
         ${r.accumCombined && r.accumCombined.isAccum ? `<div style="margin-top:6px;color:#cfe8ff">Accumulation combined: ${r.accumCombined.confidence}% • reasons: ${ (r.accumChecks||[]).map(t => `${t.tf}:${t.result.reasons.join(',')}`).join(' || ') }</div>` : `<div style="margin-top:6px;color:var(--muted)">Accumulation combined: ${r.accumCombined.confidence}%</div>`}
-        <div class="oneLineRec">${rec.oneLine}</div>
-        <div class="recBox"><strong>Plan:</strong><br>${rec.expanded.starter}<br>${rec.expanded.stop}<br>${rec.expanded.add}<br>${rec.expanded.targets}<br><em style="color:var(--muted)">${rec.expanded.rationale}</em></div>
+        <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
+        <div class="oneLineRec">${rec.sentence}</div>
+        <div class="recBox"><strong>Plan:</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
       </td></tr>
     `;
   }).join('');
@@ -531,7 +539,7 @@ function renderCards(results){
   results.forEach(r=>{
     const expl = explainBlowoff(r); const phase = r.phase || {phase:'Unknown', confidence:0}; const accum = r.accumCombined || {confidence:0, isAccum:false};
     const simPct = Math.round((r.similarity||0)*100);
-    const rec = generateLongTermRecommendation(r);
+    const rec = getFinalRecommendation(r);
     let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
     if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
     const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
@@ -550,8 +558,9 @@ function renderCards(results){
           <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
           ${phase.reasons && phase.reasons.length ? `<div style="color:#cfe8ff;margin-top:6px">Phase reasons:<br>• ${phase.reasons.join('<br>• ')}</div>` : ''}
           ${accum.isAccum ? `<div style="color:#cfe8ff;margin-top:6px">Accumulation combined: ${accum.confidence}% • TFs: ${(r.accumChecks||[]).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ')}</div>` : ''}
-          <div class="oneLineRec">${rec.oneLine}</div>
-          <div class="recBox"><strong>Plan:</strong><br>${rec.expanded.starter}<br>${rec.expanded.stop}<br>${rec.expanded.add}<br>${rec.expanded.targets}<br><em style="color:var(--muted)">${rec.expanded.rationale}</em></div>
+          <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
+          <div class="oneLineRec">${rec.sentence}</div>
+          <div class="recBox"><strong>Plan:</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
         </div>
       </div>
     `;
@@ -560,6 +569,7 @@ function renderCards(results){
   setTimeout(()=>{ const nodes=document.querySelectorAll('.coinCard.blink'); nodes.forEach(n=>n.classList.remove('blink')); }, 3000);
 }
 
+/* Progress & countdown */
 function updateProgress(){ const pct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0; el.bar.style.width = pct + '%'; el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`; el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`; }
 function startCountdown(sec){ if(countdownTimer) clearInterval(countdownTimer); const end = Date.now() + sec*1000; countdownTimer = setInterval(()=>{ const left = Math.max(0, Math.round((end - Date.now())/1000)); el.countdown.innerText = `Next scan in: ${left}s`; if(left <= 0){ clearInterval(countdownTimer); el.countdown.innerText='Running...'; } }, 500); }
 
@@ -589,7 +599,7 @@ async function runScan(once=false){
     // post-process: detect phase and pippin similarity
     results.forEach(r => { r.phase = detectPhaseForSymbol(r); r.dropPctFromPeak = r.phase.dropPctFromPeak || 0; });
 
-    // pippin vector
+    // build PIPPIN vector if possible
     let pippinVector = null;
     const pippinEntry = results.find(x => x.symbol === 'PIPPINUSDT');
     if(pippinEntry) pippinVector = makeFeatureVector(pippinEntry);
@@ -659,6 +669,6 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 </script>
 
-<footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term recommendation added. Tune the sensitivity slider and TF toggles to match your style. Run from a local server to avoid CORS.</footer>
+<footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term AI recommendation layer added. Tune the sensitivity slider and TF toggles to match your style. Run from a local server to avoid CORS.</footer>
 </body>
 </html>
