@@ -524,7 +524,6 @@ function renderTable(results){
         ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
         ${r.accumCombined && r.accumCombined.isAccum ? `<div style="margin-top:6px;color:#cfe8ff">Accumulation combined: ${r.accumCombined.confidence}% • reasons: ${ (r.accumChecks||[]).map(t => `${t.tf}:${t.result.reasons.join(',')}`).join(' || ') }</div>` : `<div style="margin-top:6px;color:var(--muted)">Accumulation combined: ${r.accumCombined.confidence}%</div>`}
         <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
-        <div class="oneLineRec">${rec.sentence}</div>
         <div class="recBox"><strong>Plan:</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
       </td></tr>
     `;
@@ -559,7 +558,6 @@ function renderCards(results){
           ${phase.reasons && phase.reasons.length ? `<div style="color:#cfe8ff;margin-top:6px">Phase reasons:<br>• ${phase.reasons.join('<br>• ')}</div>` : ''}
           ${accum.isAccum ? `<div style="color:#cfe8ff;margin-top:6px">Accumulation combined: ${accum.confidence}% • TFs: ${(r.accumChecks||[]).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ')}</div>` : ''}
           <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
-          <div class="oneLineRec">${rec.sentence}</div>
           <div class="recBox"><strong>Plan:</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
         </div>
       </div>
