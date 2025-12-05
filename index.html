@@ -419,6 +419,27 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // try to still proceed but warn user
     el.symbolStatus.innerText = `Warning: "${sym}" does not end with USDT — will attempt fetch anyway.`;
   }
+
+  // ===== compute a blowoff-style score (same logic as queueSymbolAnalysis) =====
+let s = 0;
+// stricter 1D extreme
+if(result.rsi1d !== null && result.rsi1d >= 88) s++;
+// 4H overbought
+if(result.rsi4h !== null && result.rsi4h >= 80) s++;
+// volume spike
+if(result.volSpike4 !== null && result.volSpike4 >= 1.8) s++;
+// wick/climax
+if(result.wickRatio4 !== null && result.wickRatio4 >= 1.6) s++;
+// big EMA stretch (tweak threshold to match your queue logic)
+if(result.ema70DistPct && Math.abs(result.ema70DistPct) >= 20) s++;
+// lower highs / breakdown
+if(result.lowerHigh) s++;
+// add other checks your queue uses (capitulation, dead-cat etc.)
+/* e.g.:
+if(result.preCrash && result.preCrash.someFlag) s++;
+*/
+result.score = s;
+  
   // respect cache
   const cached = getCachedSymbol(sym);
   if(cached) {
