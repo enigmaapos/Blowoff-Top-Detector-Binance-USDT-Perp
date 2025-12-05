@@ -787,8 +787,9 @@ function queueSymbolAnalysis(symbol, results){
 }
 
 /* ---------- PHASE DETECTION & HELPERS ---------- */
-// Psychology-cycle driven phase detector (drop-in replacement)
-function detectPhaseForSymbol(item){
+
+// Psychology-cycle driven phase detector (market-psychology aligned, NO "dead-cat" label)
+function detectPhaseForSymbolPsych(item){
   try{
     const k4 = item.k4h || [], k15 = item.k15m || [];
     const rsi4h = (item.rsi4h || 0);
@@ -827,23 +828,11 @@ function detectPhaseForSymbol(item){
     const ema21 = ema(closes4, 21) || 0;
     const ema70 = ema(closes4, 70) || 0;
 
-    // detect dead-cat bounce-like action on 15m window
-    let deadCat = false;
-    if(k15 && k15.length > 20){
-      const closes15 = k15.map(k=>Number(k[4]));
-      const localMin = Math.min(...closes15.slice(-40));
-      const after = closes15.slice(closes15.indexOf(localMin) + 1);
-      if(after.length){
-        const bouncePct = ((after[after.length-1] - localMin) / (localMin || 1)) * 100;
-        if(bouncePct >= 6 && bouncePct <= 60) { deadCat = true; reasons.push(`Dead-cat bounce ${bouncePct.toFixed(1)}%`); score += 1; }
-      }
-    }
-
     // Score signals that map to psychology stages
 
     // STEALTH / TAKEOFF / EARLY PUMP: steady rising/emas aligned + low wick/low vol spike
     if(ema14 && ema21 && lastClose > ema14 && ema14 > ema21 && volSpike < 1.8 && rsi4h < 65 && dropPctFromPeak > -15){
-      reasons.push('Takeoff / early pump structure');
+      reasons.push('Takeoff / Early Pump structure');
       score += 1;
     }
 
@@ -858,13 +847,13 @@ function detectPhaseForSymbol(item){
 
     // MANIA/ENTHUSIASM: rising RSI, sustained vol, big green candles (we detect by high rsi4h + vol)
     if(rsi4h >= 75 && vol4 >= 2.0 && dropPctFromPeak > -8){
-      reasons.push('Mania / enthusiasm (high RSI + volume)');
+      reasons.push('Mania / Enthusiasm (high RSI + volume)');
       score += 2;
     }
 
     // BLOWOFF / CLIMAX: very large wick, very large vol spike, extreme RSI
     if(wick >= 1.8 && vol4 >= 3 && rsi4h >= 85){
-      reasons.push('Blowoff / climax candle (wick + vol + RSI)');
+      reasons.push('Blowoff / Climax candle (wick + vol + RSI)');
       score += 4;
     }
 
@@ -875,12 +864,11 @@ function detectPhaseForSymbol(item){
     const weakBounceStructure = (lowerHCount >= 2) || (lastClose < ema14 && lastClose < ema21);
     const bounceVolumeDecline = lastVol < volMA8 * 0.75;
     if(droppedEnough && weakBounceStructure && bounceVolumeDecline){
-      reasons.push('Return-to-normal (psych): drop >=15%, weak bounce, dec vol');
+      reasons.push('Return-to-Normal (psych): drop >=15%, weak bounce, declining volume');
       score += 4;
     }
 
     // BREAKDOWN / DISTRIBUTION: lower highs + range compression on 15m/1h + rising vol on down moves
-    // approximate range15: use 15m data if present
     let compactRange15 = false;
     if(k15 && k15.length > 10){
       const highs15 = k15.slice(-20).map(k=>Number(k[2]));
@@ -892,34 +880,34 @@ function detectPhaseForSymbol(item){
       }
     }
     if(lowerHCount >= 3 || compactRange15){
-      reasons.push('Breakdown / distribution (lower highs / sideways top)');
+      reasons.push('Breakdown / Distribution (lower highs / sideways top)');
       score += 2;
     }
 
     // CAPITULATION: large drop from peak (>=25%) + vol spike on down moves
     if(dropPctFromPeak <= -25 && vol4 >= 1.8){
-      reasons.push('Capitulation signal (large drop + vol)');
+      reasons.push('Capitulation / Despair (large drop + vol)');
       score += 4;
     }
 
-    // DEAD-CAT / RE-ACCUMULATION flag already applied above
+    // NOTE: Removed "dead-cat" labeling to align strictly with your psychology-cycle terms.
+    // If small bounces exist after a capitulation we treat them as weak bounces / re-accumulation signals (via accumCombined).
 
     // Determine phase candidates using scored signals and priority rules
     const candidates = [];
 
-    // Priority mapping (higher priority first)
+    // Priority mapping (higher priority first) — aligned to market psychology stages
     if(reasons.some(r=>r.includes('Blowoff'))) candidates.push({phase:'Blowoff / Mania', priority:9});
     if(reasons.some(r=>r.includes('Capitulation'))) candidates.push({phase:'Capitulation / Despair', priority:8});
-    if(reasons.some(r=>r.includes('Return-to-normal'))) candidates.push({phase:'Return-to-Normal (Psych Trap)', priority:7});
-    if(reasons.some(r=>r.includes('Dead-cat')) ) candidates.push({phase:'Dead-cat bounce', priority:6});
+    if(reasons.some(r=>r.includes('Return-to-Normal'))) candidates.push({phase:'Return-to-Normal (Psych Trap)', priority:7});
     if(reasons.some(r=>r.includes('Accumulation')) ) candidates.push({phase:'Accumulation / Re-accumulation', priority:6});
-    if(reasons.some(r=>r.includes('Breakdown') || r.includes('distribution'))) candidates.push({phase:'Distribution / Breakdown', priority:5});
+    if(reasons.some(r=>r.includes('Breakdown') || r.includes('Distribution'))) candidates.push({phase:'Distribution / Breakdown', priority:5});
     if(reasons.some(r=>r.includes('Takeoff')) ) candidates.push({phase:'Takeoff / Early Pump', priority:4});
-    if(reasons.length === 0) candidates.push({phase:'Normal / Trending', priority:1});
 
-    // fallback heuristics if nothing decisive
     if(candidates.length === 0){
+      // fallback heuristics
       if(dropPctFromPeak <= -20) candidates.push({phase:'Capitulation / Despair', priority:7});
+      else if(item.accumCombined && item.accumCombined.confidence >= 55) candidates.push({phase:'Accumulation / Re-accumulation', priority:5});
       else candidates.push({phase:'Normal / Trending', priority:1});
     }
 
@@ -942,7 +930,8 @@ function detectPhaseForSymbol(item){
   } catch(e){
     return { phase:'Unknown', confidence:0, reasons:[`error ${e.message}`], dropPctFromPeak:0 };
   }
-  }
+}
+       
 
 function makeFeatureVector(item){
   const rsi4h = Math.min(100, item.rsi4h || 0)/100;
