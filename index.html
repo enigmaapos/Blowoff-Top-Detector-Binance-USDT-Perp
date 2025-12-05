@@ -1423,61 +1423,34 @@ async function runScan(once=false){
       }
     });
 
-    // PIPPIN vector (best effort)
-    let pippinVector = null;
-    const pippinEntry = results.find(x => x.symbol === 'PIPPINUSDT');
-    if(pippinEntry) pippinVector = makeFeatureVector(pippinEntry);
-    else {
-      try{
-        const k4 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=4h&limit=30`, {allowIfNotRunning:true}).catch(e=>{ console.warn('PIPPIN k4 fetch failed', e.message); return null; });
-        const k15 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=15m&limit=40`, {allowIfNotRunning:true}).catch(e=>{ console.warn('PIPPIN k15 fetch failed', e.message); return null; });
+    // ---------------------------
+// Fixed “Full Cycle” reference vector (parabolic → blowoff → long decay → dead-flat)
+// This is a static template derived from the screenshot cycles (MAVIA, COAI, SOON, JELLY, EVAA)
+// ---------------------------
+const referenceFullCycleVector = {
+  // these values are tuned to represent a completed blowoff + decay cycle
+  rsi4h: 30,              // washed-out RSI after the decay
+  volSpike4: 5.0,         // large spike at blowoff
+  wickRatio4: 6.0,        // big upper wick at the top
+  ema70DistPct: 150,      // large EMA stretch at peak (in %)
+  fundingRate: -0.2,      // negative funding typical post-blowoff
+  slope15: -1,            // short-term slope negative (decay)
+  dropPctFromPeak: 85,    // huge drop from peak (in %)
+  accumCombined: { confidence: 20, isAccum: false } // low accumulation after full flattening
+};
 
-        if(!k4 || !Array.isArray(k4) || k4.length === 0){
-          pippinVector = null;
-        } else {
-          const closes4 = (k4||[]).map(k=>Number((k && k[4])||0));
-          const last4 = k4[k4.length-1] || null;
-          if(!last4){
-            pippinVector = null;
-          } else {
-            const open4=Number(last4[1]||0), high4=Number(last4[2]||0), low4=Number(last4[3]||0), close4=Number(last4[4]||0);
-            const body4 = Math.max(1e-9, Math.abs(close4-open4));
-            const wick4 = Math.max(0, high4 - Math.max(open4,close4))/body4;
-            const volMA4 = Math.max(1, sma((k4||[]).map(k=>Number((k && k[5])||0)), Math.min(10,k4.length)) || 1);
-            const volSpike4 = Number(((Number(last4[5]||1)) / volMA4).toFixed(2));
-            const ema70 = ema(closes4,70) || ema(closes4,Math.min(21,closes4.length));
-            const emaDist = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
-            const rsi4 = rsiFromCloses(closes4, 14);
-            const accumulation = detectAccumulationGeneric(
-              (k15||[]).map(k=>Number((k&&k[4])||0)),
-              (k15||[]).map(k=>Number((k&&k[2])||0)),
-              (k15||[]).map(k=>Number((k&&k[3])||0)),
-              (k15||[]).map(k=>Number((k&&k[5])||0)),
-              30,
-              parseInt(el.sensitivity.value,10)||50
-            );
-            pippinVector = makeFeatureVector({
-              rsi4h:rsi4,
-              volSpike4,
-              wickRatio4:wick4,
-              ema70DistPct:emaDist,
-              fundingRate:0,
-              slope15:1,
-              dropPctFromPeak:0,
-              accumCombined:{confidence:accumulation.confidence, isAccum:accumulation.isAccum}
-            });
-          }
-        }
-      } catch(e){
-        console.warn('PIPPIN vector build failed:', e.message);
-        pippinVector = null;
-      }
-    }
-
-    if(pippinVector){
-      results.forEach(r => { r.similarity = cosineSim(makeFeatureVector(r), pippinVector); });
-    } else results.forEach(r => r.similarity = 0);
-
+// Build a feature vector from the fixed template and compute similarity for every result
+try {
+  const pippinVector = makeFeatureVector(referenceFullCycleVector);
+  results.forEach(r => {
+    // ensure makeFeatureVector can accept objects with missing keys safely (it already does)
+    r.similarity = cosineSim(makeFeatureVector(r), pippinVector);
+  });
+} catch(err) {
+  console.warn('Error computing static template similarity:', err.message);
+  results.forEach(r => r.similarity = 0);
+}
+    
     // store latest results globally and sort using user's choice
     window.lastScanResults = results;
     sortResults(window.lastScanResults);
