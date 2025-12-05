@@ -124,6 +124,15 @@
     <div id="safetyStatus" class="mutedBadge">Safety OK</div>
   </div>
 
+  <!-- Symbol search (paste inside the .controls block) -->
+<label style="margin-left:8px">
+  Search symbol:
+  <input id="symbolSearch" placeholder="e.g. BTCUSDT or PIPPINUSDT" style="margin-left:6px;width:150px"/>
+</label>
+<button id="symbolSearchBtn" class="alt" title="Analyze symbol">Analyze</button>
+<button id="symbolClearCache" class="alt" title="Clear symbol cache" style="margin-left:6px">Clear cache</button>
+<div id="symbolStatus" class="small" style="margin-left:8px;color:var(--muted)"> </div>
+
   <div id="tableView"></div>
   <div id="cardView"></div>
 
@@ -171,6 +180,248 @@ const el = {
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir')
 };
+
+  // ---------------------- Symbol search + single-symbol analyzer ----------------------
+// Wire new elements
+el.symbolSearch = document.getElementById('symbolSearch');
+el.symbolSearchBtn = document.getElementById('symbolSearchBtn');
+el.symbolClearCache = document.getElementById('symbolClearCache');
+el.symbolStatus = document.getElementById('symbolStatus');
+
+// Simple in-memory cache for symbol analysis & exchangeInfo
+const symbolCache = new Map(); // key -> { ts, data }
+const CACHE_TTL = 1000 * 60 * 5; // 5 minutes TTL
+
+// Small rate-limiter for manual symbol lookups (token bucket-ish)
+let lastSymbolReq = 0;
+const MIN_MS_BETWEEN_SYMBOL_REQ = 800; // 0.8s between manual lookups (adjust as needed)
+
+// Optional: cached exchangeInfo to validate symbol (fetch once, lazy)
+let exchangeInfoCache = null;
+async function ensureExchangeInfo() {
+  if(exchangeInfoCache && (Date.now() - exchangeInfoCache.ts) < 1000*60*30) return exchangeInfoCache.data;
+  try {
+    const data = await safeFetch(API_BASE + '/fapi/v1/exchangeInfo', { allowIfNotRunning: true });
+    exchangeInfoCache = { ts: Date.now(), data };
+    return data;
+  } catch(e){
+    // if fails, we won't block symbol analysis — just proceed (we'll try to fetch klines)
+    console.warn('exchangeInfo fetch failed:', e.message);
+    return null;
+  }
+}
+
+// Validate quick: symbol must end with USDT for futures perpetual USDT pairs
+function looksLikeUSDTPerp(sym) {
+  if(!sym) return false;
+  // common convention: futures perpetual on Binance use USDT pairs and show in /fapi endpoints
+  return sym.toUpperCase().endsWith('USDT');
+}
+
+// Helper: read & set cache
+function getCachedSymbol(sym) {
+  const k = sym.toUpperCase();
+  const row = symbolCache.get(k);
+  if(!row) return null;
+  if(Date.now() - row.ts > CACHE_TTL) { symbolCache.delete(k); return null; }
+  return row.data;
+}
+function setCachedSymbol(sym, data) {
+  const k = sym.toUpperCase();
+  symbolCache.set(k, { ts: Date.now(), data });
+}
+
+// Clear cache button
+el.symbolClearCache.addEventListener('click', () => {
+  symbolCache.clear();
+  exchangeInfoCache = null;
+  el.symbolStatus.innerText = 'Symbol cache cleared.';
+  setTimeout(()=> el.symbolStatus.innerText = '', 2600);
+});
+
+// The main single-symbol analyzer; returns the result object in same shape as `results` entries
+async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
+  const sym = (symbol || '').toUpperCase();
+  if(!sym) throw new Error('Symbol empty');
+  // quick check and safety
+  if(!looksLikeUSDTPerp(sym)) {
+    // try to still proceed but warn user
+    el.symbolStatus.innerText = `Warning: "${sym}" does not end with USDT — will attempt fetch anyway.`;
+  }
+  // respect cache
+  const cached = getCachedSymbol(sym);
+  if(cached) {
+    el.symbolStatus.innerText = `Loaded ${sym} from cache (${Math.round((Date.now()-cached._cachedAt)/1000)}s ago)`;
+    return cached;
+  }
+
+  // rate-limit manual lookups to avoid bursts (user clicks many times)
+  const since = Date.now() - lastSymbolReq;
+  if(since < MIN_MS_BETWEEN_SYMBOL_REQ) {
+    const wait = MIN_MS_BETWEEN_SYMBOL_REQ - since;
+    await delay(wait);
+  }
+  lastSymbolReq = Date.now();
+
+  // validate symbol exists (lazy)
+  const exch = await ensureExchangeInfo().catch(()=>null);
+  if(exch && Array.isArray(exch.symbols)) {
+    const found = exch.symbols.find(s => s.symbol === sym);
+    if(!found) {
+      el.symbolStatus.innerText = `Symbol ${sym} not found in exchangeInfo (not listed?)`;
+      // still proceed to try fetch; maybe it's a newly-listed token
+    } else {
+      // optional: ensure quoteAsset is USDT
+      if(found.quoteAsset !== 'USDT') {
+        el.symbolStatus.innerText = `Symbol ${sym} found but quoteAsset=${found.quoteAsset}. Expected USDT. Proceeding anyway.`;
+      }
+    }
+  }
+
+  el.symbolStatus.innerText = `Fetching ${sym} data...`;
+
+  try {
+    // Fetch only what's needed (4h, 1h, 15m klines + funding)
+    const promises = [
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=4h&limit=40`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1h&limit=60`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=80`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${sym}&limit=1`, { allowIfNotRunning: opts.allowIfNotRunning })
+    ];
+    const [k4h, k1h, k15, f] = await Promise.all(promises);
+
+    // build features just like queueSymbolAnalysis
+    const closes4h = (k4h||[]).map(k=>Number(k[4])); const highs4h=(k4h||[]).map(k=>Number(k[2])); const lows4h=(k4h||[]).map(k=>Number(k[3])); const vols4h=(k4h||[]).map(k=>Number(k[5]));
+    const closes1h = (k1h||[]).map(k=>Number(k[4])); const highs1h=(k1h||[]).map(k=>Number(k[2])); const lows1h=(k1h||[]).map(k=>Number(k[3])); const vols1h=(k1h||[]).map(k=>Number(k[5]));
+    const closes15 = (k15||[]).map(k=>Number(k[4])); const highs15=(k15||[]).map(k=>Number(k[2])); const lows15=(k15||[]).map(k=>Number(k[3])); const vols15=(k15||[]).map(k=>Number(k[5]));
+
+    const last4 = (k4h && k4h.length) ? k4h[k4h.length-1] : null;
+    if(!last4) throw new Error('No 4H candles returned');
+
+    const open4 = Number(last4[1]), high4 = Number(last4[2]), low4 = Number(last4[3]), close4 = Number(last4[4]);
+    const body4 = Math.abs(close4 - open4) || 1e-9;
+    const wickTop4 = Math.max(0, high4 - Math.max(open4, close4));
+    const wickRatio4 = wickTop4 / body4;
+    const volMA4 = sma(vols4h, Math.min(10, vols4h.length)) || 1;
+    const volSpike4 = Number((Number(last4[5]) / volMA4).toFixed(2));
+    const ema70_4 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
+    const emaDistPct = ema70_4 ? Number(pct(close4, ema70_4).toFixed(2)) : 0;
+    const rsi4h = rsiFromCloses(closes4h, 14);
+    const rsi1d = rsiFromCloses(closes4h.slice(-9).map(v=>v), 14);
+    const lowerHigh = (k4h && k4h.length>1) ? Number(high4) < Number(k4h[k4h.length-2][2]) : false;
+    const fundingRate = (f && f.length) ? Number(f[0].fundingRate) : 0;
+    const rsi1h = rsiFromCloses(closes1h, 14);
+    const rsi15 = rsiFromCloses(closes15, 14);
+    const volMA15 = sma(vols15, Math.min(10, vols15.length)) || 1;
+    const volSpike15 = Number((Number(closes15.length ? vols15[vols15.length-1] : 1) / volMA15).toFixed(2));
+
+    // accumulation checks
+    const sens = parseInt(el.sensitivity.value,10) || 50;
+    const acc15 = detectAccumulationGeneric(closes15, highs15, lows15, vols15, 30, sens);
+    const acc1h = detectAccumulationGeneric(closes1h, highs1h, lows1h, vols1h, 30, sens);
+    const acc4h = detectAccumulationGeneric(closes4h, highs4h, lows4h, vols4h, 20, sens);
+    const tfChecks = [
+      { tf:'15m', result: acc15 },
+      { tf:'1h', result: acc1h },
+      { tf:'4h', result: acc4h }
+    ];
+    let combinedConfidence = 0;
+    if(tfChecks.length){
+      let weightSum = 0;
+      tfChecks.forEach(t=>{
+        const w = (t.tf === '4h') ? 1.2 : (t.tf === '1h' ? 1.0 : 0.8);
+        combinedConfidence += (t.result.confidence || 0) * w;
+        weightSum += w;
+      });
+      combinedConfidence = Math.round(combinedConfidence / weightSum);
+    }
+
+    const preCrash = detectPreCrash({
+      rsi4h,
+      volSpike4,
+      wickRatio4,
+      ema70DistPct: emaDistPct,
+      dropPctFromPeak: pct(close4, ema70_4) || 0,
+      fundingRate,
+      k4h
+    });
+
+    // build the result object (compatible shape)
+    const result = {
+      symbol: sym,
+      score: 0, // we didn't run the multi-signal score aggregator here; you can run detectPhaseForSymbol if you want
+      signals: {},
+      rsi1d, rsi4h, rsi1h, rsi15,
+      volSpike4, volSpike15,
+      wickRatio4,
+      ema70DistPct: emaDistPct,
+      lowerHigh,
+      fundingRate,
+      closeNow: close4,
+      k4h, k1h, k15m: k15,
+      accumChecks: tfChecks,
+      accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
+      preCrash,
+      // annotate detection results:
+      phase: detectPhaseForSymbol({
+        rsi4h, wickRatio4, volSpike4, accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
+        k4h, k15m: k15, closeNow: close4, ema70DistPct: emaDistPct
+      }),
+      returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
+    };
+
+    // similarity to PIPPIN vector: if pippinVector available on main run, use it, otherwise 0
+    if(window.lastScanResults) {
+      const pippin = window.lastScanResults.find(x => x.symbol === 'PIPPINUSDT');
+      if(pippin) result.similarity = cosineSim(makeFeatureVector(result), makeFeatureVector(pippin));
+      else result.similarity = 0;
+    } else result.similarity = 0;
+
+    // final recommendations, targets, short-term rec
+    result.expl = explainBlowoff(result);
+    result.finalRec = getFinalRecommendation(result);
+    result.shortRec = getShortTermRecommendation(result);
+    result.longTargets = getLongTermTargets(result);
+
+    // save to cache
+    result._cachedAt = Date.now();
+    setCachedSymbol(sym, result);
+
+    el.symbolStatus.innerText = `Analyzed ${sym} • accum ${result.accumCombined.confidence}% • rsi4h ${Math.round(result.rsi4h||0)}`;
+    return result;
+  } catch(err){
+    el.symbolStatus.innerText = `Analyze ${sym} failed: ${err.message}`;
+    throw err;
+  }
+}
+
+// UI: analyze button
+el.symbolSearchBtn.addEventListener('click', async () => {
+  const sym = (el.symbolSearch.value || '').trim().toUpperCase();
+  if(!sym){ el.symbolStatus.innerText = 'Enter a symbol (e.g. BTCUSDT)'; return; }
+  try {
+    el.symbolSearchBtn.disabled = true;
+    const res = await analyzeSymbol(sym, { allowIfNotRunning: true });
+    // render result in the tradeInterpret panel and also show the card view for the single symbol
+    updateTradingInterpretation([res]); // will show this item as the interpretation
+    // render as single-card UI: reuse renderCards with [res]
+    if(window.innerWidth >= 680) {
+      // render table view with one row
+      renderTable([res]);
+    } else {
+      renderCards([res]);
+    }
+  } catch(e) {
+    console.warn('symbol analysis error', e);
+  } finally {
+    el.symbolSearchBtn.disabled = false;
+  }
+});
+
+// bonus: support pressing Enter in input to search
+el.symbolSearch.addEventListener('keydown', (ev) => {
+  if(ev.key === 'Enter') { ev.preventDefault(); el.symbolSearchBtn.click(); }
+});
 
 let running=false, queue=[], totalTasks=0, doneTasks=0, autoTimer=null, countdownTimer=null;
 let requestsThisWindow=0, windowStart=Date.now(), SAFETY_WINDOW_MS=60000, SAFETY_MAX=900, SAFETY_PAUSE=30;
