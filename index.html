@@ -256,6 +256,129 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // try to still proceed but warn user
     el.symbolStatus.innerText = `Warning: "${sym}" does not end with USDT — will attempt fetch anyway.`;
   }
+
+
+  // UI: Add wiring for new controls (create these in your HTML or skip if you already have similar)
+el.scanAllBtn = document.getElementById('scanAllBtn');        // <button id="scanAllBtn">Scan All USDT Blowoff</button>
+el.scanCancelBtn = document.getElementById('scanCancelBtn');  // <button id="scanCancelBtn">Cancel Scan</button>
+el.scanProgress = document.getElementById('scanProgress');    // optional small progress text
+
+// Config - tweak these to taste
+const ALL_SCAN_BATCH_SIZE = 5;      // concurrent analyzeSymbol() calls per batch
+const ALL_SCAN_DELAY_BETWEEN = 220; // ms delay between individual symbol analyze starts
+const ALL_SCAN_BLACKLIST = new Set(blacklist || []); // reuse your blacklist
+let allScanAbort = false;
+
+async function fetchAllUSDTSymbols() {
+  // Use exchangeInfo (cached via ensureExchangeInfo)
+  const info = await ensureExchangeInfo();
+  if(!info || !Array.isArray(info.symbols)) throw new Error('exchangeInfo unavailable');
+  // Filter perpetual USDT pairs - relax rules if you want to include non-perpetual
+  const syms = info.symbols
+    .filter(s => s.symbol && s.symbol.endsWith('USDT') && !ALL_SCAN_BLACKLIST.has(s.symbol))
+    .map(s => ({ symbol: s.symbol, status: s.status || 'UNKNOWN', quoteAsset: s.quoteAsset || '' }));
+  return syms.map(x => x.symbol);
+}
+
+async function analyzeSymbolsInBatches(symbols, opts = { allowIfNotRunning: true, phaseFilterText: 'Blowoff Forming' }) {
+  allScanAbort = false;
+  const total = symbols.length;
+  let processed = 0;
+  const matched = [];
+  const errors = [];
+
+  // helper to update UI progress
+  function updateUI() {
+    if(el.scanProgress) el.scanProgress.innerText = `Processed ${processed}/${total} — Found ${matched.length}`;
+    if(el.symbolStatus) el.symbolStatus.innerText = `Scanning ${processed}/${total} — matched ${matched.length}`;
+  }
+
+  // iterate in windows of size ALL_SCAN_BATCH_SIZE
+  for (let i = 0; i < symbols.length; i += ALL_SCAN_BATCH_SIZE) {
+    if(allScanAbort) break;
+    // before starting a batch, check safety and maybe pause
+    if(checkSafetyAndMaybePause()) {
+      // if safety triggered, stop scan
+      el.symbolStatus && (el.symbolStatus.innerText = 'Scan paused by safety. Aborting.');
+      break;
+    }
+    const batch = symbols.slice(i, i + ALL_SCAN_BATCH_SIZE);
+    // map to promises but start them staggered to avoid bursts
+    const proms = batch.map(async (sym, idx) => {
+      if(allScanAbort) return null;
+      // Respect small offset so not all requests start at same ms
+      await delay(idx * Math.max(0, Math.floor(ALL_SCAN_DELAY_BETWEEN / 2)));
+      try {
+        // reuse analyzeSymbol which uses symbolCache
+        const res = await analyzeSymbol(sym, { allowIfNotRunning: opts.allowIfNotRunning });
+        // filter match: check phase label OR simPhase
+        const phaseName = (res.phase && res.phase.phase) ? res.phase.phase : '';
+        const simPhase = res.simPhase || '';
+        const matches = (phaseName.toLowerCase().includes(opts.phaseFilterText.toLowerCase())
+                        || simPhase.toLowerCase().includes(opts.phaseFilterText.toLowerCase()));
+        if(matches) {
+          matched.push(res);
+        }
+        processed++;
+        updateUI();
+        // small safety delay between resolutions to help not exceed req/min
+        await delay(ALL_SCAN_DELAY_BETWEEN);
+        return res;
+      } catch(err) {
+        processed++;
+        errors.push({ symbol: sym, error: err.message });
+        updateUI();
+        return null;
+      }
+    });
+
+    // await entire batch
+    await Promise.allSettled(proms);
+
+    // optional small cooling off after each batch
+    await delay(ALL_SCAN_DELAY_BETWEEN);
+  }
+
+  // sort + render results
+  window.lastScanResults = matched;
+  sortResults(window.lastScanResults || []);
+  if(window.innerWidth >= 680) renderTable(window.lastScanResults);
+  else renderCards(window.lastScanResults);
+  updateTradingInterpretation(window.lastScanResults);
+
+  // final UI
+  if(el.symbolStatus) el.symbolStatus.innerText = `Scan complete. Found ${matched.length}/${total}.`;
+  if(el.scanProgress) el.scanProgress.innerText = `Done — matched ${matched.length} / ${total}`;
+  return { matched, errors, total };
+}
+
+// Hook buttons (if present)
+if(el.scanAllBtn) {
+  el.scanAllBtn.addEventListener('click', async () => {
+    try {
+      el.scanAllBtn.disabled = true;
+      el.scanCancelBtn && (el.scanCancelBtn.disabled = false);
+      if(el.symbolStatus) el.symbolStatus.innerText = 'Fetching symbol list...';
+      const symbols = await fetchAllUSDTSymbols();
+      if(el.symbolStatus) el.symbolStatus.innerText = `Found ${symbols.length} USDT pairs — scanning...`;
+      await analyzeSymbolsInBatches(symbols, { allowIfNotRunning: true, phaseFilterText: 'Blowoff Forming' });
+    } catch(err) {
+      console.error('scanAll error', err);
+      if(el.symbolStatus) el.symbolStatus.innerText = `Scan error: ${err.message}`;
+    } finally {
+      el.scanAllBtn.disabled = false;
+      if(el.scanCancelBtn) el.scanCancelBtn.disabled = true;
+    }
+  });
+}
+
+if(el.scanCancelBtn) {
+  el.scanCancelBtn.addEventListener('click', () => {
+    allScanAbort = true;
+    if(el.symbolStatus) el.symbolStatus.innerText = 'Scan cancelled by user.';
+  });
+}
+  
   // respect cache
   const cached = getCachedSymbol(sym);
   if(cached) {
