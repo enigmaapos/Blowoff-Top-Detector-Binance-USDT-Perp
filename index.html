@@ -132,6 +132,7 @@
 <button id="symbolSearchBtn" class="alt" title="Analyze symbol">Analyze</button>
 <button id="symbolClearCache" class="alt" title="Clear symbol cache" style="margin-left:6px">Clear cache</button>
 <div id="symbolStatus" class="small" style="margin-left:8px;color:var(--muted)"> </div>
+  <button id="scanAllBtn" class="alt">Scan All USDT Blowoff Forming</button>
 
   <div id="tableView"></div>
   <div id="cardView"></div>
@@ -735,6 +736,68 @@ function detectPreCrash(item, opts={}) {
     return { likely:false, score:0, reasons:[`error ${err.message}`], confidence:0, meta:{} };
   }
 }
+
+  // ------------------------ SCAN ALL USDT PERPETUAL FOR BLOWOFF FORMING ------------------------
+
+async function scanAllUSDTBlowoffForming() {
+    el.message.innerText = "Scanning all USDT perpetual pairs...";
+    el.tableView.innerHTML = "";
+    el.cardView.innerHTML = "";
+
+    try {
+        // 1. Load all Binance USDT perpetual symbols
+        const info = await safeFetch(API_BASE + "/fapi/v1/exchangeInfo", { allowIfNotRunning: true });
+        const symbols = info.symbols
+            .filter(s => s.contractType === "PERPETUAL" && s.quoteAsset === "USDT")
+            .map(s => s.symbol);
+
+        el.message.innerText = `Scanning ${symbols.length} symbols...`;
+
+        const results = [];
+
+        for (let i = 0; i < symbols.length; i++) {
+            const sym = symbols[i];
+            el.message.innerText = `Scanning ${i+1}/${symbols.length}: ${sym}...`;
+
+            try {
+                // use your existing single-symbol analyzer
+                const r = await analyzeSymbol(sym, { allowIfNotRunning: true });
+
+                // include similarity-phase AND blowoff-phase
+                const phaseName = (r.phase && r.phase.name) ? r.phase.name.toLowerCase() : "";
+                const simPhase = (r.simPhase || "").toLowerCase();
+
+                const isBlowoffForming =
+                    phaseName.includes("blowoff forming") ||
+                    simPhase.includes("blowoff forming");
+
+                if (isBlowoffForming) {
+                    results.push(r);
+                }
+            } catch (err) {
+                console.warn("scan error:", sym, err.message);
+            }
+
+            await delay(300); // prevent rate-limit
+        }
+
+        el.message.innerText = `Found ${results.length} blowoff-forming coins.`;
+
+        if (results.length === 0) {
+            el.tableView.innerHTML = "<div style='padding:10px'>No blowoff-forming symbols found.</div>";
+            return;
+        }
+
+        renderTable(results);
+        renderCards(results);
+
+    } catch (e) {
+        el.message.innerText = "Scan failed: " + e.message;
+    }
+}
+
+// wire button
+document.getElementById("scanAllBtn").addEventListener("click", scanAllUSDTBlowoffForming);
 
 /* ---------- SAFE FETCH ---------- */
 async function safeFetch(url, opts = { allowIfNotRunning: false }) {
