@@ -244,6 +244,34 @@ el.symbolClearCache.addEventListener('click', () => {
   setTimeout(()=> el.symbolStatus.innerText = '', 2600);
 });
 
+  // Helper: cheap fallback scoring when res.score is missing
+function computeSimpleScore(res){
+  // simple heuristic — tuned to mimic blowoff-ish signals enough for badges
+  let s = 0;
+  const v = res || {};
+  const volSpike = Number(v.volSpike4 || v.volSpike || 0);
+  const rsi4 = Number(v.rsi4h || v.rsi || 0);
+  const wick = Number(v.wickRatio4 || 0);
+  const emaDist = Number(v.ema70DistPct || 0);
+
+  if(volSpike >= 5) s += 3;
+  else if(volSpike >= 3) s += 2;
+  else if(volSpike >= 1.5) s += 1;
+
+  if(rsi4 >= 95) s += 3;
+  else if(rsi4 >= 85) s += 2;
+  else if(rsi4 >= 70) s += 1;
+
+  if(wick >= 4) s += 2;
+  else if(wick >= 2) s += 1;
+
+  if(emaDist >= 100) s += 2;
+  else if(emaDist >= 50) s += 1;
+
+  // clamp to small integer
+  return Math.max(0, Math.min(10, Math.round(s)));
+}
+
   function classifySimilarityPhase(sim) {
   if (sim < 0.20) return "Trend / Early Pump";
   if (sim < 0.35) return "Blowoff Forming";
