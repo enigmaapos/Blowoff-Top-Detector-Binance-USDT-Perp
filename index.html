@@ -133,6 +133,11 @@
 <button id="symbolClearCache" class="alt" title="Clear symbol cache" style="margin-left:6px">Clear cache</button>
 <div id="symbolStatus" class="small" style="margin-left:8px;color:var(--muted)"> </div>
 
+  <!-- add next to symbolSearch / symbolClearCache -->
+<button id="scanTopGreenBtn">Scan Top30 ▲ (24h +)</button>
+<button id="scanTopRedBtn">Scan Top30 ▼ (24h -)</button>
+<div id="scanStatus" style="margin-top:6px;color:#888;"></div>
+
   <div id="tableView"></div>
   <div id="cardView"></div>
 
@@ -246,6 +251,97 @@ el.symbolClearCache.addEventListener('click', () => {
   if (sim < 0.80) return "Breakdown / Crash Phase";
   return "Flatline / Post-Crash";
   }
+
+  // ------------------- Top30 Gainers/Losers scanner & resistance/bearish filter -------------------
+
+// convenience: fetch all 24h tickers (futures perpetual)
+async function fetch24hTickers() {
+  // note: original failed sometimes due to CORS / network; allowIfNotRunning passed if you use safeFetch
+  const url = `${API_BASE}/fapi/v1/ticker/24hr`;
+  return await safeFetch(url, { allowIfNotRunning: true });
+}
+
+// pick top-n by priceChangePercent
+function getTopNByChange(tickers, n = 30, positive = true) {
+  if(!Array.isArray(tickers)) return [];
+  // ensure numeric and symbol ends with USDT (optional)
+  const filtered = tickers
+    .map(t => {
+      return { symbol: t.symbol, priceChangePercent: Number(t.priceChangePercent || 0), lastPrice: Number(t.lastPrice || 0) };
+    })
+    .filter(t => t.symbol && t.symbol.endsWith('USDT') && isFinite(t.priceChangePercent));
+  // sort descending for gainers, ascending for losers
+  filtered.sort((a,b) => positive ? b.priceChangePercent - a.priceChangePercent : a.priceChangePercent - b.priceChangePercent);
+  return filtered.slice(0, n);
+}
+
+// Run safe batch analysis with rate limit to avoid API throttling
+async function analyzeSymbolBatch(symbols, opts = { mode:'resistance', minDelay: 300 }) {
+  const results = [];
+  for(let i=0;i<symbols.length;i++){
+    const sym = (symbols[i].symbol || symbols[i]).toUpperCase();
+    try{
+      // small delay to avoid bursts
+      if(i>0) await delay(opts.minDelay);
+      el.scanStatus.innerText = `Analyzing ${i+1}/${symbols.length} • ${sym}`;
+      const res = await analyzeSymbol(sym, { allowIfNotRunning: true });
+      // decide if it matches mode filters
+      // resistance mode -> look for Blowoff / Blowoff Forming / Mania / Distribution (peak/resistance)
+      // bearish mode -> look for Breakdown / Capitulation / Post-Crash (bearish at support)
+      const phase = (res.phase && typeof res.phase === 'string') ? res.phase.toLowerCase() : (res.phase || '');
+      const psych = (res.simPhase || '').toLowerCase();
+
+      let keep = false;
+      if(opts.mode === 'resistance'){
+        // pick phases that imply topping/resistance behavior
+        if(phase.includes('blowoff') || phase.includes('climax') || phase.includes('distribution') || psych.includes('blowoff') || psych.includes('mania') || psych.includes('trend / early pump')) keep = true;
+      } else if(opts.mode === 'bearish'){
+        // pick phases that imply bearish stress / breakdown (safety)
+        if(phase.includes('breakdown') || phase.includes('capitulation') || phase.includes('post-crash') || psych.includes('breakdown') || psych.includes('flatline') || psych.includes('post-crash')) keep = true;
+      } else {
+        // fallback: include all
+        keep = true;
+      }
+
+      // push it for rendering but tag with mode
+      if(keep){
+        res._scanMode = opts.mode;
+        results.push(res);
+      }
+    } catch(err) {
+      console.warn('batch analyze error', sym, err.message);
+      // continue
+    }
+  }
+  el.scanStatus.innerText = `Batch analysis done: ${results.length} matches`;
+  return results;
+}
+
+// top-level orchestrator: fetch tickers, pick top30 gainers or losers, analyze and render matches
+async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
+  try{
+    el.scanStatus.innerText = 'Fetching 24h tickers...';
+    const tickers = await fetch24hTickers();
+    if(!tickers || !tickers.length){
+      el.scanStatus.innerText = 'Failed to fetch 24h tickers.';
+      return;
+    }
+    const top = getTopNByChange(tickers, 30, positive);
+    el.scanStatus.innerText = `Found ${top.length} symbols — starting analysis...`;
+    // Build minimal list: we can pass array of objects with symbol property
+    const matches = await analyzeSymbolBatch(top, { mode: mode, minDelay: 600 /* adjust for safe */});
+    // render using your existing renderer
+    if(matches.length) {
+      updateTradingInterpretation(matches); // will show cards
+      if(window.innerWidth >= 680) renderTable(matches); else renderCards(matches);
+    } else {
+      el.scanStatus.innerText = 'No matches found for filters.';
+    }
+  } catch(e){
+    console.error('runTop30Scan error', e);
+    el.scanStatus.innerText = `Scan failed: ${e.message}`;
+  }
+  } 
 
 
 // The main single-symbol analyzer; returns the result object in same shape as `results` entries
@@ -1587,6 +1683,29 @@ try {
 }
 
 /* UI events */
+  // wire buttons (call after DOM ready)
+el.scanTopGreenBtn = document.getElementById('scanTopGreenBtn');
+el.scanTopRedBtn   = document.getElementById('scanTopRedBtn');
+el.scanStatus = document.getElementById('scanStatus');
+
+el.scanTopGreenBtn.addEventListener('click', async () => {
+  el.scanTopGreenBtn.disabled = true;
+  el.scanTopRedBtn.disabled = true;
+  el.scanStatus.innerText = 'Running Top30 Gainers (green) scan...';
+  await runTop30Scan({ positive: true, mode: 'resistance' });
+  el.scanTopGreenBtn.disabled = false;
+  el.scanTopRedBtn.disabled = false;
+});
+
+el.scanTopRedBtn.addEventListener('click', async () => {
+  el.scanTopGreenBtn.disabled = true;
+  el.scanTopRedBtn.disabled = true;
+  el.scanStatus.innerText = 'Running Top30 Losers (red) scan...';
+  await runTop30Scan({ positive: false, mode: 'bearish' });
+  el.scanTopGreenBtn.disabled = false;
+  el.scanTopRedBtn.disabled = false;
+});
+  
 el.startBtn.addEventListener('click', ()=>{ if(running) return; prevBlowoffSet = new Set(); runScan(false); });
 el.stopBtn.addEventListener('click', ()=>{ running=false; queue=[]; el.startBtn.disabled=false; el.stopBtn.disabled=true; if(autoTimer) clearTimeout(autoTimer); if(countdownTimer) clearInterval(countdownTimer); el.countdown.innerText='Next scan in: -'; el.message.innerText='Stopped.'; });
 el.oneShot.addEventListener('click', ()=>{ if(running) return; runScan(true); });
