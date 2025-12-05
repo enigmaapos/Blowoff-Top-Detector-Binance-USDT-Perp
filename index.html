@@ -252,60 +252,6 @@ el.symbolClearCache.addEventListener('click', () => {
   return "Flatline / Post-Crash";
   }
 
-  // --- robust phase extraction + matching ---
-function normalizePhaseField(val){
-  // accept string, object {phase: "..."} or nested
-  if(!val) return '';
-  if(typeof val === 'string') return val.toLowerCase();
-  if(typeof val === 'object'){
-    if(typeof val.phase === 'string') return val.phase.toLowerCase();
-    // sometimes result.phase may already be the whole detectPhase return
-    if(typeof val.phaseName === 'string') return val.phaseName.toLowerCase();
-    // try JSON fallback
-    try { return JSON.stringify(val).toLowerCase(); } catch(e){ return ''; }
-  }
-  return String(val).toLowerCase();
-}
-
-// keywords for each mode (lowercase)
-const RESISTANCE_KEYWORDS = ['blowoff','climax','distribution','mania','bull','top','blowoff forming','takeoff/early pump','climax candle','blowoff / mania','distribution / breakdown'];
-const BEARISH_KEYWORDS = ['breakdown','capitulation','post-crash','flatline','despair','selloff','distribution','breakdown / crash','capitulation / despair'];
-
-// inside analyzeSymbolBatch loop after getting `res`:
-const rawPhase = res.phase;
-const rawSim = res.simPhase || res.sim; // some code uses simPhase or sim
-const phaseStr = normalizePhaseField(rawPhase);
-const simStr = normalizePhaseField(rawSim);
-
-// helper to test any keyword match
-function anyMatch(str, keywords){
-  if(!str || !keywords || !keywords.length) return false;
-  return keywords.some(k => str.includes(k));
-}
-
-let keep = false;
-let keepReason = 'no-match';
-
-// choose mode
-if(opts.mode === 'resistance'){
-  if(anyMatch(phaseStr, RESISTANCE_KEYWORDS)) { keep = true; keepReason = 'phase-match'; }
-  else if(anyMatch(simStr, RESISTANCE_KEYWORDS)) { keep = true; keepReason = 'simPhase-match'; }
-} else if(opts.mode === 'bearish'){
-  if(anyMatch(phaseStr, BEARISH_KEYWORDS)) { keep = true; keepReason = 'phase-match'; }
-  else if(anyMatch(simStr, BEARISH_KEYWORDS)) { keep = true; keepReason = 'simPhase-match'; }
-} else {
-  keep = true; keepReason = 'mode-all';
-}
-
-// debug logging (optional, comment out in production)
-console.log(`scan ${sym} -> phaseStr="${phaseStr}" simStr="${simStr}" keep=${keep} reason=${keepReason}`);
-
-// add to results if matched
-if(keep){
-  res._scanMode = opts.mode;
-  res._matchedBy = keepReason;
-  results.push(res);
-}
 
   // ------------------- Top30 Gainers/Losers scanner & resistance/bearish filter -------------------
 
@@ -343,26 +289,63 @@ async function analyzeSymbolBatch(symbols, opts = { mode:'resistance', minDelay:
       // decide if it matches mode filters
       // resistance mode -> look for Blowoff / Blowoff Forming / Mania / Distribution (peak/resistance)
       // bearish mode -> look for Breakdown / Capitulation / Post-Crash (bearish at support)
-      const phase = (res.phase && typeof res.phase === 'string') ? res.phase.toLowerCase() : (res.phase || '');
-      const psych = (res.simPhase || '').toLowerCase();
+      // --- robust phase extraction + matching ---
+function normalizePhaseField(val){
+  if(!val) return '';
+  if(typeof val === 'string') return val.toLowerCase();
+  if(typeof val === 'object'){
+    if(typeof val.phase === 'string') return val.phase.toLowerCase();
+    if(typeof val.phaseName === 'string') return val.phaseName.toLowerCase();
+    try { return JSON.stringify(val).toLowerCase(); } catch(e){ return ''; }
+  }
+  return String(val).toLowerCase();
+}
 
-      let keep = false;
-      if(opts.mode === 'resistance'){
-        // pick phases that imply topping/resistance behavior
-        if(phase.includes('blowoff') || phase.includes('climax') || phase.includes('distribution') || psych.includes('blowoff') || psych.includes('mania') || psych.includes('trend / early pump')) keep = true;
-      } else if(opts.mode === 'bearish'){
-        // pick phases that imply bearish stress / breakdown (safety)
-        if(phase.includes('breakdown') || phase.includes('capitulation') || phase.includes('post-crash') || psych.includes('breakdown') || psych.includes('flatline') || psych.includes('post-crash')) keep = true;
-      } else {
-        // fallback: include all
-        keep = true;
-      }
+const RESISTANCE_KEYWORDS = [
+  'blowoff','climax','distribution','mania','bull','top',
+  'blowoff forming','takeoff/early pump','climax candle',
+  'blowoff / mania','distribution / breakdown'
+];
 
-      // push it for rendering but tag with mode
-      if(keep){
-        res._scanMode = opts.mode;
-        results.push(res);
-      }
+const BEARISH_KEYWORDS = [
+  'breakdown','capitulation','post-crash','flatline','despair',
+  'selloff','distribution','breakdown / crash','capitulation / despair'
+];
+
+const rawPhase = res.phase;
+const rawSim = res.simPhase || res.sim;
+const phaseStr = normalizePhaseField(rawPhase);
+const simStr = normalizePhaseField(rawSim);
+
+function anyMatch(str, keywords){
+  if(!str) return false;
+  return keywords.some(k => str.includes(k));
+}
+
+let keep = false;
+let keepReason = 'no-match';
+
+// mode logic
+if(opts.mode === 'resistance'){
+  if(anyMatch(phaseStr, RESISTANCE_KEYWORDS)) { keep = true; keepReason='phase-match'; }
+  else if(anyMatch(simStr, RESISTANCE_KEYWORDS)) { keep = true; keepReason='simPhase-match'; }
+}
+else if(opts.mode === 'bearish'){
+  if(anyMatch(phaseStr, BEARISH_KEYWORDS)) { keep = true; keepReason='phase-match'; }
+  else if(anyMatch(simStr, BEARISH_KEYWORDS)) { keep = true; keepReason='simPhase-match'; }
+}
+else {
+  keep = true; keepReason='mode-all';
+}
+
+console.log(`scan ${sym} -> phase="${phaseStr}" sim="${simStr}" keep=${keep} reason=${keepReason}`);
+
+if(keep){
+  res._scanMode = opts.mode;
+  res._matchedBy = keepReason;
+  results.push(res);
+}
+
     } catch(err) {
       console.warn('batch analyze error', sym, err.message);
       // continue
