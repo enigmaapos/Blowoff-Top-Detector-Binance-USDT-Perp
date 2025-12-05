@@ -469,88 +469,65 @@ function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0
    RETURN TO NORMAL DETECTOR
    (same as before)
    ------------------------------ */
-function detectReturnToNormal(item, opts = {}) {
-  const o = Object.assign({
-    lookback4h: 12,
-    emaSlopeWindow: 6,
-    volWindow: 8,
-    rsiMax: 70,
-    relSdMaxPct: 10,
-    higherLowPct: 0.0,
-    sensitivity: 50
-  }, opts);
-
+function detectReturnToNormalPsych(item, opts = {}) {
   try {
     const k4 = item.k4h || [];
-    const close = item.closeNow || (k4.length ? Number(k4[k4.length-1][4]) : 0);
-
-    if(!k4 || k4.length < Math.max(8, o.lookback4h)) {
-      return {isReturn:false, score:0, reasons:['insufficient 4H candles'], confidence:0, meta:{}};
+    if(k4.length < 20) {
+      return { isReturn:false, score:0, reasons:["not enough data"], confidence:0 };
     }
 
-    const closes4 = k4.map(k => Number(k[4]));
-    const vols4  = k4.map(k => Number(k[5]));
+    const closes = k4.map(c => Number(c[4]));
+    const highs   = k4.map(c => Number(c[2]));
+    const vols    = k4.map(c => Number(c[5]));
+    const closeNow = item.closeNow || closes[closes.length-1];
 
-    // higher-low: split the lookback window in two halves and compare minima
-    const look = Math.min(o.lookback4h, closes4.length - 1);
-    const slice = closes4.slice(-look - 1);
-    const half = Math.floor(slice.length/2);
-    const left = slice.slice(0, half);
-    const right = slice.slice(half);
-    const leftMin = left.length ? Math.min(...left) : Math.min(...slice);
-    const rightMin = right.length ? Math.min(...right) : Math.min(...slice);
-    const higherLow = rightMin >= leftMin * (1 - o.higherLowPct);
+    // 1. Drop from peak ≥ 15%
+    const peak = Math.max(...highs.slice(-40));
+    const dropPct = ((closeNow - peak) / peak) * 100;
+    const dropOK = dropPct <= -15;
 
-    // EMA slope approximate
-    const closesForSlope = closes4.slice(-o.emaSlopeWindow - 1);
-    const lastEma14 = (() => {
-      const arr = closesForSlope.slice(-o.emaSlopeWindow);
-      if(!arr.length) return null;
-      return ema(arr, 14);
-    })();
-    const prevEma14 = (() => {
-      const arr = closesForSlope.slice(0, Math.max(0, closesForSlope.length - 1));
-      if(!arr.length) return null;
-      return ema(arr, 14);
-    })();
-    const emaSlope = (lastEma14 && prevEma14) ? (lastEma14 - prevEma14) : 0;
+    // 2. Weak bounce = lower highs forming
+    let lowerHighs = 0;
+    for(let i = highs.length - 5; i < highs.length - 1; i++){
+      if(highs[i+1] < highs[i]) lowerHighs++;
+    }
+    const bounceWeak = lowerHighs >= 2;
 
-    // relative stddev
-    const recentCloses = closes4.slice(-o.lookback4h);
-    const relSD = (() => {
-      const sd = stdDev(recentCloses);
-      const mean = recentCloses.reduce((s,x)=>s+x,0)/recentCloses.length;
-      return mean ? (sd/mean)*100 : 999;
-    })();
+    // 3. Declining volume on bounce
+    const recentVol = vols[vols.length - 1];
+    const prevVol = sma(vols.slice(-10), 5) || vols[vols.length-2];
+    const bounceVolOK = recentVol < prevVol * 0.7;
 
-    // volume taper
-    const volMA = sma(vols4, Math.min(o.volWindow, vols4.length)) || 1;
-    const lastVol = vols4[vols4.length-1] || 0;
-    const volTaper = lastVol < volMA * (1 + (50 - o.sensitivity)/200);
+    // 4. Bounce fails below EMA14/EMA21
+    const ema14 = ema(closes, 14);
+    const ema21 = ema(closes, 21);
+    const belowEMA = closeNow < ema14 && closeNow < ema21;
 
-    // rsi moderate
-    const rsi4 = item.rsi4h || rsiFromCloses(closes4, 14) || 50;
-    const rsiOK = rsi4 <= Math.max(65, o.rsiMax);
+    // 5. Momentum weak: small candles + small wicks
+    const last = k4[k4.length-1];
+    const wickRatio = (Number(last[2]) - Number(last[3])) / (Math.abs(Number(last[1]) - Number(last[4])) + 1e-9);
+    const volSpike = recentVol / (sma(vols, 10) || 1);
+    const momentumWeak = wickRatio < 2 && volSpike < 1.5;
 
-    let score = 0; const reasons = [];
-    if(higherLow){ score += 3; reasons.push('higher-low structure'); } else reasons.push('no clear higher-low');
-    if(emaSlope > 0){ score += 2; reasons.push('EMA slope up'); }
-    else if(Math.abs(emaSlope) < (Math.max(1e-6, Math.abs(lastEma14||1)) * 0.001)) { score += 1; reasons.push('EMAs flattening'); }
-    if(relSD <= o.relSdMaxPct){ score += 2; reasons.push(`low volatility ${relSD.toFixed(2)}%`); }
-    else if(relSD <= o.relSdMaxPct * 1.6){ score += 1; reasons.push('reduced volatility'); }
-    if(volTaper){ score += 1; reasons.push('volume taper (absorption)'); }
-    if(rsiOK){ score += 1; reasons.push(`RSI ${Math.round(rsi4)}`); }
+    // Score
+    let score = 0;
+    const reasons = [];
+    if(dropOK){ score++; reasons.push("Strong drop from peak (≥15%)"); }
+    if(bounceWeak){ score++; reasons.push("Lower highs on bounce (weak bounce)"); }
+    if(bounceVolOK){ score++; reasons.push("Declining volume on bounce"); }
+    if(belowEMA){ score++; reasons.push("Bounce capped by EMA14/EMA21"); }
+    if(momentumWeak){ score++; reasons.push("Momentum weak (small candles / weak wicks)"); }
 
-    const maxScore = 9;
-    const confidence = Math.round((score / maxScore) * 100);
-    const isReturn = score >= Math.max(4, Math.round(4 * (0.8 + (50 - o.sensitivity)/200)));
-    const meta = {higherLow, emaSlope, relSD, volMA, lastVol, rsi4, score, lookback:o.lookback4h};
+    const isReturn = score >= 3;
+    const confidence = Math.round((score / 5) * 100);
 
-    return {isReturn, score, reasons, confidence, meta};
+    return { isReturn, score, reasons, confidence, meta:{dropPct, lowerHighs, wickRatio, volSpike} };
+
   } catch(err) {
-    return {isReturn:false, score:0, reasons:[`error ${err.message}`], confidence:0, meta:{}};
+    return { isReturn:false, score:0, reasons:[`error: ${err.message}`], confidence:0 };
   }
 }
+  
 
 /* --------------------------
    PRE-CRASH / BLOWOFF DETECTOR
