@@ -788,7 +788,7 @@ function queueSymbolAnalysis(symbol, results){
 
 /* ---------- PHASE DETECTION & HELPERS ---------- */
 // Psychology-cycle driven phase detector (drop-in replacement)
-function detectPhaseForSymbolPsych(item){
+function detectPhaseForSymbol(item){
   try{
     const k4 = item.k4h || [], k15 = item.k15m || [];
     const rsi4h = (item.rsi4h || 0);
