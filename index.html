@@ -1078,11 +1078,11 @@ function getFinalRecommendation(item){
   let sentence = '';
   let rationale = '';
   if(accum >= 65 && phase.includes('Accumulation')){
-    sentence = `PIPPIN sim ${sim}% and multi-TF accumulation (${accum}%) suggest early re-accumulation — consider staged long-term entries (starter now, add on 4H/1D confirmation).`;
+    sentence = `CYCLE sim ${sim}% and multi-TF accumulation (${accum}%) suggest early re-accumulation — consider staged long-term entries (starter now, add on 4H/1D confirmation).`;
     rationale = 'Strong accumulation confirmed';
   }
   else if(sim >= 70 && accum >= 50){
-    sentence = `High PIPPIN similarity (${sim}%) plus moderate accumulation (${accum}%) — use a small starter, protect with a 4H stop, and scale in after sustained volume and 4H confirmation.`;
+    sentence = `High CYCLE similarity (${sim}%) plus moderate accumulation (${accum}%) — use a small starter, protect with a 4H stop, and scale in after sustained volume and 4H confirmation.`;
     rationale = 'High similarity + moderate accumulation';
   }
   else if((rsi4h >= 78 || wick >= 1.8 || vol >= 3 || funding < -0.001) && accum < 50){
