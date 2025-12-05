@@ -239,31 +239,6 @@ el.symbolClearCache.addEventListener('click', () => {
   setTimeout(()=> el.symbolStatus.innerText = '', 2600);
 });
 
-  // --- FIXED FULL-CYCLE REFERENCE VECTOR ---
-const FIXED_FULL_CYCLE = {
-  rsi4h: 30,
-  volSpike4: 5.0,
-  wickRatio4: 6.0,
-  ema70DistPct: 150,
-  fundingRate: -0.2,
-  slope15: -1,
-  dropPctFromPeak: 85,
-  accumCombined: { confidence: 20, isAccum: false }
-};
-
-// Build the static reference vector
-let baseVector = makeFeatureVector(FIXED_FULL_CYCLE);
-
-// Compute similarity for THIS symbol only
-try {
-  const v = makeFeatureVector(result);
-  result.similarity = cosineSim(v, baseVector);
-  result.simPhase = classifySimilarityPhase(result.similarity);
-} catch(err) {
-  result.similarity = 0;
-  result.simPhase = classifySimilarityPhase(0);
-}
-
   function classifySimilarityPhase(sim) {
   if (sim < 0.20) return "Trend / Early Pump";
   if (sim < 0.35) return "Blowoff Forming";
@@ -403,6 +378,31 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       }),
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
     };
+
+      // --- FIXED FULL-CYCLE REFERENCE VECTOR ---
+const FIXED_FULL_CYCLE = {
+  rsi4h: 30,
+  volSpike4: 5.0,
+  wickRatio4: 6.0,
+  ema70DistPct: 150,
+  fundingRate: -0.2,
+  slope15: -1,
+  dropPctFromPeak: 85,
+  accumCombined: { confidence: 20, isAccum: false }
+};
+
+// Build the static reference vector
+let baseVector = makeFeatureVector(FIXED_FULL_CYCLE);
+
+// Compute similarity for THIS symbol only
+try {
+  const v = makeFeatureVector(result);
+  result.similarity = cosineSim(v, baseVector);
+  result.simPhase = classifySimilarityPhase(result.similarity);
+} catch(err) {
+  result.similarity = 0;
+  result.simPhase = classifySimilarityPhase(0);
+}
     
     // final recommendations, targets, short-term rec
     result.expl = explainBlowoff(result);
