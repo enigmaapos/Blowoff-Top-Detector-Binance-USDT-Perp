@@ -239,6 +239,31 @@ el.symbolClearCache.addEventListener('click', () => {
   setTimeout(()=> el.symbolStatus.innerText = '', 2600);
 });
 
+  // --- FIXED FULL-CYCLE REFERENCE VECTOR ---
+const FIXED_FULL_CYCLE = {
+  rsi4h: 30,
+  volSpike4: 5.0,
+  wickRatio4: 6.0,
+  ema70DistPct: 150,
+  fundingRate: -0.2,
+  slope15: -1,
+  dropPctFromPeak: 85,
+  accumCombined: { confidence: 20, isAccum: false }
+};
+
+// Build the static reference vector
+let baseVector = makeFeatureVector(FIXED_FULL_CYCLE);
+
+// Compute similarity for THIS symbol only
+try {
+  const v = makeFeatureVector(result);
+  result.similarity = cosineSim(v, baseVector);
+  result.simPhase = classifySimilarityPhase(result.similarity);
+} catch(err) {
+  result.similarity = 0;
+  result.simPhase = classifySimilarityPhase(0);
+}
+
   function classifySimilarityPhase(sim) {
   if (sim < 0.20) return "Trend / Early Pump";
   if (sim < 0.35) return "Blowoff Forming";
@@ -246,6 +271,7 @@ el.symbolClearCache.addEventListener('click', () => {
   if (sim < 0.80) return "Breakdown / Crash Phase";
   return "Flatline / Post-Crash";
   }
+
 
 // The main single-symbol analyzer; returns the result object in same shape as `results` entries
 async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
@@ -439,31 +465,6 @@ function stdDev(arr){ if(!arr||arr.length===0) return 0; const mean = arr.reduce
 function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
 function norm(a){ return Math.sqrt(a.reduce((s,x)=>s+x*x,0)); }
 function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0?0:n/d; }
-
-  // --- FIXED FULL-CYCLE REFERENCE VECTOR ---
-const FIXED_FULL_CYCLE = {
-  rsi4h: 30,
-  volSpike4: 5.0,
-  wickRatio4: 6.0,
-  ema70DistPct: 150,
-  fundingRate: -0.2,
-  slope15: -1,
-  dropPctFromPeak: 85,
-  accumCombined: { confidence: 20, isAccum: false }
-};
-
-// Build the static reference vector
-let baseVector = makeFeatureVector(FIXED_FULL_CYCLE);
-
-// Compute similarity for THIS symbol only
-try {
-  const v = makeFeatureVector(result);
-  result.similarity = cosineSim(v, baseVector);
-  result.simPhase = classifySimilarityPhase(result.similarity);
-} catch(err) {
-  result.similarity = 0;
-  result.simPhase = classifySimilarityPhase(0);
-}
 
 /* ------------------------------
    RETURN TO NORMAL DETECTOR
