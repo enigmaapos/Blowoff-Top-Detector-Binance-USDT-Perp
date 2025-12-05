@@ -787,67 +787,162 @@ function queueSymbolAnalysis(symbol, results){
 }
 
 /* ---------- PHASE DETECTION & HELPERS ---------- */
-function detectPhaseForSymbol(item){
+// Psychology-cycle driven phase detector (drop-in replacement)
+function detectPhaseForSymbolPsych(item){
   try{
     const k4 = item.k4h || [], k15 = item.k15m || [];
-    const rsi4h = item.rsi4h || 0;
-    const vol = item.volSpike4 || 1;
-    const wick = item.wickRatio4 || 0;
+    const rsi4h = (item.rsi4h || 0);
+    const vol4 = (item.volSpike4 || 1);
+    const wick = (item.wickRatio4 || 0);
     const reasons = [];
     let score = 0;
 
-    const highs = k4.slice(-8).map(k=>Number(k[2]));
-    let lowerHCount=0; for(let i=1;i<highs.length;i++) if(highs[i]<highs[i-1]) lowerHCount++;
+    // helpers
+    const closes4 = k4.map(k=>Number(k[4]));
+    const highs4  = k4.map(k=>Number(k[2]));
+    const lows4   = k4.map(k=>Number(k[3]));
+    const vols4   = k4.map(k=>Number(k[5]));
+    const lastClose = item.closeNow || (closes4.length ? closes4[closes4.length-1] : 0);
 
-    const highest4h = k4.length ? Math.max(...k4.map(k=>Number(k[2]))) : (item.closeNow || 0);
-    const lastClose = item.closeNow || 0;
-    const dropPctFromPeak = highest4h ? Math.abs((lastClose - highest4h)/highest4h)*100 : 0;
+    // compute peak and drop-from-peak (use recent window)
+    const peakWindow = Math.min(40, highs4.length);
+    const peak = peakWindow ? Math.max(...highs4.slice(-peakWindow)) : lastClose;
+    const dropPctFromPeak = peak ? ((lastClose - peak) / peak) * 100 : 0; // negative = dropped
 
-    if(item.accumCombined && item.accumCombined.isAccum){ reasons.push(`Accumulation seen (combined ${item.accumCombined.confidence}%)`); score += 4; }
+    // higher-lows / lower-highs (structure)
+    const recentHighs = highs4.slice(-8);
+    let lowerHCount = 0;
+    for(let i=1;i<recentHighs.length;i++) if(recentHighs[i] < recentHighs[i-1]) lowerHCount++;
+    const recentLows = lows4.slice(-8);
+    let higherLCount = 0;
+    for(let i=1;i<recentLows.length;i++) if(recentLows[i] > recentLows[i-1]) higherLCount++;
 
-    if(wick >= 1.8 && vol >= 3 && rsi4h >= 85){ score += 3; reasons.push('Climax candle'); }
-    const recentHigh15 = k15.length ? Math.max(...k15.map(k=>Number(k[2]))) : 0;
-    const recentLow15 = k15.length ? Math.min(...k15.map(k=>Number(k[3]))) : 0;
-    const range15 = recentHigh15 - recentLow15;
-    if(range15 > 0 && (Math.abs(range15) / (recentLow15 || 1)) <= 0.12 && rsi4h >= 60){ score += 2; reasons.push('Distribution'); }
-    if(lowerHCount >= 3){ score += 2; reasons.push('Breakdown: lower highs'); }
-    if(dropPctFromPeak >= 20 && vol >= 2.5){ score += 3; reasons.push('Capitulation A'); }
-    if(k15.length > 20){
+    // volume trend
+    const volMA8 = sma(vols4, Math.min(8, vols4.length)) || 1;
+    const lastVol = vols4.length ? vols4[vols4.length-1] : 0;
+    const volSpike = volMA8 ? lastVol / volMA8 : 1;
+
+    // EMAs (for bounce/return detection)
+    const ema14 = ema(closes4, 14) || 0;
+    const ema21 = ema(closes4, 21) || 0;
+    const ema70 = ema(closes4, 70) || 0;
+
+    // detect dead-cat bounce-like action on 15m window
+    let deadCat = false;
+    if(k15 && k15.length > 20){
       const closes15 = k15.map(k=>Number(k[4]));
-      const recentSlice = closes15.slice(-20);
-      const localMin = Math.min(...recentSlice);
-      const afterMin = recentSlice.slice(recentSlice.indexOf(localMin)+1);
-      if(afterMin.length){
-        const bouncePct = ((afterMin[afterMin.length-1] - localMin)/localMin)*100;
-        if(bouncePct >= 8 && bouncePct <= 60){ score += 1; reasons.push(`Dead-cat bounce ${bouncePct.toFixed(1)}%`); }
+      const localMin = Math.min(...closes15.slice(-40));
+      const after = closes15.slice(closes15.indexOf(localMin) + 1);
+      if(after.length){
+        const bouncePct = ((after[after.length-1] - localMin) / (localMin || 1)) * 100;
+        if(bouncePct >= 6 && bouncePct <= 60) { deadCat = true; reasons.push(`Dead-cat bounce ${bouncePct.toFixed(1)}%`); score += 1; }
       }
     }
 
-    const candidates = [];
-    if(item.accumCombined && item.accumCombined.isAccum) candidates.push({phase:'Accumulation / Re-accumulation', priority:9});
-    if(score >= 9 && reasons.some(r=>r.includes('Final capitulation'))) candidates.push({phase:'Final capitulation wick', priority:8});
-    if(score >= 7 && reasons.some(r=>r.includes('Capitulation'))) candidates.push({phase:'Capitulation A', priority:7});
-    if(score >= 5 && reasons.some(r=>r.includes('Breakdown'))) candidates.push({phase:'Breakdown', priority:6});
-    if(score >= 5 && reasons.some(r=>r.includes('Distribution'))) candidates.push({phase:'Distribution / sideways top', priority:5});
-    if(score >= 4 && reasons.some(r=>r.includes('Climax'))) candidates.push({phase:'Climax candle (blowoff wick)', priority:5});
-    if(score >= 3 && reasons.some(r=>r.includes('Acceleration'))) candidates.push({phase:'Acceleration (vertical move)', priority:4});
-    if(reasons.some(r=>r.includes('Dead-cat'))) candidates.push({phase:'Dead-cat bounce', priority:3});
-    if(candidates.length === 0){
-      if(dropPctFromPeak >= 25 && vol >= 1.8) candidates.push({phase:'Capitulation A', priority:7});
-      else if(wick >= 1.6 && rsi4h >= 85) candidates.push({phase:'Climax candle (blowoff wick)', priority:6});
-      else if(item.accumCombined && item.accumCombined.confidence >= 55) candidates.push({phase:'Accumulation / Re-accumulation',priority:5});
-      else if(range15 <= (Math.max(1,Math.abs(recentLow15||1))*0.08) && rsi4h >= 60) candidates.push({phase:'Distribution / sideways top',priority:5});
-      else if(lowerHCount>=2) candidates.push({phase:'Breakdown',priority:6});
-      else candidates.push({phase:'Normal/Trending',priority:1});
+    // Score signals that map to psychology stages
+
+    // STEALTH / TAKEOFF / EARLY PUMP: steady rising/emas aligned + low wick/low vol spike
+    if(ema14 && ema21 && lastClose > ema14 && ema14 > ema21 && volSpike < 1.8 && rsi4h < 65 && dropPctFromPeak > -15){
+      reasons.push('Takeoff / early pump structure');
+      score += 1;
     }
+
+    // AWARENESS / INSTITUTIONAL accumulation: accumulation combined high, low volatility, higher-lows
+    if(item.accumCombined && item.accumCombined.confidence >= 60){
+      reasons.push(`Accumulation detected (${item.accumCombined.confidence}%)`);
+      score += 3;
+    } else if(item.accumCombined && item.accumCombined.confidence >= 45){
+      reasons.push(`Weak accumulation (${item.accumCombined.confidence}%)`);
+      score += 1;
+    }
+
+    // MANIA/ENTHUSIASM: rising RSI, sustained vol, big green candles (we detect by high rsi4h + vol)
+    if(rsi4h >= 75 && vol4 >= 2.0 && dropPctFromPeak > -8){
+      reasons.push('Mania / enthusiasm (high RSI + volume)');
+      score += 2;
+    }
+
+    // BLOWOFF / CLIMAX: very large wick, very large vol spike, extreme RSI
+    if(wick >= 1.8 && vol4 >= 3 && rsi4h >= 85){
+      reasons.push('Blowoff / climax candle (wick + vol + RSI)');
+      score += 4;
+    }
+
+    // RETURN-TO-NORMAL (psychology definition)
+    //  - did: big drop from peak (>=15%) AND
+    //  - weak bounce: lower highs or bounce capped under EMAs + declining volume
+    const droppedEnough = dropPctFromPeak <= -15;
+    const weakBounceStructure = (lowerHCount >= 2) || (lastClose < ema14 && lastClose < ema21);
+    const bounceVolumeDecline = lastVol < volMA8 * 0.75;
+    if(droppedEnough && weakBounceStructure && bounceVolumeDecline){
+      reasons.push('Return-to-normal (psych): drop >=15%, weak bounce, dec vol');
+      score += 4;
+    }
+
+    // BREAKDOWN / DISTRIBUTION: lower highs + range compression on 15m/1h + rising vol on down moves
+    // approximate range15: use 15m data if present
+    let compactRange15 = false;
+    if(k15 && k15.length > 10){
+      const highs15 = k15.slice(-20).map(k=>Number(k[2]));
+      const lows15  = k15.slice(-20).map(k=>Number(k[3]));
+      const r = Math.max(...highs15) - Math.min(...lows15 || [1]);
+      const base = Math.max(1, Math.min(...lows15));
+      if(r / base <= 0.12 && rsi4h >= 55){
+        compactRange15 = true;
+      }
+    }
+    if(lowerHCount >= 3 || compactRange15){
+      reasons.push('Breakdown / distribution (lower highs / sideways top)');
+      score += 2;
+    }
+
+    // CAPITULATION: large drop from peak (>=25%) + vol spike on down moves
+    if(dropPctFromPeak <= -25 && vol4 >= 1.8){
+      reasons.push('Capitulation signal (large drop + vol)');
+      score += 4;
+    }
+
+    // DEAD-CAT / RE-ACCUMULATION flag already applied above
+
+    // Determine phase candidates using scored signals and priority rules
+    const candidates = [];
+
+    // Priority mapping (higher priority first)
+    if(reasons.some(r=>r.includes('Blowoff'))) candidates.push({phase:'Blowoff / Mania', priority:9});
+    if(reasons.some(r=>r.includes('Capitulation'))) candidates.push({phase:'Capitulation / Despair', priority:8});
+    if(reasons.some(r=>r.includes('Return-to-normal'))) candidates.push({phase:'Return-to-Normal (Psych Trap)', priority:7});
+    if(reasons.some(r=>r.includes('Dead-cat')) ) candidates.push({phase:'Dead-cat bounce', priority:6});
+    if(reasons.some(r=>r.includes('Accumulation')) ) candidates.push({phase:'Accumulation / Re-accumulation', priority:6});
+    if(reasons.some(r=>r.includes('Breakdown') || r.includes('distribution'))) candidates.push({phase:'Distribution / Breakdown', priority:5});
+    if(reasons.some(r=>r.includes('Takeoff')) ) candidates.push({phase:'Takeoff / Early Pump', priority:4});
+    if(reasons.length === 0) candidates.push({phase:'Normal / Trending', priority:1});
+
+    // fallback heuristics if nothing decisive
+    if(candidates.length === 0){
+      if(dropPctFromPeak <= -20) candidates.push({phase:'Capitulation / Despair', priority:7});
+      else candidates.push({phase:'Normal / Trending', priority:1});
+    }
+
+    // pick highest priority candidate
     candidates.sort((a,b)=> b.priority - a.priority);
     const chosen = candidates[0].phase || 'Unknown';
-    const conf = Math.min(98, Math.round((score/14)*100) + (item.accumCombined && item.accumCombined.confidence ? Math.round(item.accumCombined.confidence*0.2) : 0));
-    return {phase: chosen, confidence: conf, reasons: reasons, dropPctFromPeak: Math.round(dropPctFromPeak*100)/100};
+
+    // Confidence: blend of score and accumulation strength (keeps compatibility with prior confidence usage)
+    const baseConf = Math.min(95, Math.round((score / 12) * 100));
+    const accumBoost = (item.accumCombined && item.accumCombined.confidence) ? Math.round(item.accumCombined.confidence * 0.18) : 0;
+    const conf = Math.max(10, Math.min(98, baseConf + accumBoost));
+
+    return {
+      phase: chosen,
+      confidence: conf,
+      reasons: reasons,
+      dropPctFromPeak: Math.round(dropPctFromPeak * 100) / 100
+    };
+
   } catch(e){
-    return {phase:'Unknown', confidence:0, reasons:[], dropPctFromPeak:0};
+    return { phase:'Unknown', confidence:0, reasons:[`error ${e.message}`], dropPctFromPeak:0 };
   }
-}
+  }
 
 function makeFeatureVector(item){
   const rsi4h = Math.min(100, item.rsi4h || 0)/100;
