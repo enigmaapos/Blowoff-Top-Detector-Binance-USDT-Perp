@@ -378,34 +378,39 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
     };
 
-    // --- FIXED FULL-CYCLE REFERENCE VECTOR (template) ---
-const FIXED_PIPPIN_VECTOR = [
-  0.90,  // RSI high
-  0.85,  // volume spike
-  0.90,  // big wick
-  0.70,  // EMA stretch
-  -0.20, // negative funding typical
-  0.80,  // 15m slope
-  0.95,  // acceleration / breakdown
-  0.95   // flatline stage
-];
+// --- FIXED FULL-CYCLE REFERENCE VECTOR (object form, correct for makeFeatureVector) ---
+const FIXED_FULL_CYCLE = {
+  rsi4h: 30,
+  volSpike4: 5.0,
+  wickRatio4: 6.0,
+  ema70DistPct: 150,
+  fundingRate: -0.2,
+  slope15: -1,
+  dropPctFromPeak: 85,
+  accumCombined: { confidence: 20, isAccum: false }
+};
 
-// --- Try to pull live PIPPIN vector ---
-let baseVector = null;
-if (window.lastScanResults) {
-  const p = window.lastScanResults.find(x => x.symbol === 'PIPPINUSDT');
-  if (p) baseVector = makeFeatureVector(p);
+// Compute base reference vector
+let baseVector;
+try {
+  baseVector = makeFeatureVector(FIXED_FULL_CYCLE);
+} catch(e) {
+  console.warn("Failed to build reference vector:", e);
+  baseVector = new Array(8).fill(0);
 }
 
-// --- If unavailable, use fixed template ---
-if (!baseVector) baseVector = FIXED_PIPPIN_VECTOR;
-
-// --- Compute similarity ---
-result.similarity = cosineSim(makeFeatureVector(result), baseVector);
-
-// --- Add similarity phase label ---
-result.simPhase = classifySimilarityPhase(result.similarity);
-
+// Iterate over each coin and assign similarity + phase
+results.forEach(r => {
+  try {
+    const v = makeFeatureVector(r);
+    r.similarity = cosineSim(v, baseVector);
+    r.simPhase = classifySimilarityPhase(r.similarity);
+  } catch(err) {
+    r.similarity = 0;
+    r.simPhase = classifySimilarityPhase(0);
+  }
+});
+    
     // final recommendations, targets, short-term rec
     result.expl = explainBlowoff(result);
     result.finalRec = getFinalRecommendation(result);
@@ -1250,8 +1255,8 @@ function renderTable(results){
         <td class="small">${(r.fundingRate||0).toFixed(6)}<br>Cycle sim: <strong>${simPct}%</strong><br>${accumHtml}<div class="small" style="color:#9fb3cc">TFs: ${tfList || '—'}</div></td>
       </tr>
       <div class="small" style="color:#7edcff">
-  Cycle Match: <strong>${(item.similarity*100).toFixed(1)}%</strong> — 
-  <span>${item.simPhase}</span>
+  Cycle Match: <strong>${simPct}%</strong> —
+  <span>${r.simPhase || classifySimilarityPhase(r.similarity)}</span>
 </div>
       <tr style="background:rgba(255,255,255,0.01)"><td colspan="5" style="padding:8px 12px;color:${expl.color}">
         <strong>${expl.label}</strong> — ${expl.explanation}
@@ -1308,8 +1313,8 @@ function renderCards(results){
           <small style="color:#cfe8ff">Cycle similarity: <strong>${simPct}%</strong></small>
         </div>
         <div class="small" style="color:#7edcff">
-  Cycle Match: <strong>${(item.similarity*100).toFixed(1)}%</strong> — 
-  <span>${item.simPhase}</span>
+  Cycle Match: <strong>${simPct}%</strong> —
+  <span>${r.simPhase || classifySimilarityPhase(r.similarity)}</span>
 </div>
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.03);">
           <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% reversal chance</div>
