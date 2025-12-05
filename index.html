@@ -469,7 +469,7 @@ function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0
    RETURN TO NORMAL DETECTOR
    (same as before)
    ------------------------------ */
-function detectReturnToNormalPsych(item, opts = {}) {
+function detectReturnToNormal(item, opts = {}) {
   try {
     const k4 = item.k4h || [];
     if(k4.length < 20) {
