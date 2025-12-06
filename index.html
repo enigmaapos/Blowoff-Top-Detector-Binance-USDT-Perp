@@ -495,28 +495,6 @@ el.ignitionMinPct = document.getElementById('ignitionMinPct');
     const volMA15 = sma(vols15, Math.min(10, vols15.length)) || 1;
     const volSpike15 = Number((Number(closes15.length ? vols15[vols15.length-1] : 1) / volMA15).toFixed(2));
 
-  // --- after volMA15, volSpike15 and acc checks are computed ---
-
-    // ignition detection parameters (make tunable via UI if you want)
-    const IGN_LOOKBACK = parseInt(el.ignitionLookback?.value,10) || 20; // bars used for baseline MA
-    const IGN_MULT = parseFloat(el.ignitionMult?.value) || 3.0;        // latest vol must be >= IGN_MULT * baseline
-    const IGN_MIN_PCT = parseFloat(el.ignitionMinPct?.value) || 0;     // optional min price rise
-
-    // Use the 15m volumes for ignition test (fast trigger). You could also test 1H or 4H.
-    const ignVolRes = detectIgnitionVolume(vols15, IGN_LOOKBACK, IGN_MULT, IGN_MIN_PCT);
-
-    // require some evidence price was in accumulation / flat zone recently to reduce false positives:
-    const inAccumulation = (acc15 && acc15.isAccum) || (acc1h && acc1h.isAccum) || (acc4h && acc4h.isAccum);
-
-    // combine logic: ignition only if volume spike AND price recently in accumulation (or low EMA distance)
-    const lowEmaDist = Math.abs(emaDistPct) < 40; // optional: price not extremely far from ema70
-    result.ignition = {
-      detected: ignVolRes.isIgnition && (inAccumulation || lowEmaDist),
-      raw: ignVolRes,
-      inAccumulation,
-      lowEmaDist
-    };
-
     // accumulation checks
     const sens = parseInt(el.sensitivity.value,10) || 50;
     const acc15 = detectAccumulationGeneric(closes15, highs15, lows15, vols15, 30, sens);
@@ -553,6 +531,12 @@ el.ignitionMinPct = document.getElementById('ignitionMinPct');
       symbol: sym,
       score: 0, // we didn't run the multi-signal score aggregator here; you can run detectPhaseForSymbol if you want
       signals: {},
+      ignition: {
+   detected: ignVolRes.isIgnition && (inAccumulation || lowEmaDist),
+   raw: ignVolRes,
+   inAccumulation,
+   lowEmaDist
+},
       rsi1d, rsi4h, rsi1h, rsi15,
       volSpike4, volSpike15,
       wickRatio4,
@@ -570,6 +554,28 @@ el.ignitionMinPct = document.getElementById('ignitionMinPct');
         k4h, k15m: k15, closeNow: close4, ema70DistPct: emaDistPct
       }),
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
+    };
+
+    // --- after volMA15, volSpike15 and acc checks are computed ---
+
+    // ignition detection parameters (make tunable via UI if you want)
+    const IGN_LOOKBACK = parseInt(el.ignitionLookback?.value,10) || 20; // bars used for baseline MA
+    const IGN_MULT = parseFloat(el.ignitionMult?.value) || 3.0;        // latest vol must be >= IGN_MULT * baseline
+    const IGN_MIN_PCT = parseFloat(el.ignitionMinPct?.value) || 0;     // optional min price rise
+
+    // Use the 15m volumes for ignition test (fast trigger). You could also test 1H or 4H.
+    const ignVolRes = detectIgnitionVolume(vols15, IGN_LOOKBACK, IGN_MULT, IGN_MIN_PCT);
+
+    // require some evidence price was in accumulation / flat zone recently to reduce false positives:
+    const inAccumulation = (acc15 && acc15.isAccum) || (acc1h && acc1h.isAccum) || (acc4h && acc4h.isAccum);
+
+    // combine logic: ignition only if volume spike AND price recently in accumulation (or low EMA distance)
+    const lowEmaDist = Math.abs(emaDistPct) < 40; // optional: price not extremely far from ema70
+    result.ignition = {
+      detected: ignVolRes.isIgnition && (inAccumulation || lowEmaDist),
+      raw: ignVolRes,
+      inAccumulation,
+      lowEmaDist
     };
 
     // ===== compute a blowoff-style score (same logic as queueSymbolAnalysis) =====
