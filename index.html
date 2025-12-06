@@ -1484,6 +1484,11 @@ function renderTable(results){
     if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
     else if(r.score === threshold-1){ statusHtml = `<span style="background:#ffd966;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;color:black;">⚠ POTENTIAL</span>`; bg='background:rgba(255,200,0,0.10)'; }
 
+
+// ADD IGNITION BADGE HERE
+if (r.ignition?.detected) {
+    badge += `<span class="accBadge">🚀 Ignition</span>`;
+}
     // after existing badges
 if(result.ignition && result.ignition.detected){
   // prefer showing the ignition badge if no blowoff badge shown:
@@ -1573,6 +1578,11 @@ function renderCards(results){
     let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
     if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
     const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
+
+    // ADD IGNITION BADGE HERE
+if (r.ignition?.detected) {
+    badge += `<span class="accBadge">🚀 Ignition</span>`;
+}
 
     // after existing badges
 if(result.ignition && result.ignition.detected){
