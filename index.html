@@ -107,10 +107,6 @@
       <label><input type="checkbox" id="tf4h" checked style="margin-left:6px"> 4h</label>
     </div>
 
-    <label>Ignition lookback <input id="ignitionLookback" type="number" min="3" value="20"></label>
-<label>Ignition mult <input id="ignitionMult" type="number" step="0.1" min="1" value="3.0"></label>
-<label>Ignition min % price rise <input id="ignitionMinPct" type="number" step="0.1" value="0"></label>
-
     <label style="margin-left:12px">Sensitivity <span id="sensVal" class="small" style="margin-left:6px">50</span></label>
     <input id="sensitivity" class="sensitivity" type="range" min="0" max="100" value="50" style="margin-left:8px">
 
@@ -423,10 +419,6 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // try to still proceed but warn user
     el.symbolStatus.innerText = `Warning: "${sym}" does not end with USDT — will attempt fetch anyway.`;
   }
-
-el.ignitionLookback = document.getElementById('ignitionLookback');
-el.ignitionMult = document.getElementById('ignitionMult');
-el.ignitionMinPct = document.getElementById('ignitionMinPct');
   
   // respect cache
   const cached = getCachedSymbol(sym);
@@ -531,12 +523,6 @@ el.ignitionMinPct = document.getElementById('ignitionMinPct');
       symbol: sym,
       score: 0, // we didn't run the multi-signal score aggregator here; you can run detectPhaseForSymbol if you want
       signals: {},
-      ignition: {
-   detected: ignVolRes.isIgnition && (inAccumulation || lowEmaDist),
-   raw: ignVolRes,
-   inAccumulation,
-   lowEmaDist
-},
       rsi1d, rsi4h, rsi1h, rsi15,
       volSpike4, volSpike15,
       wickRatio4,
@@ -554,28 +540,6 @@ el.ignitionMinPct = document.getElementById('ignitionMinPct');
         k4h, k15m: k15, closeNow: close4, ema70DistPct: emaDistPct
       }),
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
-    };
-
-    // --- after volMA15, volSpike15 and acc checks are computed ---
-
-    // ignition detection parameters (make tunable via UI if you want)
-    const IGN_LOOKBACK = parseInt(el.ignitionLookback?.value,10) || 20; // bars used for baseline MA
-    const IGN_MULT = parseFloat(el.ignitionMult?.value) || 3.0;        // latest vol must be >= IGN_MULT * baseline
-    const IGN_MIN_PCT = parseFloat(el.ignitionMinPct?.value) || 0;     // optional min price rise
-
-    // Use the 15m volumes for ignition test (fast trigger). You could also test 1H or 4H.
-    const ignVolRes = detectIgnitionVolume(vols15, IGN_LOOKBACK, IGN_MULT, IGN_MIN_PCT);
-
-    // require some evidence price was in accumulation / flat zone recently to reduce false positives:
-    const inAccumulation = (acc15 && acc15.isAccum) || (acc1h && acc1h.isAccum) || (acc4h && acc4h.isAccum);
-
-    // combine logic: ignition only if volume spike AND price recently in accumulation (or low EMA distance)
-    const lowEmaDist = Math.abs(emaDistPct) < 40; // optional: price not extremely far from ema70
-    result.ignition = {
-      detected: ignVolRes.isIgnition && (inAccumulation || lowEmaDist),
-      raw: ignVolRes,
-      inAccumulation,
-      lowEmaDist
     };
 
     // ===== compute a blowoff-style score (same logic as queueSymbolAnalysis) =====
@@ -1484,19 +1448,6 @@ function renderTable(results){
     if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
     else if(r.score === threshold-1){ statusHtml = `<span style="background:#ffd966;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;color:black;">⚠ POTENTIAL</span>`; bg='background:rgba(255,200,0,0.10)'; }
 
-
-// ADD IGNITION BADGE HERE
-if (r.ignition?.detected) {
-    badge += `<span class="accBadge">🚀 Ignition</span>`;
-}
-    // after existing badges
-if(result.ignition && result.ignition.detected){
-  // prefer showing the ignition badge if no blowoff badge shown:
-  badge = (badge || '') + `<span class="ignitionBadge">⚡ Ignition</span>`;
-  // optional: add a blink class to draw attention
-  bc = bc || 'blink';
-}
-    
     const simPct = r.similarity ? Math.round(r.similarity*100) : 0;
     const accumHtml = accum.isAccum ? `<div class="small" style="color:#2dd4bf">Accum: ${accum.confidence}%</div>` : `<div class="small" style="color:var(--muted)">Accum: ${accum.confidence}%</div>`;
     const tfList = (r.accumChecks || []).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ');
@@ -1535,11 +1486,6 @@ if(result.ignition && result.ignition.detected){
           <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span>
           ${rtnBadge}
         </td>
-        <div class="symbol-card">
-  <div class="title">${r.symbol} ${badge || ''}</div>
-  ...
-  ${ r.ignition && r.ignition.detected ? `<div class="small">Ignition vol ratio: ${r.ignition.raw.ratio.toFixed(2)}x</div>` : '' }
-</div>
         <td>${r.closeNow}</td>
         <td class="${(r.rsi4h||0)>=80?'green':''}">${r.rsi4h? r.rsi4h.toFixed(1):'n/a'}</td>
         <td class="small">vol×${r.volSpike4} wick:${(r.wickRatio4||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
@@ -1579,20 +1525,7 @@ function renderCards(results){
     if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
     const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
 
-    // ADD IGNITION BADGE HERE
-if (r.ignition?.detected) {
-    badge += `<span class="accBadge">🚀 Ignition</span>`;
-}
-
-    // after existing badges
-if(result.ignition && result.ignition.detected){
-  // prefer showing the ignition badge if no blowoff badge shown:
-  badge = (badge || '') + `<span class="ignitionBadge">⚡ Ignition</span>`;
-  // optional: add a blink class to draw attention
-  bc = bc || 'blink';
-}
-    
-  const rtnBadge = (r.returnToNormal && r.returnToNormal.isReturn) ? `<span class="phaseTag" style="background:#2dd4bf;color:#04221a;margin-left:6px">Return-to-normal ${r.returnToNormal.confidence}%</span>` : '';
+    const rtnBadge = (r.returnToNormal && r.returnToNormal.isReturn) ? `<span class="phaseTag" style="background:#2dd4bf;color:#04221a;margin-left:6px">Return-to-normal ${r.returnToNormal.confidence}%</span>` : '';
 
     const shortHtml = showShort ? `
       <div class="shortRec">🔎 Short-term: ${srec.sentence}</div>
@@ -1610,11 +1543,6 @@ if(result.ignition && result.ignition.detected){
           ${ r.preCrash && r.preCrash.likely ? `<span style="background:#ff5c5c;color:white;padding:4px 8px;border-radius:6px;margin-left:8px">⚠ Pre-crash ${r.preCrash.confidence}%</span>` : '' }
           ${rtnBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span>
         </div>
-        <div class="symbol-card">
-  <div class="title">${r.symbol} ${badge || ''}</div>
-  ...
-  ${ r.ignition && r.ignition.detected ? `<div class="small">Ignition vol ratio: ${r.ignition.raw.ratio.toFixed(2)}x</div>` : '' }
-</div>
         <div class="sigList">
           Last: ${r.closeNow}<br>
           RSI4H: ${r.rsi4h? r.rsi4h.toFixed(1):'n/a'} • Vol×${r.volSpike4} • Wick:${(r.wickRatio4||0).toFixed(2)}<br>
