@@ -2023,6 +2023,9 @@ try {
 /* UI events */
   // wire buttons (call after DOM ready)
 // === EMA UI wiring (place next to other el.* assignments) ===
+// add this near top of your script (before any el.* lines)
+window.el = window.el || {};
+  
 el.runEmaScanBtn = document.getElementById('runEmaScanBtn');
 el.emaScanStatus = document.getElementById('emaScanStatus');
 el.emaScanResults = document.getElementById('emaScanResults');
