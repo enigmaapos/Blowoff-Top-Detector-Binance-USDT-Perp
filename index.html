@@ -786,21 +786,28 @@ function detectPreCrash(item, opts={}) {
   }
 }
 
-/* ---------- SAFE FETCH ---------- */
 async function safeFetch(url, opts = { allowIfNotRunning: false }) {
-  if(!running && !opts.allowIfNotRunning) throw new Error('Not running (call Start first)');
+
+  // allow EMA scan even if not started
+  if(opts.allowIfNotRunning) {
+    const r = await fetch(url);
+    return await r.json();
+  }
+
+  if(!running) throw new Error('Not running (press Start first)');
+
   try {
     requestsThisWindow++;
     const r = await fetch(url);
     if(!r.ok) {
       const body = await r.text().catch(()=>'<no body>');
-      throw new Error(`HTTP ${r.status} ${r.statusText} — ${body.slice(0,200)}`);
+      throw new Error(`HTTP ${r.status} — ${body.slice(0,200)}`);
     }
     return await r.json();
   } catch (err) {
     throw new Error(`fetch error for ${url} → ${err.message}`);
   }
-}
+                                                                                                                                                          }
 
 function resetWindow(){ requestsThisWindow=0; windowStart=Date.now(); }
 function checkSafetyAndMaybePause(){
