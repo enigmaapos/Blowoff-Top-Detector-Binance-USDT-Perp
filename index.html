@@ -439,14 +439,10 @@ function computeSimpleScore(res){
     const sym = top[i].symbol;
 
     // --- BLACKLIST CHECK ---
-    if (blacklist.includes(sym)) {
-        const row = document.createElement('div');
-        row.style.padding = '6px 0';
-        row.style.opacity = '0.5';
-        row.innerHTML = `<b>${sym}</b> — ⛔ blacklisted (skipped)`;
-        if (resultsEl) resultsEl.appendChild(row);
-        continue; // skip and go to next symbol
-    }
+if (blacklist.includes(sym)) {
+    continue; // silently skip
+}
+        
         if(statusEl) statusEl.innerText = `(${i+1}/${top.length}) ${sym} — fetching 15m...`;
         const r = await analyzeSymbolEMACross(sym);
         // render progress row
