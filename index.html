@@ -138,6 +138,16 @@
 <button id="scanTopRedBtn">Scan Top30 ▼ (24h -)</button>
 <div id="scanStatus" style="margin-top:6px;color:#888;"></div>
 
+  <!-- EMA Cross Scanner (paste into your page) -->
+<div id="emaCrossPanel" style="padding:10px;border:1px solid #ddd;margin:8px 0;">
+  <strong>EMA70/EMA200 Cross Scanner (15m)</strong><br>
+  <label><input type="radio" name="ec_mode" value="gainers" checked> Top 30 Gainers (24h)</label>
+  <label style="margin-left:12px;"><input type="radio" name="ec_mode" value="losers"> Top 30 Losers (24h)</label>
+  <button id="runEmaScanBtn">Run EMA Cross Scan</button>
+  <span id="emaScanStatus" style="margin-left:12px;color:#444"></span>
+  <div id="emaScanResults" style="margin-top:8px"></div>
+</div>
+
   <div id="tableView"></div>
   <div id="cardView"></div>
 
@@ -1701,6 +1711,196 @@ async function runScan(once=false){
         r.phase.isReturnToNormal = true;
       }
     });
+
+
+(async function(){
+  // If your page already has safeFetch, delay, and ema functions, these will reuse them.
+  // Otherwise we provide minimal fallbacks.
+
+  // --- FALLBACK helpers (no-op if already defined) ---
+  if(typeof window.safeFetch !== 'function'){
+    window.safeFetch = async function(url, opts={}) {
+      // lightweight wrapper for fetch with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(()=>controller.abort(), 15000);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeout);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        return await res.json();
+      } catch(err) {
+        clearTimeout(timeout);
+        throw err;
+      }
+    };
+  }
+
+  if(typeof window.delay !== 'function'){
+    window.delay = (ms) => new Promise(r => setTimeout(r, ms));
+  }
+
+  // EMA helper (reuses your existing if present)
+  if(typeof window.ema !== 'function'){
+    window.ema = function(arr, period){
+      if(!arr || arr.length === 0) return null;
+      const k = 2/(period+1);
+      let e = arr[0];
+      for(let i=1;i<arr.length;i++) e = arr[i]*k + e*(1-k);
+      return e;
+    };
+    // But we need full-series EMA to check cross history -> implement series ema
+  }
+
+  // compute EMA series (returns array same length as prices)
+  function emaSeries(prices, period){
+    if(!prices || prices.length === 0) return [];
+    const k = 2/(period+1);
+    const out = [];
+    let prev = prices[0];
+    out.push(prev);
+    for(let i=1;i<prices.length;i++){
+      const v = prices[i]*k + prev*(1-k);
+      out.push(v);
+      prev = v;
+    }
+    return out;
+  }
+
+  // --- CONFIG ---
+  const API_BASE = window.API_BASE || 'https://fapi.binance.com';
+  const klinesLimit = 240;            // should be >= 200
+  const minDelayMsDefault = 400;      // delay between symbol requests (tweak if you hit limits)
+  const recentCandles = 3;            // how many last candles to look for a cross
+
+  // UI refs
+  const btn = document.getElementById('runEmaScanBtn');
+  const statusEl = document.getElementById('emaScanStatus');
+  const resultsEl = document.getElementById('emaScanResults');
+
+  // fetch all 24h tickers
+  async function fetch24hTickers(){
+    const url = `${API_BASE}/fapi/v1/ticker/24hr`;
+    return await safeFetch(url, { allowIfNotRunning: true }).catch(err => { throw err; });
+  }
+
+  // pick top N by priceChangePercent (positive true => top gainers, false => top losers)
+  function getTopNByChange(tickers, n = 30, positive = true){
+    if(!Array.isArray(tickers)) return [];
+    const filtered = tickers
+      .map(t => ({ symbol: t.symbol, priceChangePercent: Number(t.priceChangePercent||0), lastPrice: Number(t.lastPrice||0) }))
+      .filter(t => t.symbol && t.symbol.endsWith('USDT') && isFinite(t.priceChangePercent));
+    filtered.sort((a,b) => positive ? b.priceChangePercent - a.priceChangePercent : a.priceChangePercent - b.priceChangePercent);
+    return filtered.slice(0, n);
+  }
+
+  // fetch 15m klines for symbol, returns array of candles
+  async function fetch15mKlines(symbol, limit=klinesLimit){
+    const url = `${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=${limit}`;
+    return await safeFetch(url, { allowIfNotRunning: true });
+  }
+
+  // detect cross: returns {crossed: true/false, dir:'bull'|'bear', whenIndex: index-of-candle-where-cross-detected, details...}
+  function detectEMACrossFromCloses(closes){
+    if(!closes || closes.length < 210) return { crossed:false, reason:'insufficient data' }; // need >=200
+    // compute EMA series
+    const ema70series = emaSeries(closes, 70);
+    const ema200series = emaSeries(closes, 200);
+    if(ema70series.length !== ema200series.length) return { crossed:false, reason:'series mismatch' };
+
+    // check last recentCandles for cross by comparing sign of difference between consecutive points
+    const diff = ema70series.map((v,i) => v - ema200series[i]);
+    // examine transitions in last recentCandles+1 values
+    const start = Math.max(1, diff.length - (recentCandles + 2));
+    for(let i = start; i < diff.length; i++){
+      const prev = diff[i-1];
+      const cur = diff[i];
+      if(prev <= 0 && cur > 0){
+        return { crossed:true, dir:'bull', whenIndex: i, prevDiff: prev, curDiff: cur, ema70: ema70series[i], ema200: ema200series[i] };
+      }
+      if(prev >= 0 && cur < 0){
+        return { crossed:true, dir:'bear', whenIndex: i, prevDiff: prev, curDiff: cur, ema70: ema70series[i], ema200: ema200series[i] };
+      }
+    }
+    return { crossed:false, reason:'no recent cross', lastDiff: diff[diff.length-1] };
+  }
+
+  // single-symbol analyze wrapper (15m EMAs)
+  async function analyzeSymbolEMACross(sym, opts={minDelayMs:minDelayMsDefault}){
+    try{
+      const kl = await fetch15mKlines(sym, klinesLimit);
+      if(!Array.isArray(kl) || kl.length === 0) throw new Error('klines empty');
+      const closes = kl.map(k => Number(k[4]));
+      const res = detectEMACrossFromCloses(closes);
+      return Object.assign({ symbol: sym, lastClose: closes[closes.length-1] }, res);
+    } catch(err){
+      return { symbol: sym, error: err.message || String(err) };
+    }
+  }
+
+  // main orchestrator
+  async function runEMACrossScan({ positive=true, minDelayMs = minDelayMsDefault } = {}){
+    try{
+      btn.disabled = true;
+      resultsEl.innerHTML = '';
+      statusEl.innerText = 'Fetching tickers...';
+      const tickers = await fetch24hTickers();
+      const top = getTopNByChange(tickers, 30, positive);
+      statusEl.innerText = `Found ${top.length} symbols — analyzing sequentially...`;
+      const matches = [];
+      for(let i=0;i<top.length;i++){
+        const sym = top[i].symbol;
+        statusEl.innerText = `(${i+1}/${top.length}) ${sym} — fetching 15m...`;
+        const r = await analyzeSymbolEMACross(sym, { minDelayMs });
+        // if crossed recently, push
+        if(r.crossed){
+          matches.push(r);
+        }
+        // render per item (progress)
+        const row = document.createElement('div');
+        row.style.padding='6px 0';
+        row.style.borderBottom='1px solid #eee';
+        row.innerHTML = `<b>${sym}</b> — ${r.crossed ? (r.dir === 'bull' ? '🔼 Bullish cross' : '🔽 Bearish cross') : (r.error ? '❌ '+r.error : '— no cross')}`;
+        resultsEl.appendChild(row);
+        await delay(minDelayMs);
+      }
+      statusEl.innerText = `Scan complete — matches: ${matches.length}`;
+      // final rendering of matches
+      if(matches.length){
+        const table = document.createElement('table');
+        table.style.width='100%';
+        table.style.borderCollapse='collapse';
+        table.innerHTML = `<thead><tr><th>Symbol</th><th>Direction</th><th>LastClose</th><th>whenIndex</th><th>ema70</th><th>ema200</th></tr></thead>`;
+        const tb = document.createElement('tbody');
+        matches.forEach(m=>{
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${m.symbol}</td><td>${m.dir}</td><td>${m.lastClose}</td><td>${m.whenIndex}</td><td>${m.ema70.toFixed(8)}</td><td>${m.ema200.toFixed(8)}</td>`;
+          tr.style.borderTop='1px solid #eee';
+          tb.appendChild(tr);
+        });
+        table.appendChild(tb);
+        resultsEl.appendChild(document.createElement('hr'));
+        resultsEl.appendChild(table);
+      }
+    } catch(err){
+      statusEl.innerText = 'Scan failed: ' + (err.message || err);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // wire UI
+  btn.addEventListener('click', async ()=>{
+    const mode = document.querySelector('input[name="ec_mode"]:checked').value;
+    const positive = mode === 'gainers';
+    resultsEl.innerHTML = '';
+    await runEMACrossScan({ positive, minDelayMs: minDelayMsDefault });
+  });
+
+  // expose function globally so you can call programmatically
+  window.runEMACrossScan = runEMACrossScan;
+
+})();
+
 
     // ---------------------------
 // Fixed “Full Cycle” reference vector (parabolic → blowoff → long decay → dead-flat)
