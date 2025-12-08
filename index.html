@@ -1719,6 +1719,8 @@ async function runScan(once=false){
 (async function(){
   // reuse safeFetch/delay if available (fallbacks already defined elsewhere)
   const API_BASE = window.API_BASE || 'https://fapi.binance.com';
+const blacklist = ["ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT","AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT","LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT","UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT","BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT","LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT","AI16ZUSDT"];
+
 
   // config
   const klinesLimit = 300;      // request this many 15m candles (>= 200 recommended)
