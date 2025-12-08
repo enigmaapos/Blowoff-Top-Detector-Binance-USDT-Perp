@@ -546,7 +546,6 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       accumChecks: tfChecks,
       accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
       preCrash,
-      emaCross,
       // annotate detection results:
       phase: detectPhaseForSymbol({
         rsi4h, wickRatio4, volSpike4, accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
