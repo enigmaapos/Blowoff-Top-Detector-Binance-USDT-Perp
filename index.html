@@ -544,19 +544,20 @@ if (blacklist.includes(sym)) {
 
       // visual + console proof BEFORE running
       const se = getStatusEl();
-      const nowLabel = new Date().toLocaleTimeString();
-      try {
-        if(se) {
-          se.innerText = `Auto-refresh running @ ${nowLabel}`;
-          // flash background so user sees it
-          se.style.transition = 'background 0.25s';
-          se.style.background = 'rgba(255,230,120,0.8)';
-          setTimeout(()=>{ try{ se.style.background = ''; }catch(e){} }, 350);
-        }
-      } catch(e){
-        console.warn('AutoEMA: failed to update statusEl:', e);
-      }
-      console.log('Auto EMA refresh @', nowLabel);
+      // store timestamp globally for scanner to read
+window._lastAutoRefreshTs = Date.now();
+
+const se = document.getElementById('emaScanStatus');
+const nowLabel = new Date(window._lastAutoRefreshTs).toLocaleTimeString();
+
+if(se) {
+    se.innerText = `Auto-refresh running @ ${nowLabel}`;
+    se.style.transition = 'background 0.25s';
+    se.style.background = 'rgba(255,230,120,0.8)';
+    setTimeout(()=>{ try{ se.style.background = ''; }catch(e){} }, 350);
+}
+
+console.log('Auto EMA refresh @', nowLabel);
 
       // run scanner (await ensures no overlapping)
       await window.runEMACrossScan(opts);
