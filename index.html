@@ -2020,6 +2020,55 @@ try {
   }
 }
 
+  if(!el.runEmaScanBtn){
+  console.warn('EMA UI: runEmaScanBtn not found - check your HTML id');
+} else {
+  el.runEmaScanBtn.addEventListener('click', async () => {
+    // defensive checks
+    if(typeof window.runEMACrossScan !== 'function'){
+      const msg = 'EMA scanner function not found (window.runEMACrossScan).';
+      console.error(msg);
+      if(el.emaScanStatus) el.emaScanStatus.innerText = msg;
+      return;
+    }
+
+    // read mode radio (defaults to gainers)
+    const mode = document.querySelector('input[name="ec_mode"]:checked')?.value || 'gainers';
+    const positive = mode === 'gainers';
+
+    // disable UI
+    el.runEmaScanBtn.disabled = true;
+    if(el.scanTopGreenBtn) el.scanTopGreenBtn.disabled = true;
+    if(el.scanTopRedBtn) el.scanTopRedBtn.disabled = true;
+    if(el.emaScanStatus) el.emaScanStatus.innerText = `Running EMA Cross Scan — mode: ${mode}...`;
+    if(el.emaScanResults) el.emaScanResults.innerHTML = '';
+
+    try {
+      // runEMACrossScan should accept options and return results (array) — adapt as needed
+      const matches = await window.runEMACrossScan({ positive, minDelayMs: 400 });
+
+      if(el.emaScanStatus) el.emaScanStatus.innerText = `EMA scan complete — ${Array.isArray(matches) ? matches.length : 'done'}.`;
+
+      // optional: render basic list
+      if(el.emaScanResults && Array.isArray(matches)){
+        const html = matches.map(m => {
+          const s = (typeof m === 'string') ? m : (m.symbol || m.symbolName || m.symbol?.symbol || JSON.stringify(m));
+          return `<div class="ema-result-row">${s}</div>`;
+        }).join('');
+        el.emaScanResults.innerHTML = html;
+      }
+    } catch(err){
+      console.error('EMA scan failed:', err);
+      if(el.emaScanStatus) el.emaScanStatus.innerText = 'EMA scan error: ' + (err && err.message ? err.message : String(err));
+    } finally {
+      // re-enable
+      el.runEmaScanBtn.disabled = false;
+      if(el.scanTopGreenBtn) el.scanTopGreenBtn.disabled = false;
+      if(el.scanTopRedBtn) el.scanTopRedBtn.disabled = false;
+    }
+  });
+  }
+
 /* UI events */
   // wire buttons (call after DOM ready)
 el.scanTopGreenBtn = document.getElementById('scanTopGreenBtn');
