@@ -1995,10 +1995,7 @@ try {
   }
 }
 
-  // --- EMA Cross UI wiring (add this with the other el.* assignments) ---
-el.runEmaScanBtn = document.getElementById('runEmaScanBtn');
-el.emaScanStatus = document.getElementById('emaScanStatus');
-el.emaScanResults = document.getElementById('emaScanResults'); // optional, for clearing/results
+
 
 if(!el.runEmaScanBtn){
   console.warn('EMA UI: runEmaScanBtn not found - check your HTML id');
@@ -2041,6 +2038,11 @@ if(!el.runEmaScanBtn){
 
 /* UI events */
   // wire buttons (call after DOM ready)
+  // --- EMA Cross UI wiring (add this with the other el.* assignments) ---
+el.runEmaScanBtn = document.getElementById('runEmaScanBtn');
+el.emaScanStatus = document.getElementById('emaScanStatus');
+el.emaScanResults = document.getElementById('emaScanResults'); // optional, for clearing/results
+  
 el.scanTopGreenBtn = document.getElementById('scanTopGreenBtn');
 el.scanTopRedBtn   = document.getElementById('scanTopRedBtn');
 el.scanStatus = document.getElementById('scanStatus');
