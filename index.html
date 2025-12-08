@@ -509,6 +509,71 @@ if (blacklist.includes(sym)) {
   window.runEMACrossScan = runEMACrossScan;
 })();
 
+  // ---------- AUTO REFRESH for EMA Cross Scanner ----------
+(function(){
+  // config (change to taste)
+  const AUTO_INTERVAL_MS = 60 * 1000; // default: 60 seconds between runs
+  let _autoTimer = null;
+  let _scanInProgress = false;
+
+  async function autoRunOnce(opts = { positive: true, minDelayMs: 420 }) {
+    // avoid overlapping runs
+    if(_scanInProgress) return;
+    if(typeof window.runEMACrossScan !== 'function') {
+      console.warn('AutoEMA: runEMACrossScan not available yet');
+      return;
+    }
+    // safety if global auto-pause kicked in
+    if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) {
+      console.warn('AutoEMA: safety pause active — waiting');
+      return;
+    }
+
+    try {
+      _scanInProgress = true;
+      // you may want to clear results before each run:
+      if(typeof resultsEl !== 'undefined' && resultsEl) resultsEl.innerHTML = '';
+      await window.runEMACrossScan(opts);
+    } catch(err){
+      console.error('AutoEMA scan failed:', err);
+    } finally {
+      _scanInProgress = false;
+    }
+  }
+
+  // start auto-refresh (idempotent)
+  function startAutoEMA({ intervalMs = AUTO_INTERVAL_MS, positive = true, minDelayMs = 420 } = {}) {
+    // if timer exists, update config but keep running
+    if(_autoTimer) {
+      // change interval by restarting
+      stopAutoEMA();
+    }
+    // store config in closure by using bound function
+    _autoTimer = setInterval(()=> {
+      // If global safety pause is active, skip scheduling a run until resumed
+      if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) return;
+      autoRunOnce({ positive, minDelayMs });
+    }, intervalMs);
+    console.log(`AutoEMA started — interval ${intervalMs}ms`);
+    // run immediately once
+    autoRunOnce({ positive, minDelayMs });
+  }
+
+  // stop auto-refresh
+  function stopAutoEMA(){
+    if(_autoTimer) {
+      clearInterval(_autoTimer);
+      _autoTimer = null;
+      console.log('AutoEMA stopped');
+    }
+  }
+
+  // expose controls globally
+  window.startAutoEMA = startAutoEMA;
+  window.stopAutoEMA = stopAutoEMA;
+  window.isAutoEMAOn = () => !!_autoTimer;
+})();
+
 
   // ------------------- Top30 Gainers/Losers scanner & resistance/bearish filter -------------------
 
