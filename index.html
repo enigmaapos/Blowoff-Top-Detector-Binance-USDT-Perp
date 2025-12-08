@@ -290,42 +290,6 @@ function computeSimpleScore(res){
   return "Flatline / Post-Crash";
   }
 
-        // decide if it matches mode filters
-      // resistance mode -> look for Blowoff / Blowoff Forming / Mania / Distribution (peak/resistance)
-      // bearish mode -> look for Breakdown / Capitulation / Post-Crash (bearish at support)
-      // --- robust phase extraction + matching ---
-function normalizePhaseField(val){
-  if(!val) return '';
-  if(typeof val === 'string') return val.toLowerCase();
-  if(typeof val === 'object'){
-    if(typeof val.phase === 'string') return val.phase.toLowerCase();
-    if(typeof val.phaseName === 'string') return val.phaseName.toLowerCase();
-    try { return JSON.stringify(val).toLowerCase(); } catch(e){ return ''; }
-  }
-  return String(val).toLowerCase();
-}
-
-const RESISTANCE_KEYWORDS = [
-  'blowoff','climax','distribution','mania','bull','top',
-  'blowoff forming','takeoff/early pump','climax candle',
-  'blowoff / mania','distribution / breakdown'
-];
-
-const BEARISH_KEYWORDS = [
-  'breakdown','capitulation','post-crash','flatline','despair',
-  'selloff','distribution','breakdown / crash','capitulation / despair'
-];
-
-const rawPhase = res.phase;
-const rawSim = res.simPhase || res.sim;
-const phaseStr = normalizePhaseField(rawPhase);
-const simStr = normalizePhaseField(rawSim);
-
-function anyMatch(str, keywords){
-  if(!str) return false;
-  return keywords.some(k => str.includes(k));
-}
-
 
   // ------------------- Top30 Gainers/Losers scanner & resistance/bearish filter -------------------
 
@@ -360,6 +324,42 @@ async function analyzeSymbolBatch(symbols, opts = { mode:'resistance', minDelay:
       if(i>0) await delay(opts.minDelay);
       el.scanStatus.innerText = `Analyzing ${i+1}/${symbols.length} • ${sym}`;
       const res = await analyzeSymbol(sym, { allowIfNotRunning: true });
+
+      // decide if it matches mode filters
+      // resistance mode -> look for Blowoff / Blowoff Forming / Mania / Distribution (peak/resistance)
+      // bearish mode -> look for Breakdown / Capitulation / Post-Crash (bearish at support)
+      // --- robust phase extraction + matching ---
+function normalizePhaseField(val){
+  if(!val) return '';
+  if(typeof val === 'string') return val.toLowerCase();
+  if(typeof val === 'object'){
+    if(typeof val.phase === 'string') return val.phase.toLowerCase();
+    if(typeof val.phaseName === 'string') return val.phaseName.toLowerCase();
+    try { return JSON.stringify(val).toLowerCase(); } catch(e){ return ''; }
+  }
+  return String(val).toLowerCase();
+}
+
+const RESISTANCE_KEYWORDS = [
+  'blowoff','climax','distribution','mania','bull','top',
+  'blowoff forming','takeoff/early pump','climax candle',
+  'blowoff / mania','distribution / breakdown'
+];
+
+const BEARISH_KEYWORDS = [
+  'breakdown','capitulation','post-crash','flatline','despair',
+  'selloff','distribution','breakdown / crash','capitulation / despair'
+];
+
+const rawPhase = res.phase;
+const rawSim = res.simPhase || res.sim;
+const phaseStr = normalizePhaseField(rawPhase);
+const simStr = normalizePhaseField(rawSim);
+
+function anyMatch(str, keywords){
+  if(!str) return false;
+  return keywords.some(k => str.includes(k));
+}
 
 
 let keep = false;
@@ -499,6 +499,29 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const volMA15 = sma(vols15, Math.min(10, vols15.length)) || 1;
     const volSpike15 = Number((Number(closes15.length ? vols15[vols15.length-1] : 1) / volMA15).toFixed(2));
 
+    // --- EMACROSS: detect short-term EMA cross (put this after you compute closes4h, rsi4h, etc.)
+const ema14_4 = (closes4h.length >= 14) ? ema(closes4h, 14) : null;
+const ema21_4 = (closes4h.length >= 21) ? ema(closes4h, 21) : null;
+// previous period EMAs (prev candle) - safe guards
+let ema14_prev = null, ema21_prev = null;
+if(closes4h.length >= 15){
+  const prevSlice = closes4h.slice(0, -1); // all except last
+  ema14_prev = ema(prevSlice.slice(-14), 14) || null;
+  ema21_prev = ema(prevSlice.slice(-21), 21) || null;
+}
+
+// cross detection (true only if both previous & current EMAs exist)
+const emaCross = { crossUp:false, crossDown:false, ema14:ema14_4, ema21:ema21_4 };
+if(ema14_prev !== null && ema21_prev !== null && ema14_4 !== null && ema21_4 !== null){
+  // bullish cross: ema14 moved above ema21
+  if(ema14_prev <= ema21_prev && ema14_4 > ema21_4) emaCross.crossUp = true;
+  // bearish cross: ema14 moved below ema21
+  if(ema14_prev >= ema21_prev && ema14_4 < ema21_4) emaCross.crossDown = true;
+}
+
+// attach to the result object you'll return
+// later you can check result.emaCross.crossUp / .crossDown
+
     // accumulation checks
     const sens = parseInt(el.sensitivity.value,10) || 50;
     const acc15 = detectAccumulationGeneric(closes15, highs15, lows15, vols15, 30, sens);
@@ -539,6 +562,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       volSpike4, volSpike15,
       wickRatio4,
       ema70DistPct: emaDistPct,
+      emaCross, 
       lowerHigh,
       fundingRate,
       closeNow: close4,
