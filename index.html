@@ -517,29 +517,27 @@ if (blacklist.includes(sym)) {
   let _scanInProgress = false;
 
   async function autoRunOnce(opts = { positive: true, minDelayMs: 420 }) {
-    // avoid overlapping runs
-    if(_scanInProgress) return;
-    if(typeof window.runEMACrossScan !== 'function') {
-      console.warn('AutoEMA: runEMACrossScan not available yet');
-      return;
-    }
-    // safety if global auto-pause kicked in
-    if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) {
-      console.warn('AutoEMA: safety pause active — waiting');
-      return;
+  if(_scanInProgress) return;
+  if(typeof window.runEMACrossScan !== 'function') return;
+
+  if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) return;
+
+  try {
+    _scanInProgress = true;
+
+    // ⭐ SHOW TIME OF REFRESH
+    if (statusEl) {
+      statusEl.innerText = `Auto-refresh running @ ${new Date().toLocaleTimeString()}`;
     }
 
-    try {
-      _scanInProgress = true;
-      // you may want to clear results before each run:
-      if(typeof resultsEl !== 'undefined' && resultsEl) resultsEl.innerHTML = '';
-      await window.runEMACrossScan(opts);
-    } catch(err){
-      console.error('AutoEMA scan failed:', err);
-    } finally {
-      _scanInProgress = false;
-    }
+    await window.runEMACrossScan(opts);
+
+  } catch(err) {
+    console.error('AutoEMA scan failed:', err);
+  } finally {
+    _scanInProgress = false;
   }
+}
 
   // start auto-refresh (idempotent)
   function startAutoEMA({ intervalMs = AUTO_INTERVAL_MS, positive = true, minDelayMs = 420 } = {}) {
