@@ -561,8 +561,7 @@ if(ema14_prev !== null && ema21_prev !== null && ema14_4 !== null && ema21_4 !==
       rsi1d, rsi4h, rsi1h, rsi15,
       volSpike4, volSpike15,
       wickRatio4,
-      ema70DistPct: emaDistPct,
-      emaCross, 
+      ema70DistPct: emaDistPct, 
       lowerHigh,
       fundingRate,
       closeNow: close4,
@@ -570,6 +569,7 @@ if(ema14_prev !== null && ema21_prev !== null && ema14_4 !== null && ema21_4 !==
       accumChecks: tfChecks,
       accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
       preCrash,
+      emaCross,
       // annotate detection results:
       phase: detectPhaseForSymbol({
         rsi4h, wickRatio4, volSpike4, accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
@@ -997,7 +997,8 @@ function queueSymbolAnalysis(symbol, results){
         k4h, k1h, k15m: k15,
         accumChecks: tfChecks,
         accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
-        preCrash
+        preCrash,
+  emaCross,
       });
 
     } catch(err){
