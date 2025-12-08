@@ -1726,11 +1726,6 @@ async function runScan(once=false){
   const minCloseRequirement = 220; // minimum number of closes to attempt EMA200 reliably
   const recentCandles = 4;      // look-back window to detect a recent cross
 
-  // UI refs
-  const btn = document.getElementById('runEmaScanBtn');
-  const statusEl = document.getElementById('emaScanStatus');
-  const resultsEl = document.getElementById('emaScanResults');
-
   // safeFetch fallback already provided earlier in file
 
   // compute SMA
@@ -1927,6 +1922,11 @@ async function runScan(once=false){
   // expose function globally
   window.runEMACrossScan = runEMACrossScan;
 })();
+
+    // UI refs
+  const btn = document.getElementById('runEmaScanBtn');
+  const statusEl = document.getElementById('emaScanStatus');
+  const resultsEl = document.getElementById('emaScanResults');
 
 
 
