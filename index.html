@@ -509,52 +509,81 @@ if (blacklist.includes(sym)) {
   window.runEMACrossScan = runEMACrossScan;
 })();
 
-  // ---------- AUTO REFRESH for EMA Cross Scanner ----------
+  // ---------- AUTO REFRESH for EMA Cross Scanner (robust visual feedback) ----------
 (function(){
   // config (change to taste)
-  const AUTO_INTERVAL_MS = 60 * 1000; // default: 60 seconds between runs
+  const DEFAULT_INTERVAL_MS = 60 * 1000; // default: 60 seconds between runs
   let _autoTimer = null;
   let _scanInProgress = false;
 
+  // helper: get the status element fresh from DOM (works even if scanner used a local const)
+  function getStatusEl(){
+    return document.getElementById('emaScanStatus');
+  }
+
   async function autoRunOnce(opts = { positive: true, minDelayMs: 420 }) {
-  if(_scanInProgress) return;
-  if(typeof window.runEMACrossScan !== 'function') return;
-
-  if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) return;
-
-  try {
-    _scanInProgress = true;
-
-    // ⭐ SHOW TIME OF REFRESH
-    if (statusEl) {
-      statusEl.innerText = `Auto-refresh running @ ${new Date().toLocaleTimeString()}`;
+    // avoid overlapping runs
+    if(_scanInProgress) {
+      console.log('AutoEMA: previous run still in progress — skipping');
+      return;
+    }
+    if(typeof window.runEMACrossScan !== 'function') {
+      console.warn('AutoEMA: runEMACrossScan not available yet');
+      return;
+    }
+    // safety if global auto-pause kicked in
+    if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) {
+      console.warn('AutoEMA: safety pause active — waiting');
+      const se = getStatusEl();
+      if(se) se.innerText = `Auto-refresh paused (safety) @ ${new Date().toLocaleTimeString()}`;
+      return;
     }
 
-    await window.runEMACrossScan(opts);
+    try {
+      _scanInProgress = true;
 
-  } catch(err) {
-    console.error('AutoEMA scan failed:', err);
-  } finally {
-    _scanInProgress = false;
+      // visual + console proof BEFORE running
+      const se = getStatusEl();
+      const nowLabel = new Date().toLocaleTimeString();
+      try {
+        if(se) {
+          se.innerText = `Auto-refresh running @ ${nowLabel}`;
+          // flash background so user sees it
+          se.style.transition = 'background 0.25s';
+          se.style.background = 'rgba(255,230,120,0.8)';
+          setTimeout(()=>{ try{ se.style.background = ''; }catch(e){} }, 350);
+        }
+      } catch(e){
+        console.warn('AutoEMA: failed to update statusEl:', e);
+      }
+      console.log('Auto EMA refresh @', nowLabel);
+
+      // run scanner (await ensures no overlapping)
+      await window.runEMACrossScan(opts);
+
+    } catch(err){
+      console.error('AutoEMA scan failed:', err);
+      const se = getStatusEl();
+      if(se) se.innerText = `Auto-refresh error: ${err && err.message ? err.message : String(err)}`;
+    } finally {
+      _scanInProgress = false;
+    }
   }
-}
 
   // start auto-refresh (idempotent)
-  function startAutoEMA({ intervalMs = AUTO_INTERVAL_MS, positive = true, minDelayMs = 420 } = {}) {
-    // if timer exists, update config but keep running
-    if(_autoTimer) {
-      // change interval by restarting
-      stopAutoEMA();
-    }
-    // store config in closure by using bound function
+  function startAutoEMA({ intervalMs = DEFAULT_INTERVAL_MS, positive = true, minDelayMs = 420, runImmediate = true } = {}) {
+    if(_autoTimer) stopAutoEMA();
+    // run immediate optionally then schedule
+    if(runImmediate) autoRunOnce({ positive, minDelayMs }).catch(e=>console.error(e));
     _autoTimer = setInterval(()=> {
       // If global safety pause is active, skip scheduling a run until resumed
       if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) return;
       autoRunOnce({ positive, minDelayMs });
     }, intervalMs);
     console.log(`AutoEMA started — interval ${intervalMs}ms`);
-    // run immediately once
-    autoRunOnce({ positive, minDelayMs });
+    // visual indicator
+    const se = getStatusEl();
+    if(se) se.innerText = `Auto-refresh started @ ${new Date().toLocaleTimeString()}`;
   }
 
   // stop auto-refresh
@@ -563,6 +592,8 @@ if (blacklist.includes(sym)) {
       clearInterval(_autoTimer);
       _autoTimer = null;
       console.log('AutoEMA stopped');
+      const se = getStatusEl();
+      if(se) se.innerText = `Auto-refresh stopped @ ${new Date().toLocaleTimeString()}`;
     }
   }
 
@@ -570,6 +601,12 @@ if (blacklist.includes(sym)) {
   window.startAutoEMA = startAutoEMA;
   window.stopAutoEMA = stopAutoEMA;
   window.isAutoEMAOn = () => !!_autoTimer;
+
+  // ---- OPTIONAL: quick-test mode to verify visually (uncomment to auto-start test) ----
+  // To test quickly, call: startAutoEMA({ intervalMs: 5000, runImmediate:true })
+  // or uncomment the line below to auto-start a quick 5s demo when page loads:
+  // startAutoEMA({ intervalMs: 5000, runImmediate:true });
+
 })();
 
 
