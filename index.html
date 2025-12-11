@@ -1171,7 +1171,10 @@ if(result.preCrash && result.preCrash.someFlag) s++;
 result.score = s;
 
     if (result.score === 3) {
-  playScoreAlert();
+  if (!alertedSymbols.has(result.symbol)) {
+    alertedSymbols.add(result.symbol);
+    playScoreAlert(result.symbol);
+  }
 }
 
       // --- FIXED FULL-CYCLE REFERENCE VECTOR ---
