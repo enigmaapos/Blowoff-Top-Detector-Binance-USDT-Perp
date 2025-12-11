@@ -80,22 +80,29 @@
 
     <!-- Sorting controls (ADDED) -->
     <label style="margin-left:8px">Sort by
-      <select id="sortBy" style="margin-left:6px">
-        <option value="score">Score</option>
-        <option value="similarity">Cycle similarity</option>
-        <option value="accum">Accum confidence</option>
-        <option value="preCrash">Pre-crash confidence</option>
-        <option value="rsi4h">RSI (4H)</option>
-        <option value="ema70DistPct">EMA stretch %</option>
-        <option value="last">Last price</option>
-        <option value="symbol">Symbol</option>
-        <option value="phase">Phase (Text)</option>
-<option value="simPhase">Cycle Classification</option>
-<option value="phaseRank">Phase (Ranked)</option>
-<option value="simPhaseRank">Sim-Phase (Ranked)</option>
-      </select>
-    </label>
-    <button id="sortDir" class="alt" title="Toggle sort direction" style="margin-left:6px">Desc</button>
+    <!-- ===== Replace existing Sort controls + show-dist button with this block ===== -->
+<label style="margin-left:8px">Sort by
+  <select id="sortBy" style="margin-left:6px">
+    <option value="score">Score</option>
+    <option value="similarity">Cycle similarity</option>
+    <option value="accum">Accum confidence</option>
+    <option value="preCrash">Pre-crash confidence</option>
+    <option value="rsi4h">RSI (4H)</option>
+    <option value="ema70DistPct">EMA stretch %</option>
+    <option value="last">Last price</option>
+    <option value="symbol">Symbol</option>
+
+    <!-- NEW: phase / simPhase options -->
+    <option value="phase">Phase (Text)</option>
+    <option value="simPhase">Sim-Phase (Text)</option>
+    <option value="phaseRank" selected>Phase (Ranked)</option>
+    <option value="simPhaseRank">Sim-Phase (Ranked)</option>
+  </select>
+</label>
+<button id="sortDir" class="alt" title="Toggle sort direction" style="margin-left:6px">Desc</button>
+
+<!-- Show Distribution/Breakdown toggle -->
+<button id="showDistBtn" class="alt" title="Toggle show only Distribution / Breakdown" style="margin-left:8px">Show Distribution/Breakdown</button>
     <!-- end sorting -->
 
     <button id="startBtn">Start</button>
@@ -1462,22 +1469,22 @@ function explainBlowoff(item){
    NEW: Sorting helpers — inserted now
    ============================================================ */
 
-let sortDesc = true; // default Desc
+// ===== Ready-to-replace JS: sorting, ranking, filtering, handlers =====
+
+// default sort direction
+let sortDesc = true; // Desc by default
 
 // ---- helpers: phase ranking / normalization ----
 function getPhaseRank(phase) {
   if(!phase) return 999;
-  // phase may be a string or an object { phaseName: "Distribution" } etc.
   const p = (typeof phase === 'object') ? (phase.phaseName || phase.phase || '') : phase;
   const s = String(p).toLowerCase();
-  // assign small numbers for "higher priority" phases (you can tweak order)
   if(s.includes('blowoff')) return 1;
   if(s.includes('distribution')) return 2;
   if(s.includes('trend') || s.includes('early pump') || s.includes('takeoff')) return 2.5;
   if(s.includes('breakdown')) return 3;
   if(s.includes('crash')) return 4;
   if(s.includes('post-crash') || s.includes('flatline') || s.includes('post')) return 5;
-  // fallback: try to parse any number inside the string
   const m = s.match(/\d+/);
   if(m) return Number(m[0]);
   return 999;
@@ -1507,19 +1514,17 @@ function getValueForKey(r, key) {
     case 'last': return r.closeNow || 0;
     case 'symbol': return (r.symbol || '').toUpperCase();
 
-    // text-based phase (returns string for alphabetical sorting)
+    // phase text
     case 'phase': {
-      // support both plain string and object shape
       if(!r.phase) return '';
       if(typeof r.phase === 'string') return r.phase;
-      // if it's object like { phaseName: 'Distribution' } prefer phaseName
       return (r.phase.phaseName || r.phase.phase || String(r.phase)).toString();
     }
 
-    // text-based similarity phase (string)
+    // simPhase text
     case 'simPhase': return String(r.simPhase || '');
 
-    // numeric ranked phase (helps place Distribution/Breakdown exactly where you want)
+    // numeric ranked phase (preferred for deterministic ordering)
     case 'phaseRank': return getPhaseRank(r.phase);
 
     case 'simPhaseRank': return getSimPhaseRank(r.simPhase);
@@ -1528,13 +1533,14 @@ function getValueForKey(r, key) {
   }
 }
 
+// main sort function (in-place)
 function sortResults(results) {
   const key = (el.sortBy && el.sortBy.value) ? el.sortBy.value : 'score';
   results.sort((a,b) => {
     const A = getValueForKey(a,key);
     const B = getValueForKey(b,key);
 
-    // alphabetical for symbol specifically (explicit)
+    // alphabetical for symbol specifically
     if(key === 'symbol'){
       if(A < B) return sortDesc ? 1 : -1;
       if(A > B) return sortDesc ? -1 : 1;
@@ -1565,31 +1571,81 @@ function sortResults(results) {
   });
 }
 
-/* ============================================================
-   Now inject event handlers for the sort controls (wires up to re-render)
-   ============================================================ */
+// ====== Filtering: show only Distribution / Breakdown when toggled ======
+let showOnlyDist = false;
+const distKeywords = ['distribution', 'breakdown'];
+
+function filterResultsForDist(results) {
+  if(!showOnlyDist) return results;
+  return results.filter(r => {
+    const phaseText = (() => {
+      if(!r) return '';
+      if(r.phase){
+        if(typeof r.phase === 'string') return r.phase.toLowerCase();
+        if(typeof r.phase === 'object') return (r.phase.phaseName || r.phase.phase || '').toString().toLowerCase();
+      }
+      if(r.simPhase) return r.simPhase.toString().toLowerCase();
+      return '';
+    })();
+    return distKeywords.some(k => phaseText.includes(k));
+  });
+}
+
+// ===== Wire controls: sortDir, sortBy, showDistBtn =====
 if(el.sortDir){
   el.sortDir.addEventListener('click', () => {
     sortDesc = !sortDesc;
     el.sortDir.innerText = sortDesc ? 'Desc' : 'Asc';
     if(window.lastScanResults){
-      sortResults(window.lastScanResults);
-      if(window.innerWidth >= 680) renderTable(window.lastScanResults);
-      else renderCards(window.lastScanResults);
-      updateTradingInterpretation(window.lastScanResults);
+      const arr = filterResultsForDist(window.lastScanResults.slice());
+      sortResults(arr);
+      if(window.innerWidth >= 680) renderTable(arr); else renderCards(arr);
+      updateTradingInterpretation(arr);
     }
   });
 }
+
 if(el.sortBy){
   el.sortBy.addEventListener('change', () => {
     if(window.lastScanResults){
-      sortResults(window.lastScanResults);
-      if(window.innerWidth >= 680) renderTable(window.lastScanResults);
-      else renderCards(window.lastScanResults);
-      updateTradingInterpretation(window.lastScanResults);
+      const arr = filterResultsForDist(window.lastScanResults.slice());
+      sortResults(arr);
+      if(window.innerWidth >= 680) renderTable(arr); else renderCards(arr);
+      updateTradingInterpretation(arr);
     }
   });
+}
+
+const showDistBtn = document.getElementById('showDistBtn');
+if(showDistBtn){
+  showDistBtn.addEventListener('click', () => {
+    showOnlyDist = !showOnlyDist;
+    showDistBtn.innerText = showOnlyDist ? 'Showing: Distribution/Breakdown' : 'Show Distribution/Breakdown';
+    if(window.lastScanResults){
+      const arr = filterResultsForDist(window.lastScanResults.slice());
+      sortResults(arr);
+      if(window.innerWidth >= 680) renderTable(arr); else renderCards(arr);
+      updateTradingInterpretation(arr);
     }
+  });
+}
+
+// ===== Initialization helper: run this after you first populate window.lastScanResults =====
+function applyFilterAndSortThenRender(results) {
+  if(!results) return;
+  const arr = filterResultsForDist(results.slice());
+  sortResults(arr);
+  if(window.innerWidth >= 680) renderTable(arr); else renderCards(arr);
+  updateTradingInterpretation(arr);
+}
+
+// Optionally ensure dropdown default is phaseRank
+if(el.sortBy) el.sortBy.value = el.sortBy.value || 'phaseRank';
+
+// Example usage: whenever a new scan finishes set window.lastScanResults = resultsFromScan; then call:
+ // applyFilterAndSortThenRender(window.lastScanResults);
+// (Make sure to call that where your scan completion currently triggers render)
+  
 
 /* ============================================================
    (Below: original rendering & recommendation functions)
