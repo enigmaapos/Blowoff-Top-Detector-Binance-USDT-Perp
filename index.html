@@ -126,6 +126,7 @@
    - conditional alert when blowoff high AND accumulation >= threshold
    - AI final recommendation (long-term)
    - Short-term recommendation generator + UI toggle
+   - NEW: Long-term targets + safety levels (Option B)
    - NEW: Quick Trading Interpretation panel (auto-updates)
    ====================================================== */
 
@@ -450,6 +451,80 @@ function explainBlowoff(item){
 }
 
 /* ============================================================
+   NEW: Long-term target generator (Option B)
+   - returns 3 upside targets and 3 downside safety levels
+   - uses 4H candles primarily, falls back to last close percentages
+   ============================================================ */
+function getLongTermTargets(item){
+  try{
+    const k4 = item.k4h || [];
+    const lastClose = item.closeNow || (k4.length ? Number(k4[k4.length-1][4]) : 0);
+    const windowSize = Math.min(40, k4.length); // last 40 4H candles (~6-7 days)
+    const recent = k4.slice(-windowSize);
+
+    let recentHigh = lastClose, recentLow = lastClose;
+    if(recent.length){
+      recentHigh = Math.max(...recent.map(k => Number(k[2])));
+      recentLow = Math.min(...recent.map(k => Number(k[3])));
+    }
+
+    // Find a meaningful swing high (peak before last close) by scanning recent highs
+    let swingHigh = recentHigh;
+    if(recent.length >= 6){
+      // prefer the maximum of the last 24 candles, but ensure it's not an extreme outlier
+      const last24 = recent.slice(-Math.min(24,recent.length));
+      const histHigh = Math.max(...last24.map(k=>Number(k[2])));
+      swingHigh = histHigh;
+    }
+
+    // Use fibonacci-like extensions based on last close relative to swingLow or swingHigh
+    const baseline = Math.max(lastClose, swingHigh * 0.92); // baseline biased to current/swing
+    const t1 = +(Math.max(swingHigh, lastClose) * 1.05).toFixed(6);   // first structural resistance (~5% above swing)
+    const t2 = +(Math.max(swingHigh, lastClose) * 1.25).toFixed(6);   // extension (25%)
+    const t3 = +(Math.max(swingHigh, lastClose) * 1.6).toFixed(6);    // macro extension (~1.618x-ish)
+
+    // Detect a "volume void" by checking low-volume regions — if found, nudge targets up
+    let volMA = 0;
+    try{ volMA = sma((k4||[]).map(k=>Number(k[5])), Math.min(10, k4.length)) || 0; }catch(e){}
+    const lastVol = k4.length ? Number(k4[k4.length-1][5]) : 0;
+    const volBoost = (volMA && lastVol > volMA*1.8) ? 1.03 : 1.0;
+
+    // apply small nudge if breakout volume strong
+    const t1b = +(t1 * volBoost).toFixed(6);
+    const t2b = +(t2 * volBoost).toFixed(6);
+    const t3b = +(t3 * volBoost).toFixed(6);
+
+    // Downside safety/supports
+    const s1 = +(recentLow.toFixed(6));                       // recent 4H low (tight)
+    const s2 = +((recentLow) * 0.92).toFixed(6);              // breach -> weakness
+    const s3 = +((recentLow) * 0.80).toFixed(6);              // invalidation of the setup
+
+    // fallback percent if values are invalid
+    const fallbackPercent = (p) => +(lastClose * p).toFixed(6);
+    return {
+      t1: t1b || fallbackPercent(1.05),
+      t2: t2b || fallbackPercent(1.25),
+      t3: t3b || fallbackPercent(1.6),
+      s1: (s1 && s1>0) ? s1 : +((lastClose*0.92).toFixed(6)),
+      s2: (s2 && s2>0) ? s2 : +((lastClose*0.85).toFixed(6)),
+      s3: (s3 && s3>0) ? s3 : +((lastClose*0.75).toFixed(6)),
+      recentHigh, recentLow, swingHigh
+    };
+  } catch(e){
+    const lastClose = item.closeNow || 0;
+    return {
+      t1: +(lastClose * 1.05).toFixed(6),
+      t2: +(lastClose * 1.25).toFixed(6),
+      t3: +(lastClose * 1.6).toFixed(6),
+      s1: +(lastClose * 0.92).toFixed(6),
+      s2: +(lastClose * 0.85).toFixed(6),
+      s3: +(lastClose * 0.75).toFixed(6),
+      recentHigh: lastClose, recentLow: lastClose, swingHigh: lastClose
+    };
+  }
+}
+
+/* ============================================================
    FINAL AI recommendation layer (long-term)
    ============================================================ */
 function getFinalRecommendation(item){
@@ -499,7 +574,6 @@ function getFinalRecommendation(item){
    NEW: Short-term recommendation generator
    ============================================================ */
 function getShortTermRecommendation(item){
-  // Safely read short-term indicators
   const rsi15 = item.rsi15 || 0;
   const rsi1h = item.rsi1h || 0;
   const rsi4h = item.rsi4h || 0;
@@ -510,7 +584,6 @@ function getShortTermRecommendation(item){
   const phase = item.phase && item.phase.phase ? item.phase.phase : item.phase || 'Unknown';
   const close = Number(item.closeNow || 0) || 0;
 
-  // Helper: derive recent lows from available klines
   function recentLowFrom(karr, lookback=12){
     if(!Array.isArray(karr) || karr.length===0) return null;
     const slice = karr.slice(-Math.min(lookback, karr.length));
@@ -523,15 +596,11 @@ function getShortTermRecommendation(item){
   const low1h = recentLowFrom(item.k1h, 12);
   const low4h = recentLowFrom(item.k4h, 6);
 
-  // Build dynamic targets:
-  // - Use real support levels when available (15m, 1h, 4h)
-  // - Fallback to % drops from current price: 5%,12%,20%
   const targets = [];
   if(low15 && close > 0 && low15 < close) targets.push(Number(low15.toFixed(6)));
   if(low1h && close > 0 && low1h < close && (targets.indexOf(Number(low1h.toFixed(6))) === -1)) targets.push(Number(low1h.toFixed(6)));
   if(low4h && close > 0 && low4h < close && (targets.indexOf(Number(low4h.toFixed(6))) === -1)) targets.push(Number(low4h.toFixed(6)));
 
-  // If we don't have good structural supports, use percent levels
   if(targets.length < 3 && close > 0){
     const percCandidates = [
       +(close * (1 - 0.05)).toFixed(6),
@@ -541,13 +610,11 @@ function getShortTermRecommendation(item){
     percCandidates.forEach(p => { if(targets.length < 3) targets.push(p); });
   }
 
-  // Format friendly targets: if numeric close to integers, show 6 decimals trimmed
   const fmtTargets = targets.map(t => {
     if(typeof t !== 'number' || isNaN(t)) return '—';
     return (Math.abs(t) < 0.0001) ? t.toExponential(6) : (Number(t.toFixed(6)));
   });
 
-  // Short-term bias rules (same logic you used, but hooking the dynamic targets)
   let bias = 'Neutral';
   let sentence = '';
   let plan = '';
@@ -580,7 +647,7 @@ function getShortTermRecommendation(item){
   };
 }
 
-/* ---------- RENDER TABLE & CARDS ---------- */
+/* ---------- RENDER TABLE & CARDS (now includes long-term targets & safety) ---------- */
 function renderTable(results){
   results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
   const threshold = parseInt(el.threshold.value,10)||4;
@@ -591,9 +658,12 @@ function renderTable(results){
     const accum = r.accumCombined || {confidence:0, isAccum:false};
     const rec = getFinalRecommendation(r);
     const shortRec = getShortTermRecommendation(r);
+    const longTargets = getLongTermTargets(r);
+
     let statusHtml = `<span class="small">normal</span>`; let bg='background:rgba(255,255,255,0.02)'; let cls='';
     if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
     else if(r.score === threshold-1){ statusHtml = `<span style="background:#ffd966;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;color:black;">⚠ POTENTIAL</span>`; bg='background:rgba(255,200,0,0.10)'; }
+
     const simPct = r.similarity ? Math.round(r.similarity*100) : 0;
     const accumHtml = accum.isAccum ? `<div class="small" style="color:#2dd4bf">Accum: ${accum.confidence}%</div>` : `<div class="small" style="color:var(--muted)">Accum: ${accum.confidence}%</div>`;
     const tfList = (r.accumChecks || []).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ');
@@ -602,6 +672,7 @@ function renderTable(results){
     else if(phaseInfo.phase.includes('Climax')||phaseInfo.phase.includes('Acceleration')) phaseColor='#ff6b43';
     else if(phaseInfo.phase.includes('Distribution')) phaseColor='#ffd966';
     else if(phaseInfo.phase.includes('Dead-cat')) phaseColor='#7bd389';
+
     const shortHtml = showShort ? `
       <div class="shortRec">🔎 Short-term: ${shortRec.sentence}</div>
       <div class="recBox" style="background:rgba(255,255,255,0.01)">
@@ -610,6 +681,18 @@ function renderTable(results){
         <br><em style="color:var(--muted)">Short-term bias: ${shortRec.bias} • RSI15:${Math.round(shortRec.rsi15||0)} • accum:${shortRec.accum}%</em>
       </div>
     ` : '';
+
+    const longTargetsHtml = `
+      <div style="margin-top:8px;">
+        <strong>Targets (long-term):</strong>
+        <div class="recBox">
+          <strong>Upside Targets:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}
+          <br><strong>Safety levels:</strong> ${longTargets.s1} • ${longTargets.s2} • ${longTargets.s3}
+          <br><em style="color:var(--muted)">Recent H/L: ${longTargets.recentHigh}/${longTargets.recentLow} • SwingHigh:${longTargets.swingHigh}</em>
+        </div>
+      </div>
+    `;
+
     return `
       <tr class="${cls}" style="${bg}">
         <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span></td>
@@ -623,6 +706,7 @@ function renderTable(results){
         ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
         ${r.accumCombined && r.accumCombined.isAccum ? `<div style="margin-top:6px;color:#cfe8ff">Accumulation combined: ${r.accumCombined.confidence}% • reasons: ${ (r.accumChecks||[]).map(t => `${t.tf}:${t.result.reasons.join(',')}`).join(' || ') }</div>` : `<div style="margin-top:6px;color:var(--muted)">Accumulation combined: ${r.accumCombined.confidence}%</div>`}
         <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
+        ${longTargetsHtml}
         ${shortHtml}
         <div class="recBox"><strong>Plan (long-term):</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
       </td></tr>
@@ -641,6 +725,7 @@ function renderCards(results){
     const simPct = Math.round((r.similarity||0)*100);
     const rec = getFinalRecommendation(r);
     const srec = getShortTermRecommendation(r);
+    const longTargets = getLongTermTargets(r);
     let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
     if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
     const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
@@ -669,6 +754,14 @@ function renderCards(results){
           ${accum.isAccum ? `<div style="color:#cfe8ff;margin-top:6px">Accumulation combined: ${accum.confidence}% • TFs: ${(r.accumChecks||[]).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ')}</div>` : ''}
           <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
           ${shortHtml}
+          <div style="margin-top:8px">
+            <strong>Targets (long-term):</strong>
+            <div class="recBox">
+              <strong>Upside:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}
+              <br><strong>Safety levels:</strong> ${longTargets.s1} • ${longTargets.s2} • ${longTargets.s3}
+              <br><em style="color:var(--muted)">Recent H/L: ${longTargets.recentHigh}/${longTargets.recentLow} • SwingHigh:${longTargets.swingHigh}</em>
+            </div>
+          </div>
           <div class="recBox"><strong>Plan (long-term):</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
         </div>
       </div>
@@ -679,9 +772,8 @@ function renderCards(results){
 }
 
 /* ============================================================
-   NEW: Trading interpretation renderer
-   - builds the concise text block you pasted and injects it into #tradeInterpret
-   - picks the top candidate (highest score then similarity)
+   Trading interpretation renderer
+   - includes short-term and long-term targets (long-term shows targets & safety)
    ============================================================ */
 function buildTradingInterpretation(item){
   if(!item) return `<h3>No symbol to interpret</h3><p class="mutedNote">No results yet — run a scan.</p>`;
@@ -696,8 +788,8 @@ function buildTradingInterpretation(item){
   const blowoffScore = item.score || 0;
   const wick = (item.wickRatio4||0).toFixed(2);
   const prob = expl.prob || 0;
+  const longTargets = getLongTermTargets(item);
 
-  // Build HTML similar to the text block provided
   const html = `
     <h3>Quick Trading Interpretation — ${item.symbol}</h3>
     <p><strong>Short-term bias:</strong> <span style="color:${shortRec.bias==='Bearish' ? '#ff9b9b' : (shortRec.bias==='Bullish' ? '#9bffcf' : '#cfe8ff')}">${shortRec.bias}</span></p>
@@ -725,6 +817,17 @@ function buildTradingInterpretation(item){
     </div>
 
     <div style="margin-top:8px">
+      <strong>Long-term plan & targets</strong>
+      <div class="recBox">
+        <strong>Starter:</strong> ~10% of planned allocation.<br>
+        <strong>Stop:</strong> below recent 4H consolidation low.<br>
+        <strong>Upside Targets:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}<br>
+        <strong>Downside / Safety levels:</strong> ${longTargets.s1} • ${longTargets.s2} • ${longTargets.s3}<br>
+        <em style="color:var(--muted)">Recent H/L: ${longTargets.recentHigh}/${longTargets.recentLow} • SwingHigh:${longTargets.swingHigh}</em>
+      </div>
+    </div>
+
+    <div style="margin-top:8px">
       <strong>When short-term becomes bullish again</strong>
       <ul class="tradeList">
         <li>4H RSI drops below ~60</li>
@@ -745,7 +848,6 @@ function updateTradingInterpretation(results){
     el.tradeInterpret.innerHTML = '';
     return;
   }
-  // choose top candidate: highest score, tie-breaker similarity then ema distance
   const sorted = results.slice().sort((a,b)=> {
     if(b.score !== a.score) return b.score - a.score;
     if((b.similarity||0) !== (a.similarity||0)) return (b.similarity||0) - (a.similarity||0);
@@ -884,6 +986,6 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 </script>
 
-<footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term AI recommendation + short-term trade guidance. Quick Trading Interpretation panel added below results. Run from a local server to avoid CORS.</footer>
+<footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term AI recommendation + short-term trade guidance. Long-term targets (upside) + safety levels included. Run from a local server to avoid CORS.</footer>
 </body>
 </html>
