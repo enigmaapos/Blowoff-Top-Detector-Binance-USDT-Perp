@@ -129,6 +129,7 @@
    - NEW: Long-term targets + safety levels (Option B)
    - NEW: Quick Trading Interpretation panel (auto-updates)
    - NEW: detectReturnToNormal() integrated and rendered
+   - NEW: detectPreCrash() integrated and shown in UI
    ====================================================== */
 
 const API_BASE = 'https://fapi.binance.com';
@@ -260,6 +261,69 @@ function detectReturnToNormal(item, opts = {}) {
     return {isReturn, score, reasons, confidence, meta};
   } catch(err) {
     return {isReturn:false, score:0, reasons:[`error ${err.message}`], confidence:0, meta:{}};
+  }
+}
+
+/* --------------------------
+   PRE-CRASH / BLOWOFF DETECTOR
+   Adds `preCrash` object to each item:
+   { likely:boolean, score:int, reasons:[], confidence:int, meta:{} }
+-------------------------- */
+function detectPreCrash(item, opts={}) {
+  const sensitivity = parseInt(el.sensitivity.value,10) || 50;
+  const t = {
+    rsi4h: 78 - Math.round((sensitivity-50)/2),
+    volSpike4: 2.0 - (sensitivity-50)/250,
+    wickRatio: 1.2 - (sensitivity-50)/500,
+    emaDistPct: 40 - Math.round((sensitivity-50)/1.5),
+    dropFromPeak: 8 - Math.round((sensitivity-50)/10)
+  };
+
+  try {
+    const rsi4h = item.rsi4h || 0;
+    const vol = Number(item.volSpike4 || 0);
+    const wick = Number(item.wickRatio4 || 0);
+    const emaDist = Math.abs(Number(item.ema70DistPct || 0));
+    const dropPct = Number(item.dropPctFromPeak || 0);
+    const funding = item.fundingRate || 0;
+
+    // lower-highs count from k4h if present
+    let lowerHCount = 0;
+    if(Array.isArray(item.k4h) && item.k4h.length >= 6){
+      const highs = item.k4h.slice(-8).map(k => Number(k[2]));
+      for(let i=1;i<highs.length;i++) if(highs[i] < highs[i-1]) lowerHCount++;
+    }
+
+    let score = 0; const reasons = [];
+
+    // core blowoff signals
+    if(vol >= Math.max(1.8, t.volSpike4)){ score += 3; reasons.push(`Vol spike ×${vol}`); }
+    else if(vol >= Math.max(1.2, t.volSpike4*0.7)){ score += 1; reasons.push(`Vol uptick ×${vol}`); }
+
+    if(wick >= Math.max(1.2, t.wickRatio)){ score += 3; reasons.push(`Upper wick ratio ${wick.toFixed(2)}`); }
+    else if(wick >= Math.max(0.9, t.wickRatio*0.7)){ score += 1; reasons.push(`Wick present ${wick.toFixed(2)}`); }
+
+    if(rsi4h >= t.rsi4h){ score += 2; reasons.push(`RSI4H ${Math.round(rsi4h)}`); }
+    else if(rsi4h >= t.rsi4h - 8){ score += 1; reasons.push(`RSI elevated ${Math.round(rsi4h)}`); }
+
+    if(emaDist >= Math.max(30, t.emaDistPct)){ score += 2; reasons.push(`EMA stretch ${Math.round(emaDist)}%`); }
+
+    if(lowerHCount >= 2){ score += 2; reasons.push(`Lower highs (${lowerHCount})`); }
+    if(dropPct >= Math.max(6, t.dropFromPeak)){ score += 1; reasons.push(`Drop from peak ${dropPct.toFixed(1)}%`); }
+
+    if(typeof funding === 'number' && funding < -0.001){ score += 1; reasons.push(`Funding neg ${(funding*100).toFixed(3)}%`); }
+
+    // reduce score if accumulation looks strong
+    const accumConf = item.accumCombined ? (item.accumCombined.confidence || 0) : 0;
+    if(accumConf >= 60){ score = Math.max(0, score - 2); reasons.push('Strong accumulation reduces immediate crash odds'); }
+
+    const maxScore = 13;
+    const confidence = Math.round((score / maxScore) * 100);
+    const likely = (score >= 7 && confidence >= 45 && accumConf < 65) || (score >= 9);
+
+    return { likely, score, reasons, confidence, meta: { rsi4h, vol, wick, emaDist, dropPct, funding, lowerHCount, accumConf } };
+  } catch(err){
+    return { likely:false, score:0, reasons:[`error ${err.message}`], confidence:0, meta:{} };
   }
 }
 
@@ -423,6 +487,17 @@ function queueSymbolAnalysis(symbol, results){
         combinedConfidence = Math.round(combinedConfidence / weightSum);
       }
 
+      // --- add preCrash detection (insert BEFORE results.push)
+      const preCrash = detectPreCrash({
+        rsi4h,
+        volSpike4,
+        wickRatio4,
+        ema70DistPct: emaDistPct,
+        dropPctFromPeak: pct(close4, ema70_4) || 0,
+        fundingRate,
+        k4h
+      });
+
       results.push({
         symbol,
         score,
@@ -437,7 +512,8 @@ function queueSymbolAnalysis(symbol, results){
         closeNow: close4,
         k4h, k1h, k15m: k15,
         accumChecks: tfChecks,
-        accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) }
+        accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
+        preCrash    // <-- NEW FIELD
       });
 
     } catch(err){
@@ -734,7 +810,7 @@ function getShortTermRecommendation(item){
   };
 }
 
-/* ---------- RENDER TABLE & CARDS (now includes RTN badge and long-term targets & safety) ---------- */
+/* ---------- RENDER TABLE & CARDS (now includes RTN badge and long-term targets & safety + preCrash) ---------- */
 function renderTable(results){
   results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
   const threshold = parseInt(el.threshold.value,10)||4;
@@ -785,7 +861,13 @@ function renderTable(results){
 
     return `
       <tr class="${cls}" style="${bg}">
-        <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span> ${rtnBadge}</td>
+        <td>
+          <strong>${r.symbol}</strong><br>
+          ${statusHtml}
+          ${ r.preCrash && r.preCrash.likely ? `<span style="background:#ff5c5c;color:white;padding:4px 6px;border-radius:6px;margin-left:8px">⚠ Pre-crash ${r.preCrash.confidence}%</span>` : '' }
+          <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span>
+          ${rtnBadge}
+        </td>
         <td>${r.closeNow}</td>
         <td class="${(r.rsi4h||0)>=80?'green':''}">${r.rsi4h? r.rsi4h.toFixed(1):'n/a'}</td>
         <td class="small">vol×${r.volSpike4} wick:${(r.wickRatio4||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
@@ -795,6 +877,7 @@ function renderTable(results){
         <strong>${expl.label}</strong> — ${expl.explanation}
         ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
         ${r.accumCombined && r.accumCombined.isAccum ? `<div style="margin-top:6px;color:#cfe8ff">Accumulation combined: ${r.accumCombined.confidence}% • reasons: ${ (r.accumChecks||[]).map(t => `${t.tf}:${t.result.reasons.join(',')}`).join(' || ') }</div>` : `<div style="margin-top:6px;color:var(--muted)">Accumulation combined: ${r.accumCombined.confidence}%</div>`}
+        ${ r.preCrash ? `<div style="margin-top:6px;color:#ffd9d9"><strong>Pre-crash signals:</strong> ${r.preCrash.reasons.join('; ') || '—'} • score ${r.preCrash.score}</div>` : '' }
         <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
         ${longTargetsHtml}
         ${shortHtml}
@@ -834,7 +917,11 @@ function renderCards(results){
     html += `
       <div class="coinCard ${bc}">
         <div class="coinRow1"><div class="coinSymbol">${r.symbol}</div><div class="coinScore">${r.score}/8</div></div>
-        <div style="margin-top:6px">${badge} ${accBadge} ${rtnBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span></div>
+        <div style="margin-top:6px">
+          ${badge} ${accBadge}
+          ${ r.preCrash && r.preCrash.likely ? `<span style="background:#ff5c5c;color:white;padding:4px 8px;border-radius:6px;margin-left:8px">⚠ Pre-crash ${r.preCrash.confidence}%</span>` : '' }
+          ${rtnBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span>
+        </div>
         <div class="sigList">
           Last: ${r.closeNow}<br>
           RSI4H: ${r.rsi4h? r.rsi4h.toFixed(1):'n/a'} • Vol×${r.volSpike4} • Wick:${(r.wickRatio4||0).toFixed(2)}<br>
@@ -846,6 +933,7 @@ function renderCards(results){
           <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
           ${phase.reasons && phase.reasons.length ? `<div style="color:#cfe8ff;margin-top:6px">Phase reasons:<br>• ${phase.reasons.join('<br>• ')}</div>` : ''}
           ${accum.isAccum ? `<div style="color:#cfe8ff;margin-top:6px">Accumulation combined: ${accum.confidence}% • TFs: ${(r.accumChecks||[]).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ')}</div>` : ''}
+          ${ r.preCrash ? `<div style="margin-top:6px;color:#ffd9d9"><strong>Pre-crash signals:</strong> ${r.preCrash.reasons.join('; ') || '—'} • score ${r.preCrash.score}</div>` : '' }
           <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
           ${shortHtml}
           <div style="margin-top:8px">
