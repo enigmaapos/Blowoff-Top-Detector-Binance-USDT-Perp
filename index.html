@@ -119,6 +119,7 @@
     <label style="margin-left:6px"><input type="checkbox" id="condAlert"> Blowoff HIGH + Accum ≥</label>
     <input id="accumAlertThreshold" type="number" value="50" min="0" max="100" style="width:64px;margin-left:6px">
     <audio id="scoreAlert" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+    <button id="enableSound" class="alt" style="margin-left:8px">Enable Sound</button>
 
     <label style="margin-left:12px"><input type="checkbox" id="showShort" checked> Show short-term plans</label>
   </div>
@@ -239,10 +240,45 @@ async function ensureExchangeInfo() {
   }
 }
 
-  function playScoreAlert() {
-  const snd = document.getElementById("scoreAlert");
-  if (snd) snd.play().catch(()=>{});
+  // keep a set to avoid spamming the same symbol repeatedly
+const alertedSymbols = new Set();
+
+// cache audio element
+const scoreAudio = document.getElementById('scoreAlert');
+
+// Add an "unlock" click so browsers allow playback
+const enableBtn = document.getElementById('enableSound');
+if (enableBtn) {
+  enableBtn.addEventListener('click', async () => {
+    try {
+      // attempt a short play/pause to unlock audio on many browsers
+      await scoreAudio.play();
+      scoreAudio.pause();
+      scoreAudio.currentTime = 0;
+      enableBtn.innerText = 'Sound Enabled';
+      enableBtn.disabled = true;
+      console.log('Audio unlocked (user gesture).');
+    } catch (e) {
+      console.warn('Audio unlock failed:', e);
+      enableBtn.innerText = 'Enable Sound (failed)';
+    }
+  });
+}
+
+// Robust play function with debug info
+function playScoreAlert(symbol) {
+  if (!scoreAudio) { console.warn('scoreAudio missing'); return; }
+  try {
+    scoreAudio.currentTime = 0; // rewind to start
+    const p = scoreAudio.play();
+    if (p && typeof p.catch === 'function') p.catch(err => {
+      console.warn('play() rejected:', err);
+    });
+    console.log('Attempted play for', symbol);
+  } catch (err) {
+    console.warn('playScoreAlert error', err);
   }
+}
 
 // Validate quick: symbol must end with USDT for futures perpetual USDT pairs
 function looksLikeUSDTPerp(sym) {
