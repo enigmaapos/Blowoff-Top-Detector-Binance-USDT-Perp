@@ -153,6 +153,13 @@
   <div id="emaScanResults" style="margin-top:8px"></div>
 </div>
 
+  <!-- ===== Button + results container ===== -->
+<button id="runBelow50Btn" class="alt" title="Scan all USDT perps for below-50 accum/preCrash">Run Below-50 Scan</button>
+<span id="runBelow50Note" class="small" style="margin-left:8px;color:var(--muted)"></span>
+
+<!-- results area -->
+<div id="below50Results" style="margin-top:10px;"></div>
+
   <div id="tableView"></div>
   <div id="cardView"></div>
 
@@ -294,6 +301,264 @@ function computeSimpleScore(res){
   if (sim < 0.80) return "Breakdown / Crash Phase";
   return "Flatline / Post-Crash";
   }
+
+  /* =====================
+   Scan ALL USDT perpetuals for:
+     - accumCombined.confidence < 50
+     - preCrash.confidence    < 50
+   Uses existing analyzeSymbol(sym) function & rate-limit safety.
+   Inserts results into console + returns { lowAccum, lowPreCrash }.
+   ===================== */
+
+// configuration
+const FULL_SCAN_MIN_DELAY_MS = 600;    // delay between per-symbol requests (adjust if you're getting rate-limited)
+const FULL_SCAN_BATCH_SIZE = 6;        // optional: process in small batches to yield to UI (not parallelized here)
+const THRESH = 50;                     // threshold 'below 50'
+async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSize=FULL_SCAN_BATCH_SIZE} = {}) {
+  // 1) fetch all tickers
+  let tickers;
+  try {
+    tickers = await safeFetch(API_BASE + '/fapi/v1/ticker/24hr', { allowIfNotRunning: true });
+  } catch (err) {
+    el.scanStatus && (el.scanStatus.innerText = `Failed to fetch tickers: ${err.message}`);
+    throw err;
+  }
+
+  // filter only USDT perpetuals and remove blacklist
+  const symbols = (tickers || [])
+    .filter(t => t.symbol && t.symbol.endsWith('USDT') && !blacklist.includes(t.symbol))
+    .map(t => t.symbol.toUpperCase());
+
+  el.scanStatus && (el.scanStatus.innerText = `Found ${symbols.length} USDT pairs — scanning (safe mode)...`);
+
+  const lowAccum = [];     // accumCombined.confidence < THRESH
+  const lowPreCrash = [];  // preCrash.confidence < THRESH
+  const errors = [];
+
+  // helper to throttle & respect safety pause
+  async function safeAnalyze(sym) {
+    // If the global safety pause indicates we should not run, wait and retry
+    if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) {
+      // sleep a bit before retrying (gives safety pause time to reset)
+      await delay(Math.max(800, minDelay));
+    }
+    try {
+      // enforce minimum inter-call delay
+      await delay(minDelay);
+      // perform analysis using your existing function (which returns accumCombined & preCrash)
+      const res = await analyzeSymbol(sym, { allowIfNotRunning: true });
+      return res;
+    } catch (err) {
+      return { error: err.message || String(err), symbol: sym };
+    }
+  }
+
+  // sequential scan (safe). We keep this sequential to avoid bursts that trigger rate limits.
+  for (let i = 0; i < symbols.length; i++) {
+    const sym = symbols[i];
+    try {
+      el.scanStatus && (el.scanStatus.innerText = `(${i+1}/${symbols.length}) ${sym} — analyzing...`);
+      const res = await safeAnalyze(sym);
+
+      if(!res || res.error) {
+        errors.push({ symbol: sym, error: res ? res.error : 'no response' });
+        continue;
+      }
+
+      // ensure we have the computed fields (these are created inside analyzeSymbol)
+      const accumConf = (res.accumCombined && typeof res.accumCombined.confidence === 'number') ? res.accumCombined.confidence : null;
+      const preCrashConf = (res.preCrash && typeof res.preCrash.confidence === 'number') ? res.preCrash.confidence : null;
+
+      // accumulate results if below threshold
+      if (accumConf !== null && accumConf < THRESH) {
+        lowAccum.push({ symbol: sym, accumConfidence: accumConf, simPhase: res.simPhase || res.sim, phase: res.phase || null });
+      }
+      if (preCrashConf !== null && preCrashConf < THRESH) {
+        lowPreCrash.push({ symbol: sym, preCrashConfidence: preCrashConf, simPhase: res.simPhase || res.sim, phase: res.phase || null });
+      }
+
+    } catch (err) {
+      errors.push({ symbol: sym, error: err.message || String(err) });
+    }
+    // small safeguard: if safety triggers, break early (or continue after pause)
+    if (typeof checkSafetyAndMaybePause === 'function' && checkSafetyAndMaybePause()) {
+      // Wait long enough for safety pause to clear
+      await delay( (typeof SAFETY_PAUSE === 'number' ? SAFETY_PAUSE : 30) * 1000 + 500 );
+    }
+  }
+
+  el.scanStatus && (el.scanStatus.innerText = `Scan complete. lowAccum: ${lowAccum.length}, lowPreCrash: ${lowPreCrash.length}, errors: ${errors.length}`);
+
+  // optional: sort alphabetically
+  lowAccum.sort((a,b) => a.symbol.localeCompare(b.symbol));
+  lowPreCrash.sort((a,b) => a.symbol.localeCompare(b.symbol));
+
+  // display in debug area and console (you can adapt rendering)
+  console.log('=== lowAccum (<50) ===', lowAccum);
+  console.log('=== lowPreCrash (<50) ===', lowPreCrash);
+  if(el.debug) el.debug.innerText = `lowAccum:${lowAccum.length} lowPreCrash:${lowPreCrash.length} errors:${errors.length}`;
+
+  return { lowAccum, lowPreCrash, errors };
+}
+
+// USAGE example: attach to a button or call from console
+// scanAllPerpsForBelow50().then(r => console.table(r.lowAccum)).catch(e=>console.error(e));
+
+
+(async function(){
+  const runBtn = document.getElementById('runBelow50Btn');
+  const note = document.getElementById('runBelow50Note');
+  const resultsContainer = document.getElementById('below50Results');
+
+  function makeTable(title, rows, columns) {
+    // columns: [{key:'symbol', label:'Symbol'}, ...]
+    const wrap = document.createElement('div');
+    wrap.className = 'card-panel';
+    const h = document.createElement('h3');
+    h.style.fontSize = '14px';
+    h.style.margin = '0 0 8px 0';
+    h.innerText = `${title} (${rows.length})`;
+    wrap.appendChild(h);
+
+    if(!rows.length){
+      const p = document.createElement('div');
+      p.className = 'small';
+      p.innerText = 'None';
+      wrap.appendChild(p);
+      return wrap;
+    }
+
+    // CSV download
+    const csvBtn = document.createElement('button');
+    csvBtn.className = 'alt';
+    csvBtn.style.marginBottom = '8px';
+    csvBtn.innerText = 'Download CSV';
+    csvBtn.addEventListener('click', () => {
+      const hdr = columns.map(c=>c.label).join(',');
+      const body = rows.map(r => columns.map(c => `"${(r[c.key]===undefined ? '' : String(r[c.key])).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const csv = hdr + '\n' + body;
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title.replace(/\s+/g,'_')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    wrap.appendChild(csvBtn);
+
+    const table = document.createElement('table');
+    table.style.width='100%';
+    table.style.marginTop='8px';
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    columns.forEach(c => {
+      const th = document.createElement('th');
+      th.innerText = c.label;
+      trh.appendChild(th);
+    });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    rows.forEach(r=>{
+      const tr = document.createElement('tr');
+      columns.forEach(c=>{
+        const td = document.createElement('td');
+        let v = r[c.key];
+        if(typeof v === 'number') v = (Math.round(v*100)/100).toString();
+        td.innerText = v === undefined || v === null ? '' : v;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  async function renderResults(obj) {
+    resultsContainer.innerHTML = '';
+    const { lowAccum = [], lowPreCrash = [], errors = [] } = obj || {};
+
+    // compute combined (both in both lists)
+    const accumMap = new Map(lowAccum.map(x => [x.symbol, x]));
+    const both = lowPreCrash.filter(x => accumMap.has(x.symbol)).map(x => {
+      const a = accumMap.get(x.symbol);
+      return {
+        symbol: x.symbol,
+        accumConfidence: a.accumConfidence,
+        preCrashConfidence: x.preCrashConfidence,
+        simPhase: x.simPhase || '',
+        phase: x.phase || ''
+      };
+    });
+
+    // columns
+    const colsA = [
+      {key:'symbol', label:'Symbol'},
+      {key:'accumConfidence', label:'Accum %'},
+      {key:'simPhase', label:'Sim Phase'},
+      {key:'phase', label:'Phase'}
+    ];
+    const colsP = [
+      {key:'symbol', label:'Symbol'},
+      {key:'preCrashConfidence', label:'PreCrash %'},
+      {key:'simPhase', label:'Sim Phase'},
+      {key:'phase', label:'Phase'}
+    ];
+    const colsBoth = [
+      {key:'symbol', label:'Symbol'},
+      {key:'accumConfidence', label:'Accum %'},
+      {key:'preCrashConfidence', label:'PreCrash %'},
+      {key:'simPhase', label:'Sim Phase'},
+      {key:'phase', label:'Phase'}
+    ];
+
+    resultsContainer.appendChild(makeTable('Low Accum (<50)', lowAccum, colsA));
+    resultsContainer.appendChild(makeTable('Low PreCrash (<50)', lowPreCrash, colsP));
+    resultsContainer.appendChild(makeTable('Both Low (<50 & <50)', both, colsBoth));
+
+    if(errors && errors.length){
+      const errCard = document.createElement('div');
+      errCard.className = 'card-panel';
+      errCard.innerHTML = `<strong>Errors (${errors.length})</strong><div class="small" style="white-space:pre-wrap; margin-top:6px">${errors.slice(0,20).map(e=>`${e.symbol}: ${e.error}`).join('\n')}</div>`;
+      resultsContainer.appendChild(errCard);
+    }
+  }
+
+  async function startScan() {
+    if(!window.scanAllPerpsForBelow50) {
+      alert('scanAllPerpsForBelow50() not found. Make sure it is defined before running this button.');
+      return;
+    }
+    runBtn.disabled = true;
+    const origText = runBtn.innerText;
+    runBtn.innerText = 'Running scan...';
+    note.innerText = 'This may take a few minutes. Running sequentially with rate-limit safety.';
+    el.scanStatus && (el.scanStatus.innerText = 'Starting Below-50 scan...');
+    try {
+      const res = await scanAllPerpsForBelow50({ minDelay: FULL_SCAN_MIN_DELAY_MS, batchSize: FULL_SCAN_BATCH_SIZE });
+      await renderResults(res);
+      el.scanStatus && (el.scanStatus.innerText = `Scan finished. lowAccum:${res.lowAccum.length} lowPreCrash:${res.lowPreCrash.length} errors:${res.errors.length}`);
+    } catch(err) {
+      console.error('Below-50 scan error', err);
+      el.scanStatus && (el.scanStatus.innerText = `Scan failed: ${err.message || err}`);
+      resultsContainer.innerHTML = `<div class="card-panel"><strong>Error running scan:</strong><div class="small">${(err && err.message) || err}</div></div>`;
+    } finally {
+      runBtn.disabled = false;
+      runBtn.innerText = origText;
+      note.innerText = '';
+    }
+  }
+
+  // wire button
+  runBtn.addEventListener('click', startScan);
+
+  // optional: expose to window for console invocation
+  window.runBelow50ScanUI = startScan;
+
+})();
+
 
       // ----------------- EMA Cross scanner (replacement) -----------------
 (async function(){
