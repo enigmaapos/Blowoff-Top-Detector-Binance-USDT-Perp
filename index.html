@@ -118,6 +118,7 @@
     <label style="margin-left:12px">Alert when:</label>
     <label style="margin-left:6px"><input type="checkbox" id="condAlert"> Blowoff HIGH + Accum ≥</label>
     <input id="accumAlertThreshold" type="number" value="50" min="0" max="100" style="width:64px;margin-left:6px">
+    <audio id="scoreAlert" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
     <label style="margin-left:12px"><input type="checkbox" id="showShort" checked> Show short-term plans</label>
   </div>
@@ -237,6 +238,11 @@ async function ensureExchangeInfo() {
     return null;
   }
 }
+
+  function playScoreAlert() {
+  const snd = document.getElementById("scoreAlert");
+  if (snd) snd.play().catch(()=>{});
+  }
 
 // Validate quick: symbol must end with USDT for futures perpetual USDT pairs
 function looksLikeUSDTPerp(sym) {
@@ -1127,6 +1133,10 @@ if(result.lowerHigh) s++;
 if(result.preCrash && result.preCrash.someFlag) s++;
 */
 result.score = s;
+
+    if (result.score === 3) {
+  playScoreAlert();
+}
 
       // --- FIXED FULL-CYCLE REFERENCE VECTOR ---
 const FIXED_FULL_CYCLE = {
