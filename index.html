@@ -128,6 +128,7 @@
    - Short-term recommendation generator + UI toggle
    - NEW: Long-term targets + safety levels (Option B)
    - NEW: Quick Trading Interpretation panel (auto-updates)
+   - NEW: detectReturnToNormal() integrated and rendered
    ====================================================== */
 
 const API_BASE = 'https://fapi.binance.com';
@@ -173,6 +174,94 @@ function stdDev(arr){ if(!arr||arr.length===0) return 0; const mean = arr.reduce
 function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
 function norm(a){ return Math.sqrt(a.reduce((s,x)=>s+x*x,0)); }
 function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0?0:n/d; }
+
+/* ------------------------------
+   RETURN TO NORMAL DETECTOR
+   Detects post-pump "return to normal" consolidation like PIPPIN
+   Returns {isReturn:bool, score:int, reasons:[], confidence:int, meta:{}}
+   ------------------------------ */
+function detectReturnToNormal(item, opts = {}) {
+  const o = Object.assign({
+    lookback4h: 12,
+    emaSlopeWindow: 6,
+    volWindow: 8,
+    rsiMax: 70,
+    relSdMaxPct: 10,
+    higherLowPct: 0.0,
+    sensitivity: 50
+  }, opts);
+
+  try {
+    const k4 = item.k4h || [];
+    const close = item.closeNow || (k4.length ? Number(k4[k4.length-1][4]) : 0);
+
+    if(!k4 || k4.length < Math.max(8, o.lookback4h)) {
+      return {isReturn:false, score:0, reasons:['insufficient 4H candles'], confidence:0, meta:{}};
+    }
+
+    const closes4 = k4.map(k => Number(k[4]));
+    const vols4  = k4.map(k => Number(k[5]));
+
+    // higher-low: split the lookback window in two halves and compare minima
+    const look = Math.min(o.lookback4h, closes4.length - 1);
+    const slice = closes4.slice(-look - 1);
+    const half = Math.floor(slice.length/2);
+    const left = slice.slice(0, half);
+    const right = slice.slice(half);
+    const leftMin = left.length ? Math.min(...left) : Math.min(...slice);
+    const rightMin = right.length ? Math.min(...right) : Math.min(...slice);
+    const higherLow = rightMin >= leftMin * (1 - o.higherLowPct);
+
+    // EMA slope approximate
+    const closesForSlope = closes4.slice(-o.emaSlopeWindow - 1);
+    const lastEma14 = (() => {
+      const arr = closesForSlope.slice(-o.emaSlopeWindow);
+      if(!arr.length) return null;
+      return ema(arr, 14);
+    })();
+    const prevEma14 = (() => {
+      const arr = closesForSlope.slice(0, Math.max(0, closesForSlope.length - 1));
+      if(!arr.length) return null;
+      return ema(arr, 14);
+    })();
+    const emaSlope = (lastEma14 && prevEma14) ? (lastEma14 - prevEma14) : 0;
+
+    // relative stddev
+    const recentCloses = closes4.slice(-o.lookback4h);
+    const relSD = (() => {
+      const sd = stdDev(recentCloses);
+      const mean = recentCloses.reduce((s,x)=>s+x,0)/recentCloses.length;
+      return mean ? (sd/mean)*100 : 999;
+    })();
+
+    // volume taper
+    const volMA = sma(vols4, Math.min(o.volWindow, vols4.length)) || 1;
+    const lastVol = vols4[vols4.length-1] || 0;
+    const volTaper = lastVol < volMA * (1 + (50 - o.sensitivity)/200);
+
+    // rsi moderate
+    const rsi4 = item.rsi4h || rsiFromCloses(closes4, 14) || 50;
+    const rsiOK = rsi4 <= Math.max(65, o.rsiMax);
+
+    let score = 0; const reasons = [];
+    if(higherLow){ score += 3; reasons.push('higher-low structure'); } else reasons.push('no clear higher-low');
+    if(emaSlope > 0){ score += 2; reasons.push('EMA slope up'); }
+    else if(Math.abs(emaSlope) < (Math.max(1e-6, Math.abs(lastEma14||1)) * 0.001)) { score += 1; reasons.push('EMAs flattening'); }
+    if(relSD <= o.relSdMaxPct){ score += 2; reasons.push(`low volatility ${relSD.toFixed(2)}%`); }
+    else if(relSD <= o.relSdMaxPct * 1.6){ score += 1; reasons.push('reduced volatility'); }
+    if(volTaper){ score += 1; reasons.push('volume taper (absorption)'); }
+    if(rsiOK){ score += 1; reasons.push(`RSI ${Math.round(rsi4)}`); }
+
+    const maxScore = 9;
+    const confidence = Math.round((score / maxScore) * 100);
+    const isReturn = score >= Math.max(4, Math.round(4 * (0.8 + (50 - o.sensitivity)/200)));
+    const meta = {higherLow, emaSlope, relSD, volMA, lastVol, rsi4, score, lookback:o.lookback4h};
+
+    return {isReturn, score, reasons, confidence, meta};
+  } catch(err) {
+    return {isReturn:false, score:0, reasons:[`error ${err.message}`], confidence:0, meta:{}};
+  }
+}
 
 /* ---------- SAFE FETCH (hardened) ---------- */
 async function safeFetch(url, opts = { allowIfNotRunning: false }) {
@@ -471,35 +560,29 @@ function getLongTermTargets(item){
     // Find a meaningful swing high (peak before last close) by scanning recent highs
     let swingHigh = recentHigh;
     if(recent.length >= 6){
-      // prefer the maximum of the last 24 candles, but ensure it's not an extreme outlier
       const last24 = recent.slice(-Math.min(24,recent.length));
       const histHigh = Math.max(...last24.map(k=>Number(k[2])));
       swingHigh = histHigh;
     }
 
-    // Use fibonacci-like extensions based on last close relative to swingLow or swingHigh
-    const baseline = Math.max(lastClose, swingHigh * 0.92); // baseline biased to current/swing
-    const t1 = +(Math.max(swingHigh, lastClose) * 1.05).toFixed(6);   // first structural resistance (~5% above swing)
-    const t2 = +(Math.max(swingHigh, lastClose) * 1.25).toFixed(6);   // extension (25%)
-    const t3 = +(Math.max(swingHigh, lastClose) * 1.6).toFixed(6);    // macro extension (~1.618x-ish)
+    const baseline = Math.max(lastClose, swingHigh * 0.92);
+    const t1 = +(Math.max(swingHigh, lastClose) * 1.05).toFixed(6);
+    const t2 = +(Math.max(swingHigh, lastClose) * 1.25).toFixed(6);
+    const t3 = +(Math.max(swingHigh, lastClose) * 1.6).toFixed(6);
 
-    // Detect a "volume void" by checking low-volume regions — if found, nudge targets up
     let volMA = 0;
     try{ volMA = sma((k4||[]).map(k=>Number(k[5])), Math.min(10, k4.length)) || 0; }catch(e){}
     const lastVol = k4.length ? Number(k4[k4.length-1][5]) : 0;
     const volBoost = (volMA && lastVol > volMA*1.8) ? 1.03 : 1.0;
 
-    // apply small nudge if breakout volume strong
     const t1b = +(t1 * volBoost).toFixed(6);
     const t2b = +(t2 * volBoost).toFixed(6);
     const t3b = +(t3 * volBoost).toFixed(6);
 
-    // Downside safety/supports
-    const s1 = +(recentLow.toFixed(6));                       // recent 4H low (tight)
-    const s2 = +((recentLow) * 0.92).toFixed(6);              // breach -> weakness
-    const s3 = +((recentLow) * 0.80).toFixed(6);              // invalidation of the setup
+    const s1 = +(recentLow.toFixed(6));
+    const s2 = +((recentLow) * 0.92).toFixed(6);
+    const s3 = +((recentLow) * 0.80).toFixed(6);
 
-    // fallback percent if values are invalid
     const fallbackPercent = (p) => +(lastClose * p).toFixed(6);
     return {
       t1: t1b || fallbackPercent(1.05),
@@ -530,7 +613,11 @@ function getLongTermTargets(item){
 function getFinalRecommendation(item){
   const sim = Math.round((item.similarity||0)*100);
   const phase = item.phase && item.phase.phase ? item.phase.phase : (item.phase || 'Unknown');
-  const accum = item.accumCombined ? (item.accumCombined.confidence || 0) : 0;
+  let accum = item.accumCombined ? (item.accumCombined.confidence || 0) : 0;
+  // small boost from RTN if present
+  if(item.returnToNormal && item.returnToNormal.isReturn){
+    accum = Math.min(100, accum + Math.round(item.returnToNormal.confidence * 0.12));
+  }
   const rsi4h = item.rsi4h || 0;
   const rsi1d = item.rsi1d || 0;
   const wick = item.wickRatio4 || 0;
@@ -647,7 +734,7 @@ function getShortTermRecommendation(item){
   };
 }
 
-/* ---------- RENDER TABLE & CARDS (now includes long-term targets & safety) ---------- */
+/* ---------- RENDER TABLE & CARDS (now includes RTN badge and long-term targets & safety) ---------- */
 function renderTable(results){
   results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
   const threshold = parseInt(el.threshold.value,10)||4;
@@ -659,6 +746,9 @@ function renderTable(results){
     const rec = getFinalRecommendation(r);
     const shortRec = getShortTermRecommendation(r);
     const longTargets = getLongTermTargets(r);
+
+    // RTN badge
+    const rtnBadge = (r.returnToNormal && r.returnToNormal.isReturn) ? `<span class="phaseTag" style="background:#2dd4bf;color:#04221a;margin-left:6px">Return-to-normal ${r.returnToNormal.confidence}%</span>` : '';
 
     let statusHtml = `<span class="small">normal</span>`; let bg='background:rgba(255,255,255,0.02)'; let cls='';
     if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
@@ -695,7 +785,7 @@ function renderTable(results){
 
     return `
       <tr class="${cls}" style="${bg}">
-        <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span></td>
+        <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span> ${rtnBadge}</td>
         <td>${r.closeNow}</td>
         <td class="${(r.rsi4h||0)>=80?'green':''}">${r.rsi4h? r.rsi4h.toFixed(1):'n/a'}</td>
         <td class="small">vol×${r.volSpike4} wick:${(r.wickRatio4||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
@@ -729,6 +819,10 @@ function renderCards(results){
     let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
     if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
     const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
+
+    // RTN badge for cards
+    const rtnBadge = (r.returnToNormal && r.returnToNormal.isReturn) ? `<span class="phaseTag" style="background:#2dd4bf;color:#04221a;margin-left:6px">Return-to-normal ${r.returnToNormal.confidence}%</span>` : '';
+
     const shortHtml = showShort ? `
       <div class="shortRec">🔎 Short-term: ${srec.sentence}</div>
       <div class="recBox" style="background:rgba(255,255,255,0.01)">
@@ -740,7 +834,7 @@ function renderCards(results){
     html += `
       <div class="coinCard ${bc}">
         <div class="coinRow1"><div class="coinSymbol">${r.symbol}</div><div class="coinScore">${r.score}/8</div></div>
-        <div style="margin-top:6px">${badge} ${accBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span></div>
+        <div style="margin-top:6px">${badge} ${accBadge} ${rtnBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span></div>
         <div class="sigList">
           Last: ${r.closeNow}<br>
           RSI4H: ${r.rsi4h? r.rsi4h.toFixed(1):'n/a'} • Vol×${r.volSpike4} • Wick:${(r.wickRatio4||0).toFixed(2)}<br>
@@ -884,7 +978,19 @@ async function runScan(once=false){
       await delay(delayMs);
     }
 
+    // core phase detection
     results.forEach(r => { r.phase = detectPhaseForSymbol(r); r.dropPctFromPeak = r.phase.dropPctFromPeak || 0; });
+
+    // RUN RETURN-TO-NORMAL DETECTOR & ANNOTATE
+    results.forEach(r => {
+      const rtn = detectReturnToNormal(r, {sensitivity: parseInt(el.sensitivity.value,10) || 50});
+      r.returnToNormal = rtn;
+      if(rtn.isReturn){
+        if(r.phase && r.phase.reasons) r.phase.reasons.unshift(`Return-to-normal (${rtn.confidence}%)`);
+        else r.phase = {phase: 'Return-to-normal', confidence: rtn.confidence, reasons: [`Return-to-normal (${rtn.confidence}%)`] };
+        r.phase.isReturnToNormal = true;
+      }
+    });
 
     // PIPPIN vector (best effort) — defensive build to avoid undefined errors
     let pippinVector = null;
