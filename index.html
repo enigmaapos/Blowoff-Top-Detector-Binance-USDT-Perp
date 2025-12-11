@@ -89,8 +89,10 @@
         <option value="ema70DistPct">EMA stretch %</option>
         <option value="last">Last price</option>
         <option value="symbol">Symbol</option>
-        <option value="phase">Phase (Distribution / Breakdown)</option>
-<option value="simPhase">Sim-Phase (Cycle Classification)</option>
+        <option value="phase">Phase (Text)</option>
+<option value="simPhase">Cycle Classification</option>
+<option value="phaseRank">Phase (Ranked)</option>
+<option value="simPhaseRank">Sim-Phase (Ranked)</option>
       </select>
     </label>
     <button id="sortDir" class="alt" title="Toggle sort direction" style="margin-left:6px">Desc</button>
@@ -1461,6 +1463,37 @@ function explainBlowoff(item){
    ============================================================ */
 
 let sortDesc = true; // default Desc
+
+// ---- helpers: phase ranking / normalization ----
+function getPhaseRank(phase) {
+  if(!phase) return 999;
+  // phase may be a string or an object { phaseName: "Distribution" } etc.
+  const p = (typeof phase === 'object') ? (phase.phaseName || phase.phase || '') : phase;
+  const s = String(p).toLowerCase();
+  // assign small numbers for "higher priority" phases (you can tweak order)
+  if(s.includes('blowoff')) return 1;
+  if(s.includes('distribution')) return 2;
+  if(s.includes('trend') || s.includes('early pump') || s.includes('takeoff')) return 2.5;
+  if(s.includes('breakdown')) return 3;
+  if(s.includes('crash')) return 4;
+  if(s.includes('post-crash') || s.includes('flatline') || s.includes('post')) return 5;
+  // fallback: try to parse any number inside the string
+  const m = s.match(/\d+/);
+  if(m) return Number(m[0]);
+  return 999;
+}
+
+function getSimPhaseRank(simPhase) {
+  if(!simPhase) return 999;
+  const s = String(simPhase).toLowerCase();
+  if(s.includes('blowoff')) return 1;
+  if(s.includes('distribution')) return 2;
+  if(s.includes('trend') || s.includes('early pump')) return 2.5;
+  if(s.includes('breakdown')) return 3;
+  if(s.includes('crash')) return 4;
+  return 999;
+}
+
 // helper to extract value for sort key
 function getValueForKey(r, key) {
   if(!r) return null;
@@ -1473,6 +1506,24 @@ function getValueForKey(r, key) {
     case 'ema70DistPct': return Math.abs(r.ema70DistPct || 0);
     case 'last': return r.closeNow || 0;
     case 'symbol': return (r.symbol || '').toUpperCase();
+
+    // text-based phase (returns string for alphabetical sorting)
+    case 'phase': {
+      // support both plain string and object shape
+      if(!r.phase) return '';
+      if(typeof r.phase === 'string') return r.phase;
+      // if it's object like { phaseName: 'Distribution' } prefer phaseName
+      return (r.phase.phaseName || r.phase.phase || String(r.phase)).toString();
+    }
+
+    // text-based similarity phase (string)
+    case 'simPhase': return String(r.simPhase || '');
+
+    // numeric ranked phase (helps place Distribution/Breakdown exactly where you want)
+    case 'phaseRank': return getPhaseRank(r.phase);
+
+    case 'simPhaseRank': return getSimPhaseRank(r.simPhase);
+
     default: return 0;
   }
 }
@@ -1483,14 +1534,14 @@ function sortResults(results) {
     const A = getValueForKey(a,key);
     const B = getValueForKey(b,key);
 
-    // alphabetical
+    // alphabetical for symbol specifically (explicit)
     if(key === 'symbol'){
       if(A < B) return sortDesc ? 1 : -1;
       if(A > B) return sortDesc ? -1 : 1;
       return 0;
     }
 
-    // numeric
+    // numeric (including phaseRank / simPhaseRank)
     if(typeof A === 'number' && typeof B === 'number'){
       if(A === B){
         // tiebreakers: score desc, then similarity desc
@@ -1502,10 +1553,15 @@ function sortResults(results) {
       return sortDesc ? (B - A) : (A - B);
     }
 
-    // fallback string
-    if(String(A) < String(B)) return sortDesc ? 1 : -1;
-    if(String(A) > String(B)) return sortDesc ? -1 : 1;
-    return 0;
+    // fallback string comparison (phase, simPhase, or other strings)
+    const sA = (A === null || typeof A === 'undefined') ? '' : String(A);
+    const sB = (B === null || typeof B === 'undefined') ? '' : String(B);
+    if(sA < sB) return sortDesc ? 1 : -1;
+    if(sA > sB) return sortDesc ? -1 : 1;
+    // final fallback tiebreakers
+    const t2 = (b.score||0) - (a.score||0);
+    if(t2 !== 0) return t2;
+    return (b.similarity||0) - (a.similarity||0);
   });
 }
 
@@ -1533,7 +1589,7 @@ if(el.sortBy){
       updateTradingInterpretation(window.lastScanResults);
     }
   });
-}
+    }
 
 /* ============================================================
    (Below: original rendering & recommendation functions)
