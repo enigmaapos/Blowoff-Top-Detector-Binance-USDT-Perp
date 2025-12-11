@@ -1,354 +1,456 @@
 <!doctype html>
+
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Blowoff Top Detector — Phase, PIPPIN, Multi-TF Accumulation, & Alerts</title>
-<style>
+<title>Blowoff Top Detector — Hybrid AI Mode (with Sorting)</title><style>
   :root{
     --bg:#07101a;
     --card:#0b1220;
     --muted:#9fb3cc;
     --accent:#2dd4bf;
     --danger:#ff7b7b;
-    --glass: rgba(255,255,255,0.03);
   }
-  body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;background:var(--bg);color:#e6eef8;margin:12px}
-  .card-panel{background:var(--card);border:1px solid #172033;padding:12px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.6);margin-bottom:14px}
+
+  body{
+    font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial;
+    background:var(--bg);
+    color:#e6eef8;
+    margin:16px;
+  }
+
+  .card-panel{
+    background:var(--card);
+    border:1px solid #172033;
+    padding:14px;
+    border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,.6);
+    margin-bottom:16px;
+  }
+
   h1{margin:0;font-size:18px}
-  .controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
-  label{font-size:13px;color:var(--muted)}
-  input,select{background:#071722;border:1px solid #243241;color:#e6eef8;padding:6px;border-radius:6px}
-  button{background:#1f6feb;border:none;color:white;padding:8px 10px;border-radius:6px;cursor:pointer}
-  button.alt{background:#2b3947}
-  .status{margin-top:8px;color:var(--muted);font-size:13px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-  .progress{height:8px;background:#05101a;border-radius:4px;margin-top:8px;overflow:hidden;flex:1}
-  .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#60a5fa);width:0%}
-  .countdown{font-weight:700;color:#cfe8ff}
-  .mutedBadge{background:var(--glass);color:var(--muted);padding:4px 8px;border-radius:8px;font-size:12px}
-  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px;min-width:720px}
-  th,td{padding:8px 10px;border-bottom:1px dashed #122331;text-align:left;vertical-align:top}
-  th{color:var(--muted);font-size:12px}
-  .green{color:#66f9a1}
-  .red{color:var(--danger)}
-  .small{font-size:12px;color:var(--muted)}
-  .badge{display:inline-block;padding:4px 8px;border-radius:12px;background:#0f2430;color:#bfeee1;font-size:12px}
-  .blink{animation: blinkHighlight 1.8s ease-in-out 3}
-  @keyframes blinkHighlight {0%{box-shadow:0 0 0 rgba(255,80,80,0)}50%{box-shadow:0 0 12px rgba(255,80,80,0.35)}100%{box-shadow:0 0 0 rgba(255,80,80,0)}}
-  /* mobile card UI */
-  #tableView{display:block} #cardView{display:none}
-  @media (max-width:680px){
-    #tableView{display:none} #cardView{display:block}
-    .coinCard{background:var(--card);border:1px solid #172033;padding:12px;border-radius:10px;margin-bottom:10px}
-    .coinRow1{display:flex;justify-content:space-between;align-items:center}
-    .coinSymbol{font-size:16px;font-weight:700}
-    .coinScore{font-size:14px;font-weight:700}
-    .blowBadge{background:#ff4d4d;padding:4px 8px;border-radius:6px;color:white;font-size:12px;font-weight:700}
-    .potBadge{background:#ffd966;padding:4px 8px;border-radius:6px;color:black;font-size:12px;font-weight:700}
-    .accBadge{background:#2dd4bf;padding:4px 8px;border-radius:6px;color:#04221a;font-size:12px;font-weight:700}
-    .sigList{margin-top:8px;font-size:13px;line-height:18px;color:#cfe8ff}
+
+  .controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:12px;
+    align-items:center
   }
-  footer.small{margin-top:12px;color:var(--muted);font-size:12px}
-  .phaseTag{display:inline-block;padding:4px 8px;border-radius:8px;font-weight:700;font-size:12px;margin-left:6px}
-  .tfToggle{display:inline-flex;gap:6px;align-items:center;margin-left:8px}
-  .sensitivity{width:160px}
-  .oneLineRec{font-weight:700;color:#cfe8ff;margin-top:6px}
-  .recBox{margin-top:8px;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);font-size:13px}
-  .finalRec{margin-top:8px;color:#8bffc0;font-weight:700}
-  .shortRec{margin-top:8px;color:#ffd966;font-weight:700}
-  /* trading interpretation panel */
-  .tradePanel{margin-top:12px;padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.03)}
-  .tradePanel h3{margin:0 0 8px 0;font-size:15px}
-  .tradePanel p{margin:4px 0;color:#cfe8ff}
-  .tradeList{margin:8px 0;padding-left:18px}
-  .mutedNote{color:var(--muted);font-size:12px;margin-top:8px}
-</style>
-</head>
-<body>
-<div class="card-panel">
-  <h1>Blowoff Top Detector — Multi-TF Accumulation & Conditional Alerts</h1>
-  <div class="small" style="margin-top:6px;color:var(--muted)">
-    Multi-timeframe accumulation detector (15m / 1h / 4h), sensitivity slider, conditional alert (blowoff + accumulation) and AI recommendations (long-term + short-term).
-    Run on a local server to avoid CORS (e.g., <code>python -m http.server</code>).
-  </div>
 
-  <div class="controls">
-    <label>Prefilter (top by 24h) <input id="prefilter" type="number" value="30" min="5" max="60"/></label>
-    <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"/></label>
-    <label>Refresh (sec) <input id="interval" type="number" value="60" min="10" max="3600"/></label>
-    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="8"/></label>
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" class="alt" disabled>Stop</button>
-    <button id="oneShot" class="alt">Run Once</button>
-  </div>
+  label{font-size:13px;color:var(--muted)}
 
-  <div class="controls" style="margin-top:10px">
-    <label style="margin-right:8px">Accumulation TFs:</label>
-    <div class="tfToggle">
-      <label><input type="checkbox" id="tf15" checked> 15m</label>
-      <label><input type="checkbox" id="tf1h" checked style="margin-left:6px"> 1h</label>
-      <label><input type="checkbox" id="tf4h" checked style="margin-left:6px"> 4h</label>
-    </div>
+  input, select{
+    background:#071722;
+    border:1px solid #243241;
+    color:#e6eef8;
+    padding:6px;
+    border-radius:6px;
+  }
 
-    <label style="margin-left:12px">Sensitivity <span id="sensVal" class="small" style="margin-left:6px">50</span></label>
-    <input id="sensitivity" class="sensitivity" type="range" min="0" max="100" value="50" style="margin-left:8px">
+  button{
+    background:#1f6feb;
+    border:none;
+    color:white;
+    padding:8px 10px;
+    border-radius:6px;
+    cursor:pointer;
+  }
 
-    <label style="margin-left:12px">Alert when:</label>
-    <label style="margin-left:6px"><input type="checkbox" id="condAlert"> Blowoff HIGH + Accum ≥</label>
-    <input id="accumAlertThreshold" type="number" value="50" min="0" max="100" style="width:64px;margin-left:6px">
+  button.alt{ background:#2b3947 }
 
-    <label style="margin-left:12px"><input type="checkbox" id="showShort" checked> Show short-term plans</label>
-  </div>
+  .status{
+    margin-top:8px;
+    color:var(--muted);
+    font-size:13px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
 
-  <div class="status">
+  .progress{
+    height:8px;
+    background:#05101a;
+    border-radius:4px;
+    margin-top:8px;
+    overflow:hidden;
+    flex:1
+  }
+
+  .progress > i{
+    display:block;
+    height:100%;
+    background:linear-gradient(90deg,var(--accent),#60a5fa);
+    width:0%
+  }
+
+  .countdown{
+    font-weight:700;
+    color:#cfe8ff;
+  }
+
+  .mutedBadge{
+    background:rgba(255,255,255,0.03);
+    color:var(--muted);
+    padding:4px 8px;
+    border-radius:8px;
+    font-size:12px;
+  }
+
+  /* DESKTOP TABLE */
+  #tableView{ display:block }
+  #cardView{ display:none }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:12px;
+    font-size:13px;
+    min-width:700px;
+  }
+
+  th, td{
+    padding:8px 10px;
+    border-bottom:1px dashed #122331;
+    text-align:left;
+  }
+
+  th{
+    color:var(--muted);
+    font-size:12px
+  }
+
+  .green{ color:#66f9a1 }
+  .red{ color:var(--danger) }
+
+  .small{ font-size:12px;color:var(--muted) }
+
+  .blink{
+    animation: blinkHighlight 1.8s ease-in-out 3;
+  }
+
+  @keyframes blinkHighlight {
+    0% { box-shadow:0 0 0px rgba(255,80,80,0.0); }
+    50% { box-shadow:0 0 12px rgba(255,80,80,0.35); }
+    100% { box-shadow:0 0 0px rgba(255,80,80,0.0); }
+  }
+
+  /* MOBILE CARD UI */
+  @media (max-width:680px){
+    #tableView{ display:none }
+    #cardView{ display:block }
+
+    .coinCard{
+      background:var(--card);
+      border:1px solid #172033;
+      padding:12px;
+      border-radius:10px;
+      margin-bottom:12px;
+    }
+
+    .coinRow1{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+    }
+
+    .coinSymbol{
+      font-size:16px;
+      font-weight:700;
+    }
+
+    .coinScore{
+      font-size:14px;
+      font-weight:700;
+    }
+
+    .blowBadge{
+      background:#ff4d4d;
+      padding:4px 8px;
+      border-radius:6px;
+      color:white;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .potBadge{
+      background:#ffd966;
+      padding:4px 8px;
+      border-radius:6px;
+      color:black;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .sigList{
+      margin-top:8px;
+      font-size:12px;
+      line-height:18px;
+      color:#cce3ff;
+    }
+  }
+
+  /* SORT ICON */
+  .sortBtn{ cursor:pointer; user-select:none; }
+  .sortIcon{ font-size:11px; opacity:0.8; margin-left:6px }
+</style></head>
+<body><div class="card-panel">
+  <h1>Blowoff Top Detector — Hybrid AI Mode</h1>  <div class="small" style="margin-top:6px;color:var(--muted)">
+    Auto-scans top N Binance Futures coins for blowoff-top behavior.  
+    Hybrid UI: Desktop = Table • Mobile = Card View.  
+    Includes rule-based AI explanation, alerts, & auto-pause safety.
+  </div>  <!-- CONTROL BAR -->  <div class="controls">
+    <label>Prefilter <input id="prefilter" type="number" value="30" min="5" max="100"></label>
+    <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"></label>
+    <label>Refresh (sec) <input id="interval" type="number" value="60" min="10" max="3600"></label>
+    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="6"></label><!-- SORTING CONTROLS (NEW) -->
+<label style="display:flex;align-items:center">Sort by
+  <select id="sortField" style="margin-left:8px">
+    <option value="score">Score</option>
+    <option value="volSpike">Vol Spike</option>
+    <option value="wickRatio">Wick Ratio</option>
+    <option value="ema70DistPct">EMA Distance</option>
+    <option value="rsi4h">RSI 4H</option>
+    <option value="rsi1d">RSI 1D</option>
+    <option value="funding">Funding Rate</option>
+    <option value="last">Last Price</option>
+    <option value="change24">24h Change</option>
+  </select>
+</label>
+
+<label style="display:flex;align-items:center">Order
+  <select id="sortOrder" style="margin-left:8px">
+    <option value="desc">Descending</option>
+    <option value="asc">Ascending</option>
+  </select>
+</label>
+
+<button id="startBtn">Start</button>
+<button id="stopBtn" class="alt" disabled>Stop</button>
+<button id="oneShot" class="alt">Run Once</button>
+
+  </div>  <!-- STATUS BAR -->  <div class="status">
     <div id="message">Ready.</div>
     <div class="progress"><i id="bar"></i></div>
     <div id="countdown" class="countdown">Next scan in: -</div>
     <div id="safetyStatus" class="mutedBadge">Safety OK</div>
-  </div>
+  </div>  <!-- DESKTOP VIEW -->  <div id="tableView"></div>  <!-- MOBILE VIEW -->  <div id="cardView"></div>  <div id="debug" class="small" style="margin-top:10px"></div>
+</div><script>
+/* ============================================================
+   SECTION C WILL START HERE (JavaScript Engine)
+   ============================================================ */
 
-  <div id="tableView"></div>
-  <div id="cardView"></div>
+/* ============================================================
+   SECTION C — JavaScript engine: scanning, indicators, rendering
+   ============================================================ */
 
-  <!-- NEW: Quick Trading Interpretation -->
-  <div id="tradeInterpret" class="tradePanel" style="display:none">
-    <!-- content injected dynamically -->
-  </div>
+const API_BASE = "https://fapi.binance.com";
 
-  <div id="debug" class="small" style="margin-top:8px"></div>
-</div>
+// ------- BLACKLIST -------
+const blacklist = [
+  "ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT",
+  "AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT",
+  "LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT",
+  "UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT",
+  "BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT",
+  "LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT"
+];
 
-<script>
-/* ======================================================
-   Full detector with:
-   - multi-TF accumulation (15m / 1h / 4h)
-   - sensitivity slider
-   - conditional alert when blowoff high AND accumulation >= threshold
-   - AI final recommendation (long-term)
-   - Short-term recommendation generator + UI toggle
-   - NEW: Long-term targets + safety levels (Option B)
-   - NEW: Quick Trading Interpretation panel (auto-updates)
-   ====================================================== */
-
-const API_BASE = 'https://fapi.binance.com';
-const blacklist = ["ALPACAUSDT","BNXUSDT","ALPHAUSDT","OCEANUSDT","DGBUSDT","AGIXUSDT","LINAUSDT","LOKAUSDT","KEYUSDT","MDTUSDT","LOOMUSDT","RENUSDT","OMNIUSDT","SLERFUSDT","STMXUSDT","UXLINKUSDT","BSWUSDT","NEIROETHUSDT","VIDTUSDT","TROYUSDT","BAKEUSDT","AMBUSDT","MEMEFIUSDT","NULSUSDT","HIFIUSDT","LEVERUSDT","XEMUSDT","STRAXUSDT","COMBOUSDT"];
-
+// ------- ELEMENTS -------
 const el = {
-  prefilter: document.getElementById('prefilter'),
-  delay: document.getElementById('delay'),
-  interval: document.getElementById('interval'),
-  threshold: document.getElementById('threshold'),
-  startBtn: document.getElementById('startBtn'),
-  stopBtn: document.getElementById('stopBtn'),
-  oneShot: document.getElementById('oneShot'),
-  message: document.getElementById('message'),
-  bar: document.getElementById('bar'),
-  tableView: document.getElementById('tableView'),
-  cardView: document.getElementById('cardView'),
-  debug: document.getElementById('debug'),
-  safetyStatus: document.getElementById('safetyStatus'),
-  countdown: document.getElementById('countdown'),
-  tf15: document.getElementById('tf15'),
-  tf1h: document.getElementById('tf1h'),
-  tf4h: document.getElementById('tf4h'),
-  sensitivity: document.getElementById('sensitivity'),
-  sensVal: document.getElementById('sensVal'),
-  condAlert: document.getElementById('condAlert'),
-  accumAlertThreshold: document.getElementById('accumAlertThreshold'),
-  showShort: document.getElementById('showShort'),
-  tradeInterpret: document.getElementById('tradeInterpret')
+  prefilter: document.getElementById("prefilter"),
+  delay: document.getElementById("delay"),
+  interval: document.getElementById("interval"),
+  threshold: document.getElementById("threshold"),
+  startBtn: document.getElementById("startBtn"),
+  stopBtn: document.getElementById("stopBtn"),
+  oneShot: document.getElementById("oneShot"),
+  message: document.getElementById("message"),
+  bar: document.getElementById("bar"),
+  tableView: document.getElementById("tableView"),
+  cardView: document.getElementById("cardView"),
+  debug: document.getElementById("debug"),
+  safetyStatus: document.getElementById("safetyStatus"),
+  countdown: document.getElementById("countdown"),
+  sortField: document.getElementById("sortField"),
+  sortOrder: document.getElementById("sortOrder")
 };
 
-let running=false, queue=[], totalTasks=0, doneTasks=0, autoTimer=null, countdownTimer=null;
-let requestsThisWindow=0, windowStart=Date.now(), SAFETY_WINDOW_MS=60000, SAFETY_MAX=900, SAFETY_PAUSE=30;
-let prevBlowoffSet = new Set();
+// ------- STATE -------
+let running = false;
+let queue = [];
+let totalTasks = 0;
+let doneTasks = 0;
+let autoTimer = null;
+let countdownTimer = null;
+let requestsThisWindow = 0;
+let windowStart = Date.now();
+const SAFETY_WINDOW = 60000;
+const SAFETY_MAX = 900; // conservative
+const SAFETY_PAUSE = 30; // seconds
+let prevBlow = new Set();
 
-/* ---------- UTIL ---------- */
-function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
-function sma(arr,n){ if(!arr||arr.length<n) return null; let s=0; for(let i=arr.length-n;i<arr.length;i++) s+=arr[i]; return s/n; }
-function ema(arr,p){ if(!arr||arr.length===0) return null; const k=2/(p+1); let e=arr[0]; for(let i=1;i<arr.length;i++) e = arr[i]*k + e*(1-k); return e; }
-function rsiFromCloses(closes,period=14){ if(!closes||closes.length<=period) return null; let g=0,l=0; for(let i=closes.length-period;i<closes.length;i++){ const d=closes[i]-closes[i-1]; if(d>0) g+=d; else l+=Math.abs(d);} const ag=g/period, al=l/period; if(al===0) return 100; const rs=ag/al; return 100 - (100/(1+rs)); }
-function pct(a,b){ return b===0?0:((a-b)/b)*100; }
-function stdDev(arr){ if(!arr||arr.length===0) return 0; const mean = arr.reduce((s,x)=>s+x,0)/arr.length; const v = arr.reduce((s,x)=>s+Math.pow(x-mean,2),0)/arr.length; return Math.sqrt(v); }
-function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
-function norm(a){ return Math.sqrt(a.reduce((s,x)=>s+x*x,0)); }
-function cosineSim(a,b){ const n=dot(a,b); const d=norm(a)*norm(b); return d===0?0:n/d; }
-
-/* ---------- SAFE FETCH (hardened) ---------- */
-async function safeFetch(url, opts = { allowIfNotRunning: false }) {
-  if(!running && !opts.allowIfNotRunning) throw new Error('Not running (call Start first)');
-  try {
-    requestsThisWindow++;
-    const r = await fetch(url);
-    if(!r.ok) {
-      const body = await r.text().catch(()=>'<no body>');
-      throw new Error(`HTTP ${r.status} ${r.statusText} — ${body.slice(0,200)}`);
-    }
-    return await r.json();
-  } catch (err) {
-    throw new Error(`fetch error for ${url} → ${err.message}`);
+// ------- UTILITIES (indicators) -------
+function sma(arr, n){
+  if(!arr || arr.length < n) return null;
+  let s = 0;
+  for(let i=arr.length-n;i<arr.length;i++) s += arr[i];
+  return s / n;
+}
+function ema(arr, period){
+  if(!arr || arr.length === 0) return null;
+  const k = 2/(period+1);
+  let e = arr[0];
+  for(let i=1;i<arr.length;i++) e = arr[i]*k + e*(1-k);
+  return e;
+}
+function rsiFromCloses(closes, period=14){
+  if(!closes || closes.length <= period) return null;
+  let gains=0, losses=0;
+  for(let i=closes.length-period;i<closes.length;i++){
+    const d = closes[i] - closes[i-1];
+    if(d>0) gains += d; else losses += Math.abs(d);
   }
+  const avgGain = gains/period;
+  const avgLoss = losses/period;
+  if(avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100/(1+rs));
+}
+function pct(a,b){ return b===0 ? 0 : ((a-b)/b)*100; }
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+// ------- SAFE FETCH (counts requests) -------
+async function safeFetch(url){
+  if(!running) throw new Error("Not running");
+  requestsThisWindow++;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  return res.json();
 }
 
-function resetWindow(){ requestsThisWindow=0; windowStart=Date.now(); }
-function checkSafetyAndMaybePause(){
-  const now=Date.now();
-  if(now-windowStart > SAFETY_WINDOW_MS){ resetWindow(); el.safetyStatus.innerText='Safety OK'; return false; }
+// ------- SAFETY WINDOW MANAGEMENT -------
+function resetWindow(){
+  requestsThisWindow = 0;
+  windowStart = Date.now();
+}
+function safetyCheck(){
+  const now = Date.now();
+  if(now - windowStart > SAFETY_WINDOW){
+    resetWindow();
+    el.safetyStatus.innerText = "Safety OK";
+    return false;
+  }
   if(requestsThisWindow > SAFETY_MAX){
-    running=false;
-    el.safetyStatus.innerText = `Auto-paused: ${requestsThisWindow} req/min`;
-    el.message.innerText = `Auto-paused ${SAFETY_PAUSE}s to avoid rate limit.`;
-    el.startBtn.disabled=false; el.stopBtn.disabled=true;
-    setTimeout(()=>{ resetWindow(); const cur = Math.max(200, parseInt(el.delay.value,10)||450); el.delay.value = Math.min(2000, Math.round(cur * 1.5)); el.safetyStatus.innerText='Resumed after pause'; el.message.innerText='Resumed'; }, SAFETY_PAUSE*1000);
+    // auto-pause
+    running = false;
+    el.safetyStatus.innerText = `Auto-paused (high req: ${requestsThisWindow})`;
+    el.message.innerText = `Paused ${SAFETY_PAUSE}s to avoid limit.`;
+    el.stopBtn.disabled = true;
+    el.startBtn.disabled = false;
+    // increase delay slightly
+    setTimeout(()=>{
+      el.safetyStatus.innerText = "Resuming after pause";
+      const cur = Math.max(200, parseInt(el.delay.value,10) || 450);
+      el.delay.value = Math.min(2000, Math.round(cur * 1.5));
+      resetWindow();
+    }, SAFETY_PAUSE*1000);
     return true;
   }
   el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`;
   return false;
 }
 
-/* ---------- TOP N ---------- */
+// ------- QUEUE PROCESSOR -------
+async function processQueue(){
+  const d = Math.max(50, Math.min(2000, parseInt(el.delay.value,10) || 450));
+  while(queue.length && running){
+    if(safetyCheck()) break;
+    const job = queue.shift();
+    try{ await job(); } catch(e){ el.debug.innerText += `\nJob error: ${e.message}`; }
+    doneTasks++;
+    updateProgress();
+    await delay(d);
+  }
+  running = false;
+  el.startBtn.disabled = false;
+  el.stopBtn.disabled = true;
+  el.message.innerText = "Scan complete.";
+}
+
+// ------- GET TOP N (24h change) -------
 async function getTopN(n){
-  const tickers = await safeFetch(API_BASE + '/fapi/v1/ticker/24hr');
-  const usdt = tickers.filter(t => t.symbol && t.symbol.endsWith('USDT') && !blacklist.includes(t.symbol));
-  usdt.sort((a,b)=> parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
-  return usdt.slice(0,n).map(x=>({symbol:x.symbol, last: Number(x.lastPrice), change24: Number(x.priceChangePercent)}));
+  const tick = await safeFetch(API_BASE + "/fapi/v1/ticker/24hr");
+  const list = tick.filter(t => t.symbol && t.symbol.endsWith("USDT") && !blacklist.includes(t.symbol));
+  list.sort((a,b)=> parseFloat(b.priceChangePercent) - parseFloat(a.priceChangePercent));
+  return list.slice(0,n).map(x=>({symbol:x.symbol, last: Number(x.lastPrice), change24: Number(x.priceChangePercent)}));
 }
 
-/* ---------- ACCUMULATION DETECTOR ---------- */
-function detectAccumulationGeneric(closes, highs, lows, vols, period=30, sensitivity=50){
-  const len = Math.min(period, closes.length);
-  if(len < 10) return {isAccum:false, score:0, reasons:[], confidence:0, relSD:0};
-  const sliceC = closes.slice(-len), sliceH = highs.slice(-len), sliceL = lows.slice(-len), sliceV = vols.slice(-len);
-  const mean = sliceC.reduce((s,x)=>s+x,0)/sliceC.length;
-  const sd = stdDev(sliceC);
-  const relSD = mean? (sd/mean)*100 : 0;
-  const reasons = [];
-  let score = 0;
-  const relSD_threshold_strict = 2.5;
-  const relSD_threshold_loose = 6.0;
-  const relSD_threshold = relSD_threshold_strict + (1 - (sensitivity/100)) * (relSD_threshold_loose - relSD_threshold_strict);
-  if(relSD <= relSD_threshold){ score += 3; reasons.push(`low volatility ${relSD.toFixed(2)}% ≤ ${relSD_threshold.toFixed(2)}%`); }
-  else if(relSD <= relSD_threshold*1.6){ score += 1; reasons.push(`reduced volatility ${relSD.toFixed(2)}%`); }
-  let lowerLowCount=0;
-  for(let i=1;i<sliceL.length;i++) if(sliceL[i] < sliceL[i-1]) lowerLowCount++;
-  const lowerLow_max = 2 + Math.round((100 - sensitivity)/50);
-  if(lowerLowCount <= lowerLow_max){ score += 2; reasons.push(`limited lower-lows (${lowerLowCount} ≤ ${lowerLow_max})`); }
-  else reasons.push(`lower-lows (${lowerLowCount})`);
-  const volBaseline = sma(sliceV, Math.min(8, sliceV.length)) || 0.000001;
-  let upCount = 0, upVolHigher = 0;
-  for(let i=1;i<sliceC.length;i++){
-    if(sliceC[i] > sliceC[i-1]){ upCount++; if(sliceV[i] > volBaseline * (1 + (50 - sensitivity)/200)) upVolHigher++; }
-  }
-  if(upCount >= 3 && upVolHigher >= Math.max(1, Math.round(upCount*0.4))){ score += 3; reasons.push(`buyers on higher-volume up-bars (${upVolHigher}/${upCount})`); }
-  else if(upCount >= 2){ score += 1; reasons.push(`some up bars (${upCount})`); }
-  const e14 = ema(sliceC, Math.min(14, sliceC.length));
-  const e21 = ema(sliceC, Math.min(21, sliceC.length));
-  if(e14 && e21){
-    const slope = e14 - e21;
-    const slopeThreshold = (sensitivity/100) * (e21 * 0.01);
-    if(slope >= -slopeThreshold){ score += 2; reasons.push('EMAs flat/turning up'); }
-    else if(Math.abs(slope) < (e21*0.002 || 0.0001)){ score += 1; reasons.push('EMAs flattening'); }
-  }
-  const rsi = rsiFromCloses(closes, 14);
-  if(rsi && rsi >= 36 - (sensitivity/20)) { score += 1; reasons.push(`RSI stabilizing (${rsi.toFixed(1)})`); }
-  const peak = Math.max(...sliceC);
-  const latest = sliceC[sliceC.length-1];
-  const dropPct = peak? ((peak - latest)/peak)*100 : 0;
-  const requiredDrop = 8 - Math.round(sensitivity/20);
-  if(dropPct >= Math.max(4, requiredDrop)){ score += 1; reasons.push(`follows drop ${dropPct.toFixed(1)}% (req ${Math.max(4, requiredDrop)}%)`); }
-  const maxScore = 12;
-  const confidence = Math.min(99, Math.round((score/maxScore)*100));
-  const isAccum = score >= Math.max(6, Math.round(6 * (0.8 + (50 - sensitivity)/200)));
-  return {isAccum, score, reasons, confidence, relSD};
-}
-
-/* ---------- QUEUE ANALYSIS (fetch klines & compute features) ---------- */
-function queueSymbolAnalysis(symbol, results){
+// ------- Queue Symbol Analysis (push jobs) -------
+function queueSymbol(symbol, results){
   queue.push(async ()=>{
     try{
-      const promises = [];
-      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=40`));
-      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1h&limit=60`));
-      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=80`));
-      promises.push(safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`));
-      const [k4h, k1h, k15, f] = await Promise.all(promises);
+      const [k1d, k4h, k15, fund] = await Promise.all([
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=9`),
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=20`),
+        safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=30`),
+        safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`)
+      ]);
 
-      const closes4h = k4h.map(k=>Number(k[4])); const highs4h = k4h.map(k=>Number(k[2])); const lows4h = k4h.map(k=>Number(k[3])); const vols4h = k4h.map(k=>Number(k[5]));
-      const closes1h = k1h.map(k=>Number(k[4])); const highs1h = k1h.map(k=>Number(k[2])); const lows1h = k1h.map(k=>Number(k[3])); const vols1h = k1h.map(k=>Number(k[5]));
-      const closes15 = k15.map(k=>Number(k[4])); const highs15 = k15.map(k=>Number(k[2])); const lows15 = k15.map(k=>Number(k[3])); const vols15 = k15.map(k=>Number(k[5]));
+      const closes1d = k1d.map(k=>Number(k[4]));
+      const closes4h = k4h.map(k=>Number(k[4]));
+      const vols4h = k4h.map(k=>Number(k[5]));
+      const last4 = k4h[k4h.length-1];
+      const prev4 = k4h[k4h.length-2] || last4;
 
-      const last4 = k4h[k4h.length-1], prev4 = k4h[k4h.length-2] || last4;
-      const open4 = Number(last4[1]), high4 = Number(last4[2]), low4 = Number(last4[3]), close4 = Number(last4[4]);
-      const body4 = Math.abs(close4 - open4) || 1e-9;
-      const wickTop4 = Math.max(0, high4 - Math.max(open4, close4));
-      const wickRatio4 = wickTop4 / body4;
-      const volMA4 = sma(vols4h, Math.min(10, vols4h.length)) || 1;
-      const volSpike4 = Number((Number(last4[5]) / volMA4).toFixed(2));
-      const ema70_4 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
-      const emaDistPct = ema70_4 ? Number(pct(close4, ema70_4).toFixed(2)) : 0;
+      const open4 = Number(last4[1]);
+      const high4 = Number(last4[2]);
+      const low4 = Number(last4[3]);
+      const close4 = Number(last4[4]);
+      const body = Math.abs(close4 - open4) || 1e-9;
+      const upperWick = Math.max(0, high4 - Math.max(open4, close4));
+      const wickRatio = upperWick / body;
+
+      const volMA = sma(vols4h, Math.min(10, vols4h.length)) || 0;
+      const volSpike = volMA > 0 ? Number((vols4h[vols4h.length-1] / volMA).toFixed(2)) : 1;
+
+      const ema70 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
+      const emaDistPct = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
+
+      const rsi1d = rsiFromCloses(closes1d, 14);
       const rsi4h = rsiFromCloses(closes4h, 14);
-      const rsi1d = rsiFromCloses(closes4h.slice(-9).map((v,i)=>v), 14);
+
       const lowerHigh = Number(high4) < Number(prev4[2]);
-      const fundingRate = (f && f.length) ? Number(f[0].fundingRate) : 0;
 
-      // short-term features (from 15m / 1h)
-      const rsi1h = rsiFromCloses(closes1h, 14);
-      const rsi15 = rsiFromCloses(closes15, 14);
-      const volMA15 = sma(vols15, Math.min(10, vols15.length)) || 1;
-      const volSpike15 = Number((Number(closes15.length ? vols15[vols15.length-1] : 1) / volMA15).toFixed(2));
+      const fundingRate = (fund && fund.length) ? Number(fund[0].fundingRate) : 0;
 
-      let score=0;
-      const signals={};
+      // scoring (tuned)
+      let score = 0;
+      const signals = {};
       if(rsi1d !== null && rsi1d >= 88){ score++; signals.rsi1d=true; } else signals.rsi1d=false;
       if(rsi4h !== null && rsi4h >= 80){ score++; signals.rsi4h=true; } else signals.rsi4h=false;
-      if(volSpike4 >= 1.8){ score++; signals.volSpike=true; } else signals.volSpike=false;
-      if(wickRatio4 >= 1.2){ score++; signals.wickTop=true; } else signals.wickTop=false;
+      if(volSpike >= 1.8){ score++; signals.volSpike=true; } else signals.volSpike=false;
+      if(wickRatio >= 1.2){ score++; signals.wickTop=true; } else signals.wickTop=false;
       if(emaDistPct >= 50){ score++; signals.emaDist=true; } else signals.emaDist=false;
       if(lowerHigh){ score++; signals.lowerHigh=true; } else signals.lowerHigh=false;
-      if(typeof fundingRate === 'number' && fundingRate < -0.0005){ score++; signals.fundingConfirm=true; } else signals.fundingConfirm=false;
+      if(typeof fundingRate === "number" && fundingRate < -0.0005){ score++; signals.fundingConfirm=true; } else signals.fundingConfirm=false;
       signals.funding = fundingRate;
-
-      const sens = parseInt(el.sensitivity.value,10) || 50;
-      const tfChecks = [];
-      if(el.tf15.checked){
-        const acc15 = detectAccumulationGeneric(closes15, highs15, lows15, vols15, 30, sens);
-        tfChecks.push({tf:'15m', result:acc15});
-      }
-      if(el.tf1h.checked){
-        const acc1h = detectAccumulationGeneric(closes1h, highs1h, lows1h, vols1h, 30, sens);
-        tfChecks.push({tf:'1h', result:acc1h});
-      }
-      if(el.tf4h.checked){
-        const acc4h = detectAccumulationGeneric(closes4h, highs4h, lows4h, vols4h, 20, sens);
-        tfChecks.push({tf:'4h', result:acc4h});
-      }
-
-      let combinedConfidence = 0;
-      if(tfChecks.length){
-        let weightSum = 0;
-        tfChecks.forEach(t=>{
-          const w = (t.tf === '4h') ? 1.2 : (t.tf === '1h' ? 1.0 : 0.8);
-          combinedConfidence += (t.result.confidence || 0) * w;
-          weightSum += w;
-        });
-        combinedConfidence = Math.round(combinedConfidence / weightSum);
-      }
 
       results.push({
         symbol,
         score,
-        signals,
-        rsi1d, rsi4h,
-        rsi1h, rsi15,
-        volSpike4, volSpike15,
-        wickRatio4,
+        rsi1d,
+        rsi4h,
+        volSpike,
+        wickRatio,
         ema70DistPct: emaDistPct,
         lowerHigh,
-        fundingRate,
-        closeNow: close4,
-        k4h, k1h, k15m: k15,
-        accumChecks: tfChecks,
-        accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) }
+        funding: fundingRate,
+        last: close4,
+        change24: null,
+        signals
       });
 
     } catch(err){
@@ -357,635 +459,426 @@ function queueSymbolAnalysis(symbol, results){
   });
 }
 
-/* ---------- PHASE DETECTION & HELPERS ---------- */
-function detectPhaseForSymbol(item){
-  try{
-    const k4 = item.k4h || [], k15 = item.k15m || [];
-    const rsi4h = item.rsi4h || 0;
-    const vol = item.volSpike4 || 1;
-    const wick = item.wickRatio4 || 0;
-    const reasons = [];
-    let score = 0;
+// ------- Sorting helper (NEW) -------
+function applySort(results){
+  const field = el.sortField.value || 'score';
+  const order = el.sortOrder.value === 'asc' ? 1 : -1;
 
-    const highs = k4.slice(-8).map(k=>Number(k[2]));
-    let lowerHCount=0; for(let i=1;i<highs.length;i++) if(highs[i]<highs[i-1]) lowerHCount++;
+  // getter for primary field
+  const getter = (r) => {
+    if(field === 'score') return r.score ?? -Infinity;
+    if(field === 'volSpike') return r.volSpike ?? -Infinity;
+    if(field === 'wickRatio') return r.wickRatio ?? -Infinity;
+    if(field === 'ema70DistPct') return r.ema70DistPct ?? -Infinity;
+    if(field === 'rsi4h') return r.rsi4h ?? -Infinity;
+    if(field === 'rsi1d') return r.rsi1d ?? -Infinity;
+    if(field === 'funding') return r.funding ?? -Infinity;
+    if(field === 'last') return r.last ?? -Infinity;
+    if(field === 'change24') return r.change24 ?? -Infinity;
+    return r.score ?? -Infinity;
+  };
 
-    const highest4h = k4.length ? Math.max(...k4.map(k=>Number(k[2]))) : (item.closeNow || 0);
-    const lastClose = item.closeNow || 0;
-    const dropPctFromPeak = highest4h ? Math.abs((lastClose - highest4h)/highest4h)*100 : 0;
+  // sort with primary key then stable tie-breakers (score desc, volSpike desc, ema70DistPct desc)
+  results.sort((a,b)=>{
+    const va = getter(a);
+    const vb = getter(b);
 
-    if(item.accumCombined && item.accumCombined.isAccum){ reasons.push(`Accumulation seen (combined ${item.accumCombined.confidence}%)`); score += 4; }
+    const na = (va === null || va === undefined || Number.isNaN(va));
+    const nb = (vb === null || vb === undefined || Number.isNaN(vb));
+    if(na && nb) return 0;
+    if(na) return 1 * order; // push missing to end
+    if(nb) return -1 * order;
 
-    if(wick >= 1.8 && vol >= 3 && rsi4h >= 85){ score += 3; reasons.push('Climax candle'); }
-    const recentHigh15 = k15.length ? Math.max(...k15.map(k=>Number(k[2]))) : 0;
-    const recentLow15 = k15.length ? Math.min(...k15.map(k=>Number(k[3]))) : 0;
-    const range15 = recentHigh15 - recentLow15;
-    if(range15 > 0 && (Math.abs(range15) / (recentLow15 || 1)) <= 0.12 && rsi4h >= 60){ score += 2; reasons.push('Distribution'); }
-    if(lowerHCount >= 3){ score += 2; reasons.push('Breakdown: lower highs'); }
-    if(dropPctFromPeak >= 20 && vol >= 2.5){ score += 3; reasons.push('Capitulation A'); }
-    if(k15.length > 20){
-      const closes15 = k15.map(k=>Number(k[4]));
-      const recentSlice = closes15.slice(-20);
-      const localMin = Math.min(...recentSlice);
-      const afterMin = recentSlice.slice(recentSlice.indexOf(localMin)+1);
-      if(afterMin.length){
-        const bouncePct = ((afterMin[afterMin.length-1] - localMin)/localMin)*100;
-        if(bouncePct >= 8 && bouncePct <= 60){ score += 1; reasons.push(`Dead-cat bounce ${bouncePct.toFixed(1)}%`); }
-      }
+    // compare primary
+    if(typeof va === 'string' && typeof vb === 'string'){
+      const cmp = va.localeCompare(vb);
+      if(cmp !== 0) return cmp * order;
+    } else {
+      if(vb - va !== 0) return (va - vb) * order;
     }
 
-    const candidates = [];
-    if(item.accumCombined && item.accumCombined.isAccum) candidates.push({phase:'Accumulation / Re-accumulation', priority:9});
-    if(score >= 9 && reasons.some(r=>r.includes('Final capitulation'))) candidates.push({phase:'Final capitulation wick', priority:8});
-    if(score >= 7 && reasons.some(r=>r.includes('Capitulation'))) candidates.push({phase:'Capitulation A', priority:7});
-    if(score >= 5 && reasons.some(r=>r.includes('Breakdown'))) candidates.push({phase:'Breakdown', priority:6});
-    if(score >= 5 && reasons.some(r=>r.includes('Distribution'))) candidates.push({phase:'Distribution / sideways top', priority:5});
-    if(score >= 4 && reasons.some(r=>r.includes('Climax'))) candidates.push({phase:'Climax candle (blowoff wick)', priority:5});
-    if(score >= 3 && reasons.some(r=>r.includes('Acceleration'))) candidates.push({phase:'Acceleration (vertical move)', priority:4});
-    if(reasons.some(r=>r.includes('Dead-cat'))) candidates.push({phase:'Dead-cat bounce', priority:3});
-    if(candidates.length === 0){
-      if(dropPctFromPeak >= 25 && vol >= 1.8) candidates.push({phase:'Capitulation A', priority:7});
-      else if(wick >= 1.6 && rsi4h >= 85) candidates.push({phase:'Climax candle (blowoff wick)', priority:6});
-      else if(item.accumCombined && item.accumCombined.confidence >= 55) candidates.push({phase:'Accumulation / Re-accumulation',priority:5});
-      else if(range15 <= (Math.max(1,Math.abs(recentLow15||1))*0.08) && rsi4h >= 60) candidates.push({phase:'Distribution / sideways top',priority:5});
-      else if(lowerHCount>=2) candidates.push({phase:'Breakdown',priority:6});
-      else candidates.push({phase:'Normal/Trending',priority:1});
+    // tie-breakers (always descending where meaningful)
+    const tie = (b.score - a.score) || (b.volSpike - a.volSpike) || (b.ema70DistPct - a.ema70DistPct);
+    return tie;
+  });
+}
+
+// ------- Update Progress -------
+function updateProgress(){
+  if(!totalTasks) return;
+  const pct = Math.round((doneTasks/totalTasks)*100);
+  el.bar.style.width = pct + "%";
+  el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`;
+  el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`;
+}
+
+// ------- Countdown -------
+function startCountdown(sec){
+  if(countdownTimer) clearInterval(countdownTimer);
+  const end = Date.now() + sec*1000;
+  countdownTimer = setInterval(()=>{
+    const leftMs = Math.max(0, end - Date.now());
+    const s = Math.round(leftMs/1000);
+    el.countdown.innerText = `Next scan in: ${s}s`;
+    if(s <= 0){
+      clearInterval(countdownTimer);
+      el.countdown.innerText = "Running...";
     }
-    candidates.sort((a,b)=> b.priority - a.priority);
-    const chosen = candidates[0].phase || 'Unknown';
-    const conf = Math.min(98, Math.round((score/14)*100) + (item.accumCombined && item.accumCombined.confidence ? Math.round(item.accumCombined.confidence*0.2) : 0));
-    return {phase: chosen, confidence: conf, reasons: reasons, dropPctFromPeak: Math.round(dropPctFromPeak*100)/100};
-  } catch(e){
-    return {phase:'Unknown', confidence:0, reasons:[], dropPctFromPeak:0};
-  }
+  }, 500);
 }
 
-function makeFeatureVector(item){
-  const rsi4h = Math.min(100, item.rsi4h || 0)/100;
-  const vol = Math.min(10, item.volSpike4 || 1)/5;
-  const wick = Math.min(10, item.wickRatio4 || 0)/5;
-  const ema = Math.min(500, Math.abs(item.ema70DistPct || 0))/200;
-  const funding = (item.fundingRate || 0) * 1000;
-  const slope = Math.min(4, Math.max(0, (item.slope15 || 1)/1.5))/2;
-  const drop = Math.min(100, item.dropPctFromPeak || 0)/100;
-  const accumConf = item.accumCombined ? (item.accumCombined.confidence || 0)/100 : 0;
-  return [rsi4h, vol, wick, ema, funding, slope, drop, accumConf];
-}
-
+/* ============================================================
+   Rule-based AI explanation helper (inserted here)
+   ============================================================ */
 function explainBlowoff(item){
   const p = item;
-  let pts=0; const reasons=[];
-  if(p.rsi1d !== null && p.rsi1d >= 88){ pts+=2; reasons.push(`1D RSI ${p.rsi1d.toFixed(1)}`); } else if(p.rsi1d !== null && p.rsi1d >= 80){ pts+=1; reasons.push(`1D RSI ${p.rsi1d.toFixed(1)}`); }
-  if(p.rsi4h !== null && p.rsi4h >= 85){ pts+=1; reasons.push(`4H RSI ${p.rsi4h.toFixed(1)}`); }
-  if(p.volSpike4 >= 3){ pts+=2; reasons.push(`Vol climax ×${p.volSpike4}`);} else if(p.volSpike4 >= 1.8){ pts+=1; reasons.push(`Vol spike ×${p.volSpike4}`);}
-  if(p.wickRatio4 >= 2.0){ pts+=2; reasons.push(`Upper wick ratio ${p.wickRatio4.toFixed(2)}`);} else if(p.wickRatio4 >= 1.2){ pts+=1; reasons.push(`Upper wick ${p.wickRatio4.toFixed(2)}`);}
-  if(p.ema70DistPct >= 150){ pts+=2; reasons.push(`EMA stretch ${p.ema70DistPct}%`);} else if(p.ema70DistPct >= 50){ pts+=1; reasons.push(`EMA stretch ${p.ema70DistPct}%`);}
-  if(typeof p.fundingRate === 'number'){ if(p.fundingRate < -0.001){ pts+=2; reasons.push(`Funding strongly negative ${(p.fundingRate*100).toFixed(3)}%`);} else if(p.fundingRate < -0.0005){ pts+=1; reasons.push(`Funding negative ${(p.fundingRate*100).toFixed(3)}%`);} }
-  if(p.lowerHigh){ pts+=1; reasons.push('Lower high'); }
-  if(typeof p.score === 'number'){ if(p.score >= 6) pts+=2; else if(p.score >= 4) pts+=1; }
-  let label='None', color='#9fb3cc', prob=5;
-  if(pts >= 10){ label='Extreme'; color='#e74c3c'; prob=92; } else if(pts >= 7){ label='High'; color='#ff6b43'; prob=78; } else if(pts >= 4){ label='Medium'; color='#ffd966'; prob=55; } else if(pts >= 2){ label='Low'; color='#7bd389'; prob=25; }
+  let pts = 0;
+  const reasons = [];
+
+  // RSI 1D weighty
+  if(p.rsi1d !== null && p.rsi1d >= 88){ pts += 2; reasons.push(`1D RSI very high (${p.rsi1d})`); }
+  else if(p.rsi1d !== null && p.rsi1d >= 80){ pts += 1; reasons.push(`1D RSI high (${p.rsi1d})`); }
+
+  if(p.rsi4h !== null && p.rsi4h >= 85){ pts += 1; reasons.push(`4H RSI overbought (${p.rsi4h})`); }
+
+  // volume
+  if(p.volSpike >= 3){ pts += 2; reasons.push(`Volume climax ×${p.volSpike}`); }
+  else if(p.volSpike >= 1.8){ pts += 1; reasons.push(`Volume spike ×${p.volSpike}`); }
+
+  // wick
+  if(p.wickRatio >= 2.0){ pts += 2; reasons.push(`Large upper wick (ratio ${p.wickRatio.toFixed(2)})`); }
+  else if(p.wickRatio >= 1.2){ pts += 1; reasons.push(`Upper wick present (ratio ${p.wickRatio.toFixed(2)})`); }
+
+  // ema dist
+  if(p.ema70DistPct >= 150){ pts += 2; reasons.push(`Extreme EMA stretch (${p.ema70DistPct}% above EMA70)`); }
+  else if(p.ema70DistPct >= 50){ pts += 1; reasons.push(`Price stretched from EMA (${p.ema70DistPct}% )`); }
+
+  // funding
+  if(typeof p.funding === 'number'){
+    if(p.funding < -0.001){ pts += 2; reasons.push(`Funding strongly negative (${(p.funding*100).toFixed(3)}%)`); }
+    else if(p.funding < -0.0005){ pts += 1; reasons.push(`Funding negative (${(p.funding*100).toFixed(3)}%)`); }
+  }
+
+  // lower high
+  if(p.lowerHigh){ pts += 1; reasons.push('Lower high formed'); }
+
+  // score contribute
+  if(typeof p.score === 'number'){
+    if(p.score >= 6) pts += 2;
+    else if(p.score >= 4) pts += 1;
+  }
+
+  // map to label
+  let label = 'None', color = '#9fb3cc', prob = 5;
+  if(pts >= 10){ label = 'Extreme'; color = '#e74c3c'; prob = 92; }
+  else if(pts >= 7){ label = 'High'; color = '#ff6b43'; prob = 78; }
+  else if(pts >= 4){ label = 'Medium'; color = '#ffd966'; prob = 55; }
+  else if(pts >= 2){ label = 'Low'; color = '#7bd389'; prob = 25; }
+  else { label = 'None'; color = '#9fb3cc'; prob = 5; }
+
   const topReasons = reasons.slice(0,4);
-  const explanation = topReasons.length ? `${topReasons.join('; ')}. Estimated reversal probability: ${prob}%.` : `No clear exhaustion signals detected.`;
-  return {pts, label, color, prob, explanation, reasons: topReasons};
+  const explanation = topReasons.length
+    ? `${topReasons.join('; ')}. Estimated reversal probability: ${prob}%.`
+    : `No clear exhaustion signals detected.`;
+
+  return { pts, label, color, prob, explanation, reasons: topReasons };
 }
 
 /* ============================================================
-   NEW: Long-term target generator (Option B)
-   - returns 3 upside targets and 3 downside safety levels
-   - uses 4H candles primarily, falls back to last close percentages
+   RENDERING (hybrid) — renderTable & renderCards use explainBlowoff
    ============================================================ */
-function getLongTermTargets(item){
-  try{
-    const k4 = item.k4h || [];
-    const lastClose = item.closeNow || (k4.length ? Number(k4[k4.length-1][4]) : 0);
-    const windowSize = Math.min(40, k4.length); // last 40 4H candles (~6-7 days)
-    const recent = k4.slice(-windowSize);
 
-    let recentHigh = lastClose, recentLow = lastClose;
-    if(recent.length){
-      recentHigh = Math.max(...recent.map(k => Number(k[2])));
-      recentLow = Math.min(...recent.map(k => Number(k[3])));
-    }
-
-    // Find a meaningful swing high (peak before last close) by scanning recent highs
-    let swingHigh = recentHigh;
-    if(recent.length >= 6){
-      // prefer the maximum of the last 24 candles, but ensure it's not an extreme outlier
-      const last24 = recent.slice(-Math.min(24,recent.length));
-      const histHigh = Math.max(...last24.map(k=>Number(k[2])));
-      swingHigh = histHigh;
-    }
-
-    // Use fibonacci-like extensions based on last close relative to swingLow or swingHigh
-    const baseline = Math.max(lastClose, swingHigh * 0.92); // baseline biased to current/swing
-    const t1 = +(Math.max(swingHigh, lastClose) * 1.05).toFixed(6);   // first structural resistance (~5% above swing)
-    const t2 = +(Math.max(swingHigh, lastClose) * 1.25).toFixed(6);   // extension (25%)
-    const t3 = +(Math.max(swingHigh, lastClose) * 1.6).toFixed(6);    // macro extension (~1.618x-ish)
-
-    // Detect a "volume void" by checking low-volume regions — if found, nudge targets up
-    let volMA = 0;
-    try{ volMA = sma((k4||[]).map(k=>Number(k[5])), Math.min(10, k4.length)) || 0; }catch(e){}
-    const lastVol = k4.length ? Number(k4[k4.length-1][5]) : 0;
-    const volBoost = (volMA && lastVol > volMA*1.8) ? 1.03 : 1.0;
-
-    // apply small nudge if breakout volume strong
-    const t1b = +(t1 * volBoost).toFixed(6);
-    const t2b = +(t2 * volBoost).toFixed(6);
-    const t3b = +(t3 * volBoost).toFixed(6);
-
-    // Downside safety/supports
-    const s1 = +(recentLow.toFixed(6));                       // recent 4H low (tight)
-    const s2 = +((recentLow) * 0.92).toFixed(6);              // breach -> weakness
-    const s3 = +((recentLow) * 0.80).toFixed(6);              // invalidation of the setup
-
-    // fallback percent if values are invalid
-    const fallbackPercent = (p) => +(lastClose * p).toFixed(6);
-    return {
-      t1: t1b || fallbackPercent(1.05),
-      t2: t2b || fallbackPercent(1.25),
-      t3: t3b || fallbackPercent(1.6),
-      s1: (s1 && s1>0) ? s1 : +((lastClose*0.92).toFixed(6)),
-      s2: (s2 && s2>0) ? s2 : +((lastClose*0.85).toFixed(6)),
-      s3: (s3 && s3>0) ? s3 : +((lastClose*0.75).toFixed(6)),
-      recentHigh, recentLow, swingHigh
-    };
-  } catch(e){
-    const lastClose = item.closeNow || 0;
-    return {
-      t1: +(lastClose * 1.05).toFixed(6),
-      t2: +(lastClose * 1.25).toFixed(6),
-      t3: +(lastClose * 1.6).toFixed(6),
-      s1: +(lastClose * 0.92).toFixed(6),
-      s2: +(lastClose * 0.85).toFixed(6),
-      s3: +(lastClose * 0.75).toFixed(6),
-      recentHigh: lastClose, recentLow: lastClose, swingHigh: lastClose
-    };
-  }
-}
-
-/* ============================================================
-   FINAL AI recommendation layer (long-term)
-   ============================================================ */
-function getFinalRecommendation(item){
-  const sim = Math.round((item.similarity||0)*100);
-  const phase = item.phase && item.phase.phase ? item.phase.phase : (item.phase || 'Unknown');
-  const accum = item.accumCombined ? (item.accumCombined.confidence || 0) : 0;
-  const rsi4h = item.rsi4h || 0;
-  const rsi1d = item.rsi1d || 0;
-  const wick = item.wickRatio4 || 0;
-  const vol = item.volSpike4 || 1;
-  const funding = item.fundingRate || 0;
-  const drop = item.dropPctFromPeak || 0;
-  let sentence = '';
-  let rationale = '';
-  if(accum >= 65 && phase.includes('Accumulation')){
-    sentence = `PIPPIN sim ${sim}% and multi-TF accumulation (${accum}%) suggest early re-accumulation — consider staged long-term entries (starter now, add on 4H/1D confirmation).`;
-    rationale = 'Strong accumulation confirmed';
-  }
-  else if(sim >= 70 && accum >= 50){
-    sentence = `High PIPPIN similarity (${sim}%) plus moderate accumulation (${accum}%) — use a small starter, protect with a 4H stop, and scale in after sustained volume and 4H confirmation.`;
-    rationale = 'High similarity + moderate accumulation';
-  }
-  else if((rsi4h >= 78 || wick >= 1.8 || vol >= 3 || funding < -0.001) && accum < 50){
-    sentence = `Because 4H is overbought (RSI ${Math.round(rsi4h)}) and accumulation is weak (${accum}%), avoid full long-term positions now; if needed, use a small starter and tight 4H stop — only add after clear 4H/daily accumulation.`;
-    rationale = 'Overbought + weak accumulation';
-  }
-  else if(phase.includes('Distribution') || phase.includes('Breakdown') || phase.includes('Capitulation')){
-    sentence = `Distribution/breakdown phase detected — expect further downside pressure; avoid long-term buys until a stable accumulation base and flattening EMAs appear on 4H/1D.`;
-    rationale = 'Distribution/Breakdown';
-  }
-  else if(phase.includes('Dead-cat') || (drop > 10 && accum < 55)){
-    sentence = `Looks like a short-lived bounce (dead-cat) with limited accumulation (${accum}%) — do not treat this as a long-term base; wait for a sideways 4H/1D structure.`;
-    rationale = 'Dead-cat bounce';
-  }
-  else if(sim >= 50 && rsi4h < 75 && accum >= 45 && vol >= 1.2){
-    sentence = `Structure appears healthy enough for longer-term exposure — consider standard sized positions and add on confirmed 4H higher lows or daily accumulation confirmation.`;
-    rationale = 'Healthy trending structure';
-  }
-  else {
-    sentence = `No clear long-term buy signal: use a small starter (if any), protect with a tight stop, and scale in only after clear 4H/1D accumulation and rising green-volume.`;
-    rationale = 'Conservative fallback';
-  }
-  return {sentence, rationale, sim, accum, phase};
-}
-
-/* ============================================================
-   NEW: Short-term recommendation generator
-   ============================================================ */
-function getShortTermRecommendation(item){
-  const rsi15 = item.rsi15 || 0;
-  const rsi1h = item.rsi1h || 0;
-  const rsi4h = item.rsi4h || 0;
-  const vol15 = item.volSpike15 || 1;
-  const vol4 = item.volSpike4 || 1;
-  const wick = item.wickRatio4 || 0;
-  const accum = item.accumCombined ? item.accumCombined.confidence : 0;
-  const phase = item.phase && item.phase.phase ? item.phase.phase : item.phase || 'Unknown';
-  const close = Number(item.closeNow || 0) || 0;
-
-  function recentLowFrom(karr, lookback=12){
-    if(!Array.isArray(karr) || karr.length===0) return null;
-    const slice = karr.slice(-Math.min(lookback, karr.length));
-    const lows = slice.map(k => Number(k[3] || k[3] === 0 ? k[3] : NaN)).filter(v => !isNaN(v));
-    if(!lows.length) return null;
-    return Math.min(...lows);
-  }
-
-  const low15 = recentLowFrom(item.k15m, 20);
-  const low1h = recentLowFrom(item.k1h, 12);
-  const low4h = recentLowFrom(item.k4h, 6);
-
-  const targets = [];
-  if(low15 && close > 0 && low15 < close) targets.push(Number(low15.toFixed(6)));
-  if(low1h && close > 0 && low1h < close && (targets.indexOf(Number(low1h.toFixed(6))) === -1)) targets.push(Number(low1h.toFixed(6)));
-  if(low4h && close > 0 && low4h < close && (targets.indexOf(Number(low4h.toFixed(6))) === -1)) targets.push(Number(low4h.toFixed(6)));
-
-  if(targets.length < 3 && close > 0){
-    const percCandidates = [
-      +(close * (1 - 0.05)).toFixed(6),
-      +(close * (1 - 0.12)).toFixed(6),
-      +(close * (1 - 0.20)).toFixed(6)
-    ];
-    percCandidates.forEach(p => { if(targets.length < 3) targets.push(p); });
-  }
-
-  const fmtTargets = targets.map(t => {
-    if(typeof t !== 'number' || isNaN(t)) return '—';
-    return (Math.abs(t) < 0.0001) ? t.toExponential(6) : (Number(t.toFixed(6)));
-  });
-
-  let bias = 'Neutral';
-  let sentence = '';
-  let plan = '';
-
-  if(phase.includes('Dead-cat') || phase.includes('Breakdown') || (rsi4h >= 78 && accum < 50) || (wick >= 1.0 && vol4 < 1.0 && rsi4h >= 75)){
-    bias = 'Bearish';
-    sentence = `Short-term bias: Bearish — bounce likely temporary; prefer shorting the rally or waiting for lower re-entry.`;
-    plan = `If shorting: enter on a failed bounce or rejection; stop above the recent 4H swing high; take partial profits at first support, trail rest.`;
-  } else if(accum >= 60 && rsi15 <= 45 && rsi4h < 65){
-    bias = 'Bullish';
-    sentence = `Short-term bias: Bullish — corrective pullback with rising accumulation; consider small scalp/long with tight stop.`;
-    plan = `Starter on confirmed 15m higher low + green-volume; stop below local 15m low; target near prior 15m/1h resistance.`;
-  } else {
-    bias = 'Neutral';
-    sentence = `Short-term: Neutral—no clean short or long edge. Prefer to wait for a tradeable structure (rejection or 15m higher-low).`;
-    plan = `Wait for either a clear rejection (short) or 15m/1h higher-low with volume (long).`;
-  }
-
-  return {
-    bias,
-    sentence,
-    plan,
-    targets: fmtTargets,
-    accum,
-    rsi15,
-    rsi1h,
-    rsi4h,
-    vol15,
-    vol4
-  };
-}
-
-/* ---------- RENDER TABLE & CARDS (now includes long-term targets & safety) ---------- */
 function renderTable(results){
-  results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)) || (b.ema70DistPct - a.ema70DistPct));
-  const threshold = parseInt(el.threshold.value,10)||4;
-  const showShort = el.showShort.checked;
+  const th = `
+    <table>
+      <thead>
+        <tr>
+          <th class="sortBtn" data-field="symbol">Symbol / Status</th>
+          <th class="sortBtn" data-field="last">Last <span class="sortIcon">↕</span></th>
+          <th class="sortBtn" data-field="rsi4h">RSI4H <span class="sortIcon">↕</span></th>
+          <th>Signals</th>
+          <th class="sortBtn" data-field="funding">Funding <span class="sortIcon">↕</span></th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
   const rows = results.map(r=>{
-    const expl = explainBlowoff(r);
-    const phaseInfo = r.phase || {phase:'Unknown', confidence:0};
-    const accum = r.accumCombined || {confidence:0, isAccum:false};
-    const rec = getFinalRecommendation(r);
-    const shortRec = getShortTermRecommendation(r);
-    const longTargets = getLongTermTargets(r);
+    let status = "normal";
+    let bg = "background:rgba(255,255,255,0.02);";
+    let cls = "";
 
-    let statusHtml = `<span class="small">normal</span>`; let bg='background:rgba(255,255,255,0.02)'; let cls='';
-    if(r.score >= threshold){ statusHtml = `<span style="background:#ff4d4d;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;">🔥 BLOWOFF</span>`; bg='background:rgba(255,40,40,0.12)'; if(!prevBlowoffSet.has(r.symbol)) cls='blink'; }
-    else if(r.score === threshold-1){ statusHtml = `<span style="background:#ffd966;padding:4px 8px;border-radius:6px;font-size:11px;font-weight:bold;color:black;">⚠ POTENTIAL</span>`; bg='background:rgba(255,200,0,0.10)'; }
+    if(r.score >= 4){
+      status = `<span style="background:#ff4d4d;color:white;font-size:11px;padding:4px 6px;border-radius:6px">🔥 BLOWOFF</span>`;
+      bg = "background:rgba(255,40,40,0.18);";
+      if(!prevBlow.has(r.symbol)) cls = "blink";
+    } else if(r.score === 3){
+      status = `<span style="background:#ffd966;color:black;font-size:11px;padding:4px 6px;border-radius:6px">⚠️ Potential</span>`;
+      bg = "background:rgba(255,200,0,0.14);";
+    }
 
-    const simPct = r.similarity ? Math.round(r.similarity*100) : 0;
-    const accumHtml = accum.isAccum ? `<div class="small" style="color:#2dd4bf">Accum: ${accum.confidence}%</div>` : `<div class="small" style="color:var(--muted)">Accum: ${accum.confidence}%</div>`;
-    const tfList = (r.accumChecks || []).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ');
-    let phaseColor = '#9fb3cc';
-    if(phaseInfo.phase.includes('Capitulation')) phaseColor='#e74c3c';
-    else if(phaseInfo.phase.includes('Climax')||phaseInfo.phase.includes('Acceleration')) phaseColor='#ff6b43';
-    else if(phaseInfo.phase.includes('Distribution')) phaseColor='#ffd966';
-    else if(phaseInfo.phase.includes('Dead-cat')) phaseColor='#7bd389';
+    // explanation
+    const expl = explainBlowoff({
+      score: r.score,
+      rsi1d: r.rsi1d !== undefined ? r.rsi1d : null,
+      rsi4h: r.rsi4h !== undefined ? r.rsi4h : null,
+      volSpike: r.volSpike || 0,
+      wickRatio: r.wickRatio !== undefined ? r.wickRatio : (r.wickTopRatio || 0),
+      ema70DistPct: r.ema70DistPct !== undefined ? r.ema70DistPct : 0,
+      lowerHigh: r.lowerHigh,
+      funding: r.funding !== undefined ? r.funding : 0
+    });
 
-    const shortHtml = showShort ? `
-      <div class="shortRec">🔎 Short-term: ${shortRec.sentence}</div>
-      <div class="recBox" style="background:rgba(255,255,255,0.01)">
-        <strong>Short-term Plan:</strong> ${shortRec.plan}<br>
-        <strong>Targets:</strong> ${shortRec.targets.join(' • ')}
-        <br><em style="color:var(--muted)">Short-term bias: ${shortRec.bias} • RSI15:${Math.round(shortRec.rsi15||0)} • accum:${shortRec.accum}%</em>
-      </div>
-    ` : '';
-
-    const longTargetsHtml = `
-      <div style="margin-top:8px;">
-        <strong>Targets (long-term):</strong>
-        <div class="recBox">
-          <strong>Upside Targets:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}
-          <br><strong>Safety levels:</strong> ${longTargets.s1} • ${longTargets.s2} • ${longTargets.s3}
-          <br><em style="color:var(--muted)">Recent H/L: ${longTargets.recentHigh}/${longTargets.recentLow} • SwingHigh:${longTargets.swingHigh}</em>
-        </div>
-      </div>
-    `;
+    const explRow = `<tr style="background:rgba(255,255,255,0.02)"><td colspan="5" style="padding:8px 12px;color:${expl.color}"><strong>${expl.label}</strong> — ${expl.explanation}</td></tr>`;
 
     return `
       <tr class="${cls}" style="${bg}">
-        <td><strong>${r.symbol}</strong><br>${statusHtml} <span class="phaseTag" style="background:${phaseColor}; color:black;margin-left:8px">${phaseInfo.phase} (${phaseInfo.confidence}%)</span></td>
-        <td>${r.closeNow}</td>
-        <td class="${(r.rsi4h||0)>=80?'green':''}">${r.rsi4h? r.rsi4h.toFixed(1):'n/a'}</td>
-        <td class="small">vol×${r.volSpike4} wick:${(r.wickRatio4||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
-        <td class="small">${(r.fundingRate||0).toFixed(6)}<br>PIPPIN sim: <strong>${simPct}%</strong><br>${accumHtml}<div class="small" style="color:#9fb3cc">TFs: ${tfList || '—'}</div></td>
+        <td><strong>${r.symbol}</strong><br>${status}</td>
+        <td>${r.last}</td>
+        <td class="${r.rsi4h >= 80 ? 'green' : ''}">${r.rsi4h !== undefined && r.rsi4h !== null ? r.rsi4h.toFixed(1) : 'n/a'}</td>
+        <td class="small">vol:${r.volSpike} wick:${(r.wickRatio || 0).toFixed(2)} ema:${r.ema70DistPct}%</td>
+        <td class="small">${(r.funding !== undefined ? r.funding : 0).toFixed(6)}</td>
       </tr>
-      <tr style="background:rgba(255,255,255,0.01)"><td colspan="5" style="padding:8px 12px;color:${expl.color}">
-        <strong>${expl.label}</strong> — ${expl.explanation}
-        ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
-        ${r.accumCombined && r.accumCombined.isAccum ? `<div style="margin-top:6px;color:#cfe8ff">Accumulation combined: ${r.accumCombined.confidence}% • reasons: ${ (r.accumChecks||[]).map(t => `${t.tf}:${t.result.reasons.join(',')}`).join(' || ') }</div>` : `<div style="margin-top:6px;color:var(--muted)">Accumulation combined: ${r.accumCombined.confidence}%</div>`}
-        <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
-        ${longTargetsHtml}
-        ${shortHtml}
-        <div class="recBox"><strong>Plan (long-term):</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
-      </td></tr>
+      ${explRow}
     `;
-  }).join('');
-  el.tableView.innerHTML = `<div class="card-panel"><table><thead><tr><th>Symbol / Status</th><th>Last</th><th>RSI4H</th><th>Signals</th><th>Funding / PIPPIN / Accum</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  setTimeout(()=>{ const nodes=document.querySelectorAll('tr.blink'); nodes.forEach(n=>n.classList.remove('blink')); }, 3000);
+  }).join("");
+
+  el.tableView.innerHTML = `<div class="card-panel">${th}${rows}</tbody></table></div>`;
+
+  // attach header click sorting (desktop)
+  const headers = el.tableView.querySelectorAll('th.sortBtn');
+  headers.forEach(h => {
+    h.style.cursor = 'pointer';
+    h.addEventListener('click', ()=>{
+      const fld = h.getAttribute('data-field');
+      if(!fld) return;
+      // if user clicks header, set the sort control then re-render
+      if(el.sortField.value === fld){
+        // toggle order
+        el.sortOrder.value = (el.sortOrder.value === 'asc') ? 'desc' : 'asc';
+      } else {
+        el.sortField.value = fld;
+      }
+      // re-render using existing results
+      renderResults(results);
+    });
+  });
+
+  // clear blink after short time
+  setTimeout(()=> {
+    const nodes = document.querySelectorAll('tr.blink');
+    nodes.forEach(n => n.classList.remove('blink'));
+  }, 4000);
 }
 
 function renderCards(results){
-  results.sort((a,b)=> (b.score - a.score) || ((b.similarity||0)-(a.similarity||0)));
-  const showShort = el.showShort.checked;
-  let html='';
+  let html = "";
+
   results.forEach(r=>{
-    const expl = explainBlowoff(r); const phase = r.phase || {phase:'Unknown', confidence:0}; const accum = r.accumCombined || {confidence:0, isAccum:false};
-    const simPct = Math.round((r.similarity||0)*100);
-    const rec = getFinalRecommendation(r);
-    const srec = getShortTermRecommendation(r);
-    const longTargets = getLongTermTargets(r);
-    let badge = `<span class="small" style="color:var(--muted)">normal</span>`; let bc='';
-    if(r.score >= (parseInt(el.threshold.value,10)||4)){ badge = `<span class="blowBadge">🔥 Blowoff</span>`; bc='blink'; } else if(r.score === (parseInt(el.threshold.value,10)||4)-1){ badge = `<span class="potBadge">⚠ Potential</span>`; }
-    const accBadge = accum.isAccum ? `<span class="accBadge">✔ Accum ${accum.confidence}%</span>` : `<span class="small" style="color:var(--muted)">Accum ${accum.confidence}%</span>`;
-    const shortHtml = showShort ? `
-      <div class="shortRec">🔎 Short-term: ${srec.sentence}</div>
-      <div class="recBox" style="background:rgba(255,255,255,0.01)">
-        <strong>Short-term Plan:</strong> ${srec.plan}<br>
-        <strong>Targets:</strong> ${srec.targets.join(' • ')}
-        <br><em style="color:var(--muted)">Bias: ${srec.bias} • RSI15:${Math.round(srec.rsi15||0)} • accum:${srec.accum}%</em>
-      </div>
-    ` : '';
+    let badge = `<span class="small" style="color:var(--muted)">normal</span>`;
+    let cls = "";
+
+    if(r.score >= 4){
+      badge = `<span class="blowBadge">🔥 Blowoff</span>`;
+      cls = (!prevBlow.has(r.symbol) ? "blink" : "");
+    } else if(r.score === 3){
+      badge = `<span class="potBadge">⚠ Potential</span>`;
+    }
+
+    const expl = explainBlowoff({
+      score: r.score,
+      rsi1d: r.rsi1d !== undefined ? r.rsi1d : null,
+      rsi4h: r.rsi4h !== undefined ? r.rsi4h : null,
+      volSpike: r.volSpike || 0,
+      wickRatio: r.wickRatio !== undefined ? r.wickRatio : (r.wickTopRatio || 0),
+      ema70DistPct: r.ema70DistPct !== undefined ? r.ema70DistPct : 0,
+      lowerHigh: r.lowerHigh,
+      funding: r.funding !== undefined ? r.funding : 0
+    });
+
+    const reasonHtml = expl.reasons.length ? `<div style="margin-top:6px;color:#cfe8ff;font-size:12px">• ${expl.reasons.join('<br>• ')}</div>` : '';
+
     html += `
-      <div class="coinCard ${bc}">
-        <div class="coinRow1"><div class="coinSymbol">${r.symbol}</div><div class="coinScore">${r.score}/8</div></div>
-        <div style="margin-top:6px">${badge} ${accBadge} <span style="margin-left:8px;font-size:12px;background:var(--glass);padding:4px 8px;border-radius:8px">${phase.phase} ${phase.confidence}%</span></div>
-        <div class="sigList">
-          Last: ${r.closeNow}<br>
-          RSI4H: ${r.rsi4h? r.rsi4h.toFixed(1):'n/a'} • Vol×${r.volSpike4} • Wick:${(r.wickRatio4||0).toFixed(2)}<br>
-          EMA∆: ${r.ema70DistPct}% • Funding: ${(r.fundingRate||0).toFixed(6)}<br>
-          <small style="color:#cfe8ff">PIPPIN similarity: <strong>${simPct}%</strong></small>
+      <div class="coinCard ${cls}">
+        <div class="coinRow1">
+          <div class="coinSymbol">${r.symbol}</div>
+          <div class="coinScore">${r.score}/6</div>
         </div>
+
+        <div style="margin-top:6px">${badge}</div>
+
+        <div class="sigList" style="margin-top:6px">
+          Last: ${r.last}<br>
+          RSI4H: ${r.rsi4h !== undefined && r.rsi4h !== null ? r.rsi4h.toFixed(1) : 'n/a'} • Vol×: ${r.volSpike} • Wick: ${(r.wickRatio||0).toFixed(2)}<br>
+          EMA70∆: ${r.ema70DistPct}% • Funding: ${(r.funding !== undefined ? r.funding : 0).toFixed(6)}
+        </div>
+
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.03);">
-          <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% reversal chance</div>
+          <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% chance of near-term reversal</div>
           <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
-          ${phase.reasons && phase.reasons.length ? `<div style="color:#cfe8ff;margin-top:6px">Phase reasons:<br>• ${phase.reasons.join('<br>• ')}</div>` : ''}
-          ${accum.isAccum ? `<div style="color:#cfe8ff;margin-top:6px">Accumulation combined: ${accum.confidence}% • TFs: ${(r.accumChecks||[]).map(t => `${t.tf}:${t.result.confidence}%${t.result.isAccum? '✓':''}`).join(' | ')}</div>` : ''}
-          <div class="finalRec">🧠 Final AI Recommendation: <strong>${rec.sentence}</strong></div>
-          ${shortHtml}
-          <div style="margin-top:8px">
-            <strong>Targets (long-term):</strong>
-            <div class="recBox">
-              <strong>Upside:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}
-              <br><strong>Safety levels:</strong> ${longTargets.s1} • ${longTargets.s2} • ${longTargets.s3}
-              <br><em style="color:var(--muted)">Recent H/L: ${longTargets.recentHigh}/${longTargets.recentLow} • SwingHigh:${longTargets.swingHigh}</em>
-            </div>
-          </div>
-          <div class="recBox"><strong>Plan (long-term):</strong><br>Starter: ~10% of planned allocation.<br>Stop: below recent 4H consolidation low (use tight stop).<br>Add rules: add only after 2 of — 4H higher low; Volume on green candles ≥ 1.5× volMA; Accumulation confidence ≥ 70% on 4H/combined TFs.<br><em style="color:var(--muted)">Rationale: sim ${rec.sim}%, phase "${rec.phase}", accum ${rec.accum}%</em></div>
+          ${reasonHtml}
         </div>
       </div>
     `;
   });
+
   el.cardView.innerHTML = `<div class="card-panel">${html}</div>`;
-  setTimeout(()=>{ const nodes=document.querySelectorAll('.coinCard.blink'); nodes.forEach(n=>n.classList.remove('blink')); }, 3000);
+
+  setTimeout(()=> {
+    const nodes = document.querySelectorAll('.coinCard.blink');
+    nodes.forEach(n => n.classList.remove('blink'));
+  }, 4000);
+}
+
+/* ---------------------------------------------------------
+   Combined render entrypoint (hybrid)
+--------------------------------------------------------- */
+function renderResults(results){
+  // apply user sort + tie-breakers inside applySort
+  applySort(results);
+
+  // update prevBlow set
+  prevBlow = new Set(results.filter(r=>r.score >= (parseInt(el.threshold.value,10) || 4)).map(r=>r.symbol));
+
+  // choose view
+  if(window.innerWidth >= 680){
+    renderTable(results);
+  } else {
+    renderCards(results);
+  }
 }
 
 /* ============================================================
-   Trading interpretation renderer
-   - includes short-term and long-term targets (long-term shows targets & safety)
+   ALERTS (sound + notification)
    ============================================================ */
-function buildTradingInterpretation(item){
-  if(!item) return `<h3>No symbol to interpret</h3><p class="mutedNote">No results yet — run a scan.</p>`;
-
-  const shortRec = getShortTermRecommendation(item);
-  const expl = explainBlowoff(item);
-  const phase = item.phase ? item.phase.phase : 'Unknown';
-  const accum = item.accumCombined ? item.accumCombined.confidence : 0;
-  const rsi4h = Math.round((item.rsi4h || 0));
-  const funding = typeof item.fundingRate === 'number' ? (item.fundingRate*100).toFixed(3) + '%' : 'n/a';
-  const drop = item.dropPctFromPeak || 0;
-  const blowoffScore = item.score || 0;
-  const wick = (item.wickRatio4||0).toFixed(2);
-  const prob = expl.prob || 0;
-  const longTargets = getLongTermTargets(item);
-
-  const html = `
-    <h3>Quick Trading Interpretation — ${item.symbol}</h3>
-    <p><strong>Short-term bias:</strong> <span style="color:${shortRec.bias==='Bearish' ? '#ff9b9b' : (shortRec.bias==='Bullish' ? '#9bffcf' : '#cfe8ff')}">${shortRec.bias}</span></p>
-
-    <div>
-      <strong>Why:</strong>
-      <ul class="tradeList">
-        ${expl.reasons.length ? `<li>${expl.reasons.join('</li><li>')}</li>` : `<li>No major exhaustion points, see signals below.</li>`}
-        <li>Dead-cat / structure: ${phase}</li>
-        <li>4H RSI: ${rsi4h} (overbought threshold typically ≥75–80)</li>
-        <li>Accumulation: ${accum}%</li>
-        <li>Funding: ${funding} (negative indicates short pressure)</li>
-        <li>Blowoff score: ${blowoffScore}/8 • Wick ratio: ${wick} • Estimated reversal chance: ${prob}%</li>
-      </ul>
-    </div>
-
-    <div style="margin-top:8px">
-      <strong>Short-term trade recommendation</strong>
-      <p>${shortRec.sentence}</p>
-      <div class="recBox">
-        <strong>Plan:</strong> ${shortRec.plan}
-        <div style="margin-top:6px"><strong>Targets:</strong> ${shortRec.targets.join(' • ')}</div>
-        <div class="mutedNote">Starter size and stop depend on your risk profile. This is NOT financial advice.</div>
-      </div>
-    </div>
-
-    <div style="margin-top:8px">
-      <strong>Long-term plan & targets</strong>
-      <div class="recBox">
-        <strong>Starter:</strong> ~10% of planned allocation.<br>
-        <strong>Stop:</strong> below recent 4H consolidation low.<br>
-        <strong>Upside Targets:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}<br>
-        <strong>Downside / Safety levels:</strong> ${longTargets.s1} • ${longTargets.s2} • ${longTargets.s3}<br>
-        <em style="color:var(--muted)">Recent H/L: ${longTargets.recentHigh}/${longTargets.recentLow} • SwingHigh:${longTargets.swingHigh}</em>
-      </div>
-    </div>
-
-    <div style="margin-top:8px">
-      <strong>When short-term becomes bullish again</strong>
-      <ul class="tradeList">
-        <li>4H RSI drops below ~60</li>
-        <li>Accumulation rises to ≥ 60–70%</li>
-        <li>Confirmed 4H higher lows / rising green-volume</li>
-        <li>Funding normalizes (less negative)</li>
-      </ul>
-    </div>
-
-    <div class="mutedNote">Quick summary: <strong>${shortRec.bias}</strong>. Use small starters, tight stops, and confirm with 4H structure before scaling.</div>
-  `;
-  return html;
+function playAlertSound(){
+  try{
+    const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+    audio.volume = 0.8;
+    audio.play().catch(()=>{});
+  }catch(e){}
 }
-
-function updateTradingInterpretation(results){
-  if(!results || !results.length){
-    el.tradeInterpret.style.display = 'none';
-    el.tradeInterpret.innerHTML = '';
-    return;
+function notify(title, body){
+  if(Notification.permission === "granted") new Notification(title, { body });
+  else if(Notification.permission !== "denied") Notification.requestPermission();
+}
+function alertIfNeeded(results){
+  const flagged = results.filter(r => r.score >= (parseInt(el.threshold.value,10) || 4));
+  if(flagged.length > 0){
+    playAlertSound();
+    notify("🔥 Blowoff Top Detected", flagged.map(f=>f.symbol).slice(0,4).join(", "));
   }
-  const sorted = results.slice().sort((a,b)=> {
-    if(b.score !== a.score) return b.score - a.score;
-    if((b.similarity||0) !== (a.similarity||0)) return (b.similarity||0) - (a.similarity||0);
-    return (b.ema70DistPct||0) - (a.ema70DistPct||0);
-  });
-  const top = sorted[0];
-  el.tradeInterpret.style.display = 'block';
-  el.tradeInterpret.innerHTML = buildTradingInterpretation(top);
 }
 
-/* ---------- Progress & countdown ---------- */
-function updateProgress(){ const pct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0; el.bar.style.width = pct + '%'; el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`; el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`; }
-function startCountdown(sec){ if(countdownTimer) clearInterval(countdownTimer); const end = Date.now() + sec*1000; countdownTimer = setInterval(()=>{ const left = Math.max(0, Math.round((end - Date.now())/1000)); el.countdown.innerText = `Next scan in: ${left}s`; if(left <= 0){ clearInterval(countdownTimer); el.countdown.innerText='Running...'; } }, 500); }
-
-/* ---------- MAIN RUN ---------- */
+/* ============================================================
+   MAIN SCAN CYCLE
+   ============================================================ */
 async function runScan(once=false){
   try{
-    running=true; el.startBtn.disabled=true; el.stopBtn.disabled=false; el.debug.innerText=''; resetWindow(); el.message.innerText='Fetching top symbols...';
-    const N = Math.max(5, Math.min(60, parseInt(el.prefilter.value,10) || 30));
+    running = true;
+    el.startBtn.disabled = true;
+    el.stopBtn.disabled = false;
+    el.debug.innerText = "";
+    el.message.innerText = "Fetching top symbols...";
+    resetWindow();
+
+    const N = Math.max(5, Math.min(100, parseInt(el.prefilter.value,10) || 30));
     const delayMs = Math.max(50, Math.min(2000, parseInt(el.delay.value,10) || 450));
     const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 60));
 
     const top = await getTopN(N);
-    queue = []; totalTasks = top.length; doneTasks = 0; updateProgress(); const results = [];
 
-    top.forEach(t => queueSymbolAnalysis(t.symbol, results));
+    // Prepare queue
+    queue = [];
+    totalTasks = top.length;
+    doneTasks = 0;
+    updateProgress();
+
+    const results = [];
+    top.forEach(x => queueSymbol(x.symbol, results));
+
+    // countdown for next run
     if(!once) startCountdown(intervalSec);
 
-    while(queue.length && running){
-      if(checkSafetyAndMaybePause()) break;
-      const job = queue.shift();
-      try{ await job(); } catch(e){ el.debug.innerText += `\nJob error: ${e.message}`; }
-      doneTasks++; updateProgress();
-      await delay(delayMs);
-    }
+    // start processing
+    await processQueue();
 
-    results.forEach(r => { r.phase = detectPhaseForSymbol(r); r.dropPctFromPeak = r.phase.dropPctFromPeak || 0; });
+    // when queue done, attach 24h change info from `top` into results (if available)
+    results.forEach(r => {
+      const found = top.find(t => t.symbol === r.symbol);
+      if(found) r.change24 = found.change24;
+    });
 
-    // PIPPIN vector (best effort) — defensive build to avoid undefined errors
-    let pippinVector = null;
-    const pippinEntry = results.find(x => x.symbol === 'PIPPINUSDT');
-    if(pippinEntry) pippinVector = makeFeatureVector(pippinEntry);
-    else {
-      try{
-        const k4 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=4h&limit=30`, {allowIfNotRunning:true}).catch(e=>{ console.warn('PIPPIN k4 fetch failed', e.message); return null; });
-        const k15 = await safeFetch(`${API_BASE}/fapi/v1/klines?symbol=PIPPINUSDT&interval=15m&limit=40`, {allowIfNotRunning:true}).catch(e=>{ console.warn('PIPPIN k15 fetch failed', e.message); return null; });
+    // save last results for sorting/control updates
+    window.lastResults = results;
 
-        if(!k4 || !Array.isArray(k4) || k4.length === 0){
-          pippinVector = null;
-        } else {
-          const closes4 = (k4||[]).map(k=>Number((k && k[4])||0));
-          const last4 = k4[k4.length-1] || null;
-          if(!last4){
-            pippinVector = null;
-          } else {
-            const open4=Number(last4[1]||0), high4=Number(last4[2]||0), low4=Number(last4[3]||0), close4=Number(last4[4]||0);
-            const body4 = Math.max(1e-9, Math.abs(close4-open4));
-            const wick4 = Math.max(0, high4 - Math.max(open4,close4))/body4;
-            const volMA4 = Math.max(1, sma((k4||[]).map(k=>Number((k && k[5])||0)), Math.min(10,k4.length)) || 1);
-            const volSpike4 = Number(((Number(last4[5]||1)) / volMA4).toFixed(2));
-            const ema70 = ema(closes4,70) || ema(closes4,Math.min(21,closes4.length));
-            const emaDist = ema70 ? Number(pct(close4, ema70).toFixed(2)) : 0;
-            const rsi4 = rsiFromCloses(closes4, 14);
-            const accumulation = detectAccumulationGeneric(
-              (k15||[]).map(k=>Number((k&&k[4])||0)),
-              (k15||[]).map(k=>Number((k&&k[2])||0)),
-              (k15||[]).map(k=>Number((k&&k[3])||0)),
-              (k15||[]).map(k=>Number((k&&k[5])||0)),
-              30,
-              parseInt(el.sensitivity.value,10)||50
-            );
-            pippinVector = makeFeatureVector({
-              rsi4h:rsi4,
-              volSpike4,
-              wickRatio4:wick4,
-              ema70DistPct:emaDist,
-              fundingRate:0,
-              slope15:1,
-              dropPctFromPeak:0,
-              accumCombined:{confidence:accumulation.confidence, isAccum:accumulation.isAccum}
-            });
-          }
-        }
-      } catch(e){
-        console.warn('PIPPIN vector build failed:', e.message);
-        pippinVector = null;
+    // render results and alerts
+    renderResults(results);
+    alertIfNeeded(results);
+
+    // schedule next run (use setTimeout to avoid running-flag race)
+    if (!once) {
+      // if safety triggered (high request usage) don't schedule — auto-pause handled separately
+      if (requestsThisWindow > SAFETY_MAX) {
+        el.debug.innerText += `\nNot scheduling next run: safety auto-paused (req/min ${requestsThisWindow})`;
+        // do not schedule; auto-pause handler will resume later
+      } else {
+        // clear previous timer if any, then schedule the next run with setTimeout
+        if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+        autoTimer = setTimeout(()=> {
+          // only call runScan if not currently auto-paused
+          if (requestsThisWindow <= SAFETY_MAX) runScan(false);
+        }, intervalSec * 1000);
+        // update countdown immediately
+        startCountdown(intervalSec);
       }
     }
 
-    if(pippinVector){
-      results.forEach(r => { r.similarity = cosineSim(makeFeatureVector(r), pippinVector); });
-    } else results.forEach(r => r.similarity = 0);
-
-    prevBlowoffSet = new Set(results.filter(r=> r.score >= (parseInt(el.threshold.value,10)||4)).map(r=>r.symbol));
-    if(window.innerWidth >= 680) renderTable(results); else renderCards(results);
-
-    // NEW: update trading interpretation panel
-    updateTradingInterpretation(results);
-
-    // alerts
-    const condEnabled = el.condAlert.checked;
-    const accumThreshold = Math.max(0, Math.min(100, parseInt(el.accumAlertThreshold.value,10) || 50));
-    const blowoffThreshold = parseInt(el.threshold.value,10) || 4;
-    const flagged = results.filter(r => r.score >= blowoffThreshold);
-    const flaggedCond = flagged.filter(r => r.accumCombined && r.accumCombined.confidence >= accumThreshold);
-
-    if(condEnabled && flaggedCond.length){
-      try{ const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.volume=0.85; audio.play().catch(()=>{}); }catch(e){}
-      if(Notification && Notification.permission === 'granted') new Notification('Blowoff+Accum Alert', { body: flaggedCond.map(x => `${x.symbol} acc:${x.accumCombined.confidence}%`).slice(0,6).join(', ') });
-      else if(Notification && Notification.permission !== 'denied') Notification.requestPermission();
-    } else if(!condEnabled && flagged.length){
-      try{ const audio = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg'); audio.volume=0.7; audio.play().catch(()=>{}); }catch(e){}
-      if(Notification && Notification.permission === 'granted') new Notification('Blowoff Detected', { body: flagged.map(f=>f.symbol).slice(0,6).join(', ') });
-      else if(Notification && Notification.permission !== 'denied') Notification.requestPermission();
-    }
-
-    if(!once){
-      if(requestsThisWindow > SAFETY_MAX){ el.debug.innerText += '\nAuto-paused due to safety'; }
-      else { if(autoTimer) clearTimeout(autoTimer); autoTimer = setTimeout(()=>{ if(requestsThisWindow <= SAFETY_MAX) runScan(false); }, intervalSec * 1000); startCountdown(intervalSec); }
-    }
-
-    running=false; el.startBtn.disabled=false; el.stopBtn.disabled=true;
   } catch(e){
-    el.debug.innerText += `\nRun error: ${e.message}`;
-    running=false; el.startBtn.disabled=false; el.stopBtn.disabled=true;
+    el.debug.innerText += `\nScan error: ${e.message}`;
   }
 }
 
-/* UI events */
-el.startBtn.addEventListener('click', ()=>{ if(running) return; prevBlowoffSet = new Set(); runScan(false); });
-el.stopBtn.addEventListener('click', ()=>{ running=false; queue=[]; el.startBtn.disabled=false; el.stopBtn.disabled=true; if(autoTimer) clearTimeout(autoTimer); if(countdownTimer) clearInterval(countdownTimer); el.countdown.innerText='Next scan in: -'; el.message.innerText='Stopped.'; });
-el.oneShot.addEventListener('click', ()=>{ if(running) return; runScan(true); });
-el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensitivity.value; });
-if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}); } catch(e){} }
-(async function ping(){ try{ await fetch(API_BASE + '/fapi/v1/ping'); } catch(e){ console.warn('ping failed', e); } })();
+/* ============================================================
+   UI Bindings
+   ============================================================ */
+el.startBtn.addEventListener("click", ()=> {
+  if(running) return;
+  prevBlow = new Set(); // reset highlights
+  runScan(false);
+});
+el.stopBtn.addEventListener("click", ()=>{
+  running = false;
+  queue = [];
+  el.startBtn.disabled = false;
+  el.stopBtn.disabled = true;
+  if(autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+});
+el.oneShot.addEventListener("click", ()=> {
+  if(running) return;
+  runScan(true);
+});
 
-</script>
+// Sorting controls: re-render on change
+el.sortField.addEventListener('change', ()=>{ if(window.lastResults) renderResults(window.lastResults); });
+el.sortOrder.addEventListener('change', ()=>{ if(window.lastResults) renderResults(window.lastResults); });
 
-<footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term AI recommendation + short-term trade guidance. Long-term targets (upside) + safety levels included. Run from a local server to avoid CORS.</footer>
-</body>
+// Request Notification permission at load
+if("Notification" in window){
+  try { Notification.requestPermission(); } catch(e){}
+}
+
+// initial debug ping to confirm CORS reachability
+(async function ping(){
+  try { await fetch(API_BASE + "/fapi/v1/ping"); } catch(e){ console.warn('ping failed', e); }
+})();
+
+/* ============================================================
+   END OF ENGINE
+   ============================================================ */
+</script><footer class="small" style="margin-top:20px;color:var(--muted)">
+  Blowoff Top Detector — Hybrid AI Mode •  
+  Alerts, Explanations, Auto-Pause, Mobile/Desktop UI  
+  <br>Run from a local server (e.g., <code>python -m http.server</code>) to avoid CORS issues.
+</footer></body>
 </html>
