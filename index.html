@@ -1,11 +1,10 @@
 <!doctype html>
+
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Blowoff Top Detector — Hybrid AI Mode</title>
-
-<style>
+<title>Blowoff Top Detector — Hybrid AI Mode (with Sorting)</title><style>
   :root{
     --bg:#07101a;
     --card:#0b1220;
@@ -192,48 +191,53 @@
       color:#cce3ff;
     }
   }
-</style>
-</head>
-<body>
 
-<div class="card-panel">
-  <h1>Blowoff Top Detector — Hybrid AI Mode</h1>
-
-  <div class="small" style="margin-top:6px;color:var(--muted)">
+  /* SORT ICON */
+  .sortBtn{ cursor:pointer; user-select:none; }
+  .sortIcon{ font-size:11px; opacity:0.8; margin-left:6px }
+</style></head>
+<body><div class="card-panel">
+  <h1>Blowoff Top Detector — Hybrid AI Mode</h1>  <div class="small" style="margin-top:6px;color:var(--muted)">
     Auto-scans top N Binance Futures coins for blowoff-top behavior.  
     Hybrid UI: Desktop = Table • Mobile = Card View.  
     Includes rule-based AI explanation, alerts, & auto-pause safety.
-  </div>
-
-  <!-- CONTROL BAR -->
-  <div class="controls">
+  </div>  <!-- CONTROL BAR -->  <div class="controls">
     <label>Prefilter <input id="prefilter" type="number" value="30" min="5" max="100"></label>
     <label>Delay (ms) <input id="delay" type="number" value="450" min="50" max="2000"></label>
     <label>Refresh (sec) <input id="interval" type="number" value="60" min="10" max="3600"></label>
-    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="6"></label>
-    <button id="startBtn">Start</button>
-    <button id="stopBtn" class="alt" disabled>Stop</button>
-    <button id="oneShot" class="alt">Run Once</button>
-  </div>
+    <label>Score ≥ <input id="threshold" type="number" value="4" min="1" max="6"></label><!-- SORTING CONTROLS (NEW) -->
+<label style="display:flex;align-items:center">Sort by
+  <select id="sortField" style="margin-left:8px">
+    <option value="score">Score</option>
+    <option value="volSpike">Vol Spike</option>
+    <option value="wickRatio">Wick Ratio</option>
+    <option value="ema70DistPct">EMA Distance</option>
+    <option value="rsi4h">RSI 4H</option>
+    <option value="rsi1d">RSI 1D</option>
+    <option value="funding">Funding Rate</option>
+    <option value="last">Last Price</option>
+    <option value="change24">24h Change</option>
+  </select>
+</label>
 
-  <!-- STATUS BAR -->
-  <div class="status">
+<label style="display:flex;align-items:center">Order
+  <select id="sortOrder" style="margin-left:8px">
+    <option value="desc">Descending</option>
+    <option value="asc">Ascending</option>
+  </select>
+</label>
+
+<button id="startBtn">Start</button>
+<button id="stopBtn" class="alt" disabled>Stop</button>
+<button id="oneShot" class="alt">Run Once</button>
+
+  </div>  <!-- STATUS BAR -->  <div class="status">
     <div id="message">Ready.</div>
     <div class="progress"><i id="bar"></i></div>
     <div id="countdown" class="countdown">Next scan in: -</div>
     <div id="safetyStatus" class="mutedBadge">Safety OK</div>
-  </div>
-
-  <!-- DESKTOP VIEW -->
-  <div id="tableView"></div>
-
-  <!-- MOBILE VIEW -->
-  <div id="cardView"></div>
-
-  <div id="debug" class="small" style="margin-top:10px"></div>
-</div>
-
-<script>
+  </div>  <!-- DESKTOP VIEW -->  <div id="tableView"></div>  <!-- MOBILE VIEW -->  <div id="cardView"></div>  <div id="debug" class="small" style="margin-top:10px"></div>
+</div><script>
 /* ============================================================
    SECTION C WILL START HERE (JavaScript Engine)
    ============================================================ */
@@ -269,7 +273,9 @@ const el = {
   cardView: document.getElementById("cardView"),
   debug: document.getElementById("debug"),
   safetyStatus: document.getElementById("safetyStatus"),
-  countdown: document.getElementById("countdown")
+  countdown: document.getElementById("countdown"),
+  sortField: document.getElementById("sortField"),
+  sortOrder: document.getElementById("sortOrder")
 };
 
 // ------- STATE -------
@@ -453,6 +459,40 @@ function queueSymbol(symbol, results){
   });
 }
 
+// ------- Sorting helper (NEW) -------
+function applySort(results){
+  const field = el.sortField.value || 'score';
+  const order = el.sortOrder.value === 'asc' ? 1 : -1;
+
+  // mapping for nested or aliased fields
+  const getter = (r) => {
+    if(field === 'score') return r.score ?? -Infinity;
+    if(field === 'volSpike') return r.volSpike ?? -Infinity;
+    if(field === 'wickRatio') return r.wickRatio ?? -Infinity;
+    if(field === 'ema70DistPct') return r.ema70DistPct ?? -Infinity;
+    if(field === 'rsi4h') return r.rsi4h ?? -Infinity;
+    if(field === 'rsi1d') return r.rsi1d ?? -Infinity;
+    if(field === 'funding') return r.funding ?? -Infinity;
+    if(field === 'last') return r.last ?? -Infinity;
+    if(field === 'change24') return r.change24 ?? -Infinity;
+    return r.score ?? -Infinity;
+  };
+
+  results.sort((a,b)=>{
+    const va = getter(a);
+    const vb = getter(b);
+    // handle NaN or null
+    const na = (va === null || va === undefined || Number.isNaN(va));
+    const nb = (vb === null || vb === undefined || Number.isNaN(vb));
+    if(na && nb) return 0;
+    if(na) return 1 * order; // push missing to end
+    if(nb) return -1 * order;
+
+    if(typeof va === 'string' && typeof vb === 'string') return va.localeCompare(vb) * order;
+    return (va - vb) * order;
+  });
+}
+
 // ------- Update Progress -------
 function updateProgress(){
   if(!totalTasks) return;
@@ -543,11 +583,11 @@ function renderTable(results){
     <table>
       <thead>
         <tr>
-          <th>Symbol / Status</th>
-          <th>Last</th>
-          <th>RSI4H</th>
+          <th class="sortBtn" data-field="symbol">Symbol / Status</th>
+          <th class="sortBtn" data-field="last">Last <span class="sortIcon">↕</span></th>
+          <th class="sortBtn" data-field="rsi4h">RSI4H <span class="sortIcon">↕</span></th>
           <th>Signals</th>
-          <th>Funding</th>
+          <th class="sortBtn" data-field="funding">Funding <span class="sortIcon">↕</span></th>
         </tr>
       </thead>
       <tbody>
@@ -594,6 +634,25 @@ function renderTable(results){
   }).join("");
 
   el.tableView.innerHTML = `<div class="card-panel">${th}${rows}</tbody></table></div>`;
+
+  // attach header click sorting (desktop)
+  const headers = el.tableView.querySelectorAll('th.sortBtn');
+  headers.forEach(h => {
+    h.style.cursor = 'pointer';
+    h.addEventListener('click', ()=>{
+      const fld = h.getAttribute('data-field');
+      if(!fld) return;
+      // if user clicks header, set the sort control then re-render
+      if(el.sortField.value === fld){
+        // toggle order
+        el.sortOrder.value = (el.sortOrder.value === 'asc') ? 'desc' : 'asc';
+      } else {
+        el.sortField.value = fld;
+      }
+      // re-render using existing results
+      renderResults(results);
+    });
+  });
 
   // clear blink after short time
   setTimeout(()=> {
@@ -665,8 +724,16 @@ function renderCards(results){
    Combined render entrypoint (hybrid)
 --------------------------------------------------------- */
 function renderResults(results){
-  // sort by score desc, then vol, then ema dist
-  results.sort((a,b)=> (b.score - a.score) || (b.volSpike - a.volSpike) || (b.ema70DistPct - a.ema70DistPct));
+  // sort by user control first (new)
+  applySort(results);
+
+  // secondary stable sort: score desc, then vol, then ema dist when same primary key
+  results.sort((a,b)=>{
+    // first compare by primary sort field stable order already applied; keep stable tie-breakers
+    // We'll perform a tie-breaker using score (desc) then volSpike then ema70DistPct
+    const s = (b.score - a.score) || (b.volSpike - a.volSpike) || (b.ema70DistPct - a.ema70DistPct);
+    return s;
+  });
 
   // update prevBlow set
   prevBlow = new Set(results.filter(r=>r.score >= (parseInt(el.threshold.value,10) || 4)).map(r=>r.symbol));
@@ -734,7 +801,13 @@ async function runScan(once=false){
     // start processing
     await processQueue();
 
-    // when queue done, render results and alerts
+    // when queue done, attach 24h change info from `top` into results (if available)
+    results.forEach(r => {
+      const found = top.find(t => t.symbol === r.symbol);
+      if(found) r.change24 = found.change24;
+    });
+
+    // render results and alerts
     renderResults(results);
     alertIfNeeded(results);
 
@@ -781,6 +854,10 @@ el.oneShot.addEventListener("click", ()=> {
   runScan(true);
 });
 
+// Sorting controls: re-render on change
+el.sortField.addEventListener('change', ()=>{ if(window.lastResults) renderResults(window.lastResults); });
+el.sortOrder.addEventListener('change', ()=>{ if(window.lastResults) renderResults(window.lastResults); });
+
 // Request Notification permission at load
 if("Notification" in window){
   try { Notification.requestPermission(); } catch(e){}
@@ -794,13 +871,9 @@ if("Notification" in window){
 /* ============================================================
    END OF ENGINE
    ============================================================ */
-</script>
-
-<footer class="small" style="margin-top:20px;color:var(--muted)">
+</script><footer class="small" style="margin-top:20px;color:var(--muted)">
   Blowoff Top Detector — Hybrid AI Mode •  
   Alerts, Explanations, Auto-Pause, Mobile/Desktop UI  
   <br>Run from a local server (e.g., <code>python -m http.server</code>) to avoid CORS issues.
-</footer>
-
-</body>
+</footer></body>
 </html>
