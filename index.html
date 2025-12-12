@@ -1183,20 +1183,6 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // e.g. if(result.preCrash && result.preCrash.someFlag) s++;
 
     result.score = s;
-
-    // cache single-symbol result if desired
-    cacheSymbol(sym, result);
-
-    el.symbolStatus.innerText = `Fetched ${sym} — score ${result.score}`;
-    return result;
-  } catch (err) {
-    el.symbolStatus.innerText = `Fetch error for ${sym}: ${err.message}`;
-    throw err;
-  }
-      }
-  
-  
-
     
 
     if (result.score === 3) {
