@@ -1065,19 +1065,21 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
   el.symbolStatus.innerText = `Fetching ${sym} data...`;
 
   try {
-    // Fetch only what's needed (4h, 1h, 15m klines + funding)
+    // Fetch only what's needed (4h, 1h, 15m, 1d klines + funding)
     const promises = [
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=4h&limit=40`, { allowIfNotRunning: opts.allowIfNotRunning }),
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1h&limit=60`, { allowIfNotRunning: opts.allowIfNotRunning }),
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=80`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // NEW: 1D
       safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${sym}&limit=1`, { allowIfNotRunning: opts.allowIfNotRunning })
     ];
-    const [k4h, k1h, k15, f] = await Promise.all(promises);
+    const [k4h, k1h, k15, k1d, f] = await Promise.all(promises);
 
     // build features just like queueSymbolAnalysis
     const closes4h = (k4h||[]).map(k=>Number(k[4])); const highs4h=(k4h||[]).map(k=>Number(k[2])); const lows4h=(k4h||[]).map(k=>Number(k[3])); const vols4h=(k4h||[]).map(k=>Number(k[5]));
     const closes1h = (k1h||[]).map(k=>Number(k[4])); const highs1h=(k1h||[]).map(k=>Number(k[2])); const lows1h=(k1h||[]).map(k=>Number(k[3])); const vols1h=(k1h||[]).map(k=>Number(k[5]));
     const closes15 = (k15||[]).map(k=>Number(k[4])); const highs15=(k15||[]).map(k=>Number(k[2])); const lows15=(k15||[]).map(k=>Number(k[3])); const vols15=(k15||[]).map(k=>Number(k[5]));
+    const closes1d = (k1d||[]).map(k=>Number(k[4])); const highs1d=(k1d||[]).map(k=>Number(k[2])); const lows1d=(k1d||[]).map(k=>Number(k[3])); const vols1d=(k1d||[]).map(k=>Number(k[5]));
 
     const last4 = (k4h && k4h.length) ? k4h[k4h.length-1] : null;
     if(!last4) throw new Error('No 4H candles returned');
@@ -1098,6 +1100,11 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const rsi15 = rsiFromCloses(closes15, 14);
     const volMA15 = sma(vols15, Math.min(10, vols15.length)) || 1;
     const volSpike15 = Number((Number(closes15.length ? vols15[vols15.length-1] : 1) / volMA15).toFixed(2));
+
+    // --- NEW: raw last-candle volumes for sorting/display
+    const lastVol1d = (vols1d && vols1d.length) ? Number(vols1d[vols1d.length - 1]) : 0;
+    const lastVol4h = (vols4h && vols4h.length) ? Number(vols4h[vols4h.length - 1]) : 0;
+    const lastVol15m = (vols15 && vols15.length) ? Number(vols15[vols15.length - 1]) : 0;
 
     // accumulation checks
     const sens = parseInt(el.sensitivity.value,10) || 50;
@@ -1133,10 +1140,14 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // build the result object (compatible shape)
     const result = {
       symbol: sym,
-      score: 0, // we didn't run the multi-signal score aggregator here; you can run detectPhaseForSymbol if you want
+      score: 0, // we'll compute below
       signals: {},
       rsi1d, rsi4h, rsi1h, rsi15,
       volSpike4, volSpike15,
+      // NEW: raw volumes included for sorting/display
+      volume1d: lastVol1d,
+      volume4h: lastVol4h,
+      volume15m: lastVol15m,
       wickRatio4,
       ema70DistPct: emaDistPct, 
       lowerHigh,
@@ -1155,24 +1166,38 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     };
 
     // ===== compute a blowoff-style score (same logic as queueSymbolAnalysis) =====
-let s = 0;
-// stricter 1D extreme
-if(result.rsi1d !== null && result.rsi1d >= 88) s++;
-// 4H overbought
-if(result.rsi4h !== null && result.rsi4h >= 80) s++;
-// volume spike
-if(result.volSpike4 !== null && result.volSpike4 >= 1.8) s++;
-// wick/climax
-if(result.wickRatio4 !== null && result.wickRatio4 >= 1.6) s++;
-// big EMA stretch (tweak threshold to match your queue logic)
-if(result.ema70DistPct && Math.abs(result.ema70DistPct) >= 20) s++;
-// lower highs / breakdown
-if(result.lowerHigh) s++;
-// add other checks your queue uses (capitulation, dead-cat etc.)
-/* e.g.:
-if(result.preCrash && result.preCrash.someFlag) s++;
-*/
-result.score = s;
+    let s = 0;
+    // stricter 1D extreme
+    if(result.rsi1d !== null && result.rsi1d >= 88) s++;
+    // 4H overbought
+    if(result.rsi4h !== null && result.rsi4h >= 80) s++;
+    // volume spike (uses normalized vol spike)
+    if(result.volSpike4 !== null && result.volSpike4 >= 1.8) s++;
+    // wick/climax (slightly adjusted threshold to match queue)
+    if(result.wickRatio4 !== null && result.wickRatio4 >= 1.6) s++;
+    // big EMA stretch (tweak threshold to match your queue logic)
+    if(result.ema70DistPct && Math.abs(result.ema70DistPct) >= 20) s++;
+    // lower highs / breakdown
+    if(result.lowerHigh) s++;
+    // placeholder for other checks your queue uses (capitulation, dead-cat etc.)
+    // e.g. if(result.preCrash && result.preCrash.someFlag) s++;
+
+    result.score = s;
+
+    // cache single-symbol result if desired
+    cacheSymbol(sym, result);
+
+    el.symbolStatus.innerText = `Fetched ${sym} — score ${result.score}`;
+    return result;
+  } catch (err) {
+    el.symbolStatus.innerText = `Fetch error for ${sym}: ${err.message}`;
+    throw err;
+  }
+      }
+  
+  
+
+    
 
     if (result.score === 3) {
   if (!alertedSymbols.has(result.symbol)) {
