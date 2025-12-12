@@ -120,6 +120,10 @@
     <option value="change24">24h Change</option>
   </select>
 </label>
+  <select id="sortOrder" style="margin-left:8px">
+  <option value="desc">Desc</option>
+  <option value="asc">Asc</option>
+  </select>
 
   <div id="tableView"></div>
   <div id="cardView"></div>
@@ -382,7 +386,8 @@ function applySort(results){
 
   const field = el.sortField.value || 'score';
   // default to descending order (highest first). If you later add a sort-order control, read it here.
-  const order = -1;
+  // safer: handle missing sortOrder control (defaults to descending)
+const order = (el.sortOrder && el.sortOrder.value === 'asc') ? 1 : -1;
 
   // getter for primary field -> map UI fields to actual object properties
   const getter = (r) => {
@@ -973,6 +978,7 @@ el.sortField.addEventListener('change', ()=>{
   if(!lastResults || !lastResults.length) return;
   applySort(lastResults);
   if(window.innerWidth >= 680) renderTable(lastResults); else renderCards(lastResults);
+  sortOrder: document.getElementById('sortOrder'),
 });
 
 </script>
