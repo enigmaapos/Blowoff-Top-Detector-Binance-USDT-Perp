@@ -1879,40 +1879,59 @@ case 'vol15m': return (typeof r.volume15m === 'number') ? r.volume15m : -Infinit
 // main sort function (in-place)
 function sortResults(results) {
   const key = (el.sortBy && el.sortBy.value) ? el.sortBy.value : 'score';
-  results.sort((a,b) => {
-    const A = getValueForKey(a,key);
-    const B = getValueForKey(b,key);
 
-    // alphabetical for symbol specifically
+  function normalizeVal(v){
+    if(typeof v === 'number') return Number.isNaN(v) ? -Infinity : v;
+    if(v === null || typeof v === 'undefined') return -Infinity;
+    if(typeof v === 'boolean') return v ? 1 : 0;
+    if(typeof v === 'string'){
+      const t = v.trim();
+      if(t === '') return -Infinity;
+      const num = Number(t.replace(/,/g,''));
+      if(!Number.isNaN(num)) return num;
+      return t.toLowerCase();
+    }
+    try {
+      const s = String(v);
+      const num = Number(s.replace(/,/g,''));
+      if(!Number.isNaN(num)) return num;
+      return s.toLowerCase();
+    } catch(e){
+      return -Infinity;
+    }
+  }
+
+  results.sort((a,b) => {
+    const Araw = getValueForKey(a,key);
+    const Braw = getValueForKey(b,key);
+    const A = normalizeVal(Araw);
+    const B = normalizeVal(Braw);
+
     if(key === 'symbol'){
-      if(A < B) return sortDesc ? 1 : -1;
-      if(A > B) return sortDesc ? -1 : 1;
+      const sA = (A||'').toString(), sB = (B||'').toString();
+      if(sA < sB) return sortDesc ? 1 : -1;
+      if(sA > sB) return sortDesc ? -1 : 1;
       return 0;
     }
 
-    // numeric (including phaseRank / simPhaseRank)
     if(typeof A === 'number' && typeof B === 'number'){
       if(A === B){
-        // tiebreakers: score desc, then similarity desc
         const t = (b.score||0) - (a.score||0);
         if(t !== 0) return t;
-        const s = (b.similarity||0) - (a.similarity||0);
-        return s;
+        return (b.similarity||0) - (a.similarity||0);
       }
       return sortDesc ? (B - A) : (A - B);
     }
 
-    // fallback string comparison (phase, simPhase, or other strings)
     const sA = (A === null || typeof A === 'undefined') ? '' : String(A);
     const sB = (B === null || typeof B === 'undefined') ? '' : String(B);
     if(sA < sB) return sortDesc ? 1 : -1;
     if(sA > sB) return sortDesc ? -1 : 1;
-    // final fallback tiebreakers
     const t2 = (b.score||0) - (a.score||0);
     if(t2 !== 0) return t2;
     return (b.similarity||0) - (a.similarity||0);
   });
-}
+      }
 
 // ====== Filtering: show only Distribution / Breakdown when toggled ======
 let showOnlyDist = false;
