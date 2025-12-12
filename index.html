@@ -172,6 +172,9 @@ const el = {
   tradeInterpret: document.getElementById('tradeInterpret')
 };
 
+    // add near the top of your script (globals)
+let lastResults = []; // stores last results so sort UI can re-render without re-run
+  
 let running=false, queue=[], totalTasks=0, doneTasks=0, autoTimer=null, countdownTimer=null;
 let requestsThisWindow=0, windowStart=Date.now(), SAFETY_WINDOW_MS=60000, SAFETY_MAX=900, SAFETY_PAUSE=30;
 let prevBlowoffSet = new Set();
@@ -371,29 +374,35 @@ function queueSymbolAnalysis(symbol, results){
 }
   
 
-  // ------- Sorting helper (NEW) -------
-function applySort(results){
-  const field = el.sortField.value || 'score';
-  const order = el.sortOrder.value === 'asc' ? 1 : -1;
 
-  // getter for primary field
+// ------- Sorting helper (fixed) -------
+function applySort(results){
+  // keep a reference of latest results so UI can re-sort
+  lastResults = results;
+
+  const field = el.sortField.value || 'score';
+  // default to descending order (highest first). If you later add a sort-order control, read it here.
+  const order = -1;
+
+  // getter for primary field -> map UI fields to actual object properties
   const getter = (r) => {
-    if(field === 'score') return r.score ?? -Infinity;
-    if(field === 'volSpike') return r.volSpike ?? -Infinity;
-    if(field === 'wickRatio') return r.wickRatio ?? -Infinity;
-    if(field === 'ema70DistPct') return r.ema70DistPct ?? -Infinity;
-    if(field === 'rsi4h') return r.rsi4h ?? -Infinity;
-    if(field === 'rsi1d') return r.rsi1d ?? -Infinity;
-    if(field === 'funding') return r.funding ?? -Infinity;
-    if(field === 'last') return r.last ?? -Infinity;
-    if(field === 'change24') return r.change24 ?? -Infinity;
-    return r.score ?? -Infinity;
+    switch(field){
+      case 'score': return (typeof r.score === 'number') ? r.score : -Infinity;
+      case 'volSpike': return (typeof r.volSpike4 === 'number') ? r.volSpike4 : (typeof r.volSpike === 'number' ? r.volSpike : -Infinity);
+      case 'wickRatio': return (typeof r.wickRatio4 === 'number') ? r.wickRatio4 : -Infinity;
+      case 'ema70DistPct': return (typeof r.ema70DistPct === 'number') ? r.ema70DistPct : -Infinity;
+      case 'rsi4h': return (typeof r.rsi4h === 'number') ? r.rsi4h : -Infinity;
+      case 'rsi1d': return (typeof r.rsi1d === 'number') ? r.rsi1d : -Infinity;
+      case 'funding': return (typeof r.fundingRate === 'number') ? r.fundingRate : -Infinity;
+      case 'last': return (typeof r.last === 'number') ? r.last : (typeof r.closeNow === 'number' ? r.closeNow : -Infinity);
+      case 'change24': return (typeof r.change24 === 'number') ? r.change24 : -Infinity;
+      default: return (typeof r.score === 'number') ? r.score : -Infinity;
+    }
   };
 
-  // sort with primary key then stable tie-breakers (score desc, volSpike desc, ema70DistPct desc)
+  // stable-ish sort: primary key, then fallback tie-breakers
   results.sort((a,b)=>{
-    const va = getter(a);
-    const vb = getter(b);
+    const va = getter(a), vb = getter(b);
 
     const na = (va === null || va === undefined || Number.isNaN(va));
     const nb = (vb === null || vb === undefined || Number.isNaN(vb));
@@ -401,19 +410,26 @@ function applySort(results){
     if(na) return 1 * order; // push missing to end
     if(nb) return -1 * order;
 
-    // compare primary
-    if(typeof va === 'string' && typeof vb === 'string'){
-      const cmp = va.localeCompare(vb);
-      if(cmp !== 0) return cmp * order;
-    } else {
-      if(vb - va !== 0) return (va - vb) * order;
+    // numeric comparison
+    if(typeof va === 'number' && typeof vb === 'number'){
+      if(va === vb){
+        // tie-breakers: score desc, volSpike4 desc, ema70DistPct desc
+        const t = ((b.score || 0) - (a.score || 0)) || ((b.volSpike4 || 0) - (a.volSpike4 || 0)) || ((b.ema70DistPct || 0) - (a.ema70DistPct || 0));
+        return t;
+      }
+      return (vb - va) * order; // since order is -1, this makes highest first
     }
 
-    // tie-breakers (always descending where meaningful)
-    const tie = (b.score - a.score) || (b.volSpike - a.volSpike) || (b.ema70DistPct - a.ema70DistPct);
-    return tie;
+    // fallback string compare
+    if(typeof va === 'string' && typeof vb === 'string'){
+      return va.localeCompare(vb) * order;
+    }
+
+    return 0;
   });
-  }
+
+  return results;
+}
   
 
 /* ---------- PHASE DETECTION & HELPERS ---------- */
@@ -900,8 +916,18 @@ async function runScan(once=false){
     } else results.forEach(r => r.similarity = 0);
 
     prevBlowoffSet = new Set(results.filter(r=> r.score >= (parseInt(el.threshold.value,10)||4)).map(r=>r.symbol));
-    if(window.innerWidth >= 680) renderTable(results); else renderCards(results);
 
+// make sure results have 'last' and 'change24' if available (getTopN supplied these for the prefilter list)
+results.forEach(r => {
+  if(!('last' in r) && r.closeNow) r.last = Number(r.closeNow);
+  if(!('change24' in r) && typeof r.change24 === 'undefined') r.change24 = (typeof r.change24 === 'undefined') ? (r.change24 || 0) : r.change24;
+});
+
+// apply the user-selected sort before rendering
+applySort(results);
+
+// render sorted results
+if(window.innerWidth >= 680) renderTable(lastResults); else renderCards(lastResults);
     // NEW: update trading interpretation panel
     updateTradingInterpretation(results);
 
@@ -941,6 +967,13 @@ el.oneShot.addEventListener('click', ()=>{ if(running) return; runScan(true); })
 el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensitivity.value; });
 if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}); } catch(e){} }
 (async function ping(){ try{ await fetch(API_BASE + '/fapi/v1/ping'); } catch(e){ console.warn('ping failed', e); } })();
+
+  // re-apply sort when user changes the sort field (re-renders last results if available)
+el.sortField.addEventListener('change', ()=>{
+  if(!lastResults || !lastResults.length) return;
+  applySort(lastResults);
+  if(window.innerWidth >= 680) renderTable(lastResults); else renderCards(lastResults);
+});
 
 </script>
 
