@@ -107,6 +107,20 @@
     <div id="safetyStatus" class="mutedBadge">Safety OK</div>
   </div>
 
+  <label style="display:flex;align-items:center">Sort by
+  <select id="sortField" style="margin-left:8px">
+    <option value="score">Score</option>
+    <option value="volSpike">Vol Spike</option>
+    <option value="wickRatio">Wick Ratio</option>
+    <option value="ema70DistPct">EMA Distance</option>
+    <option value="rsi4h">RSI 4H</option>
+    <option value="rsi1d">RSI 1D</option>
+    <option value="funding">Funding Rate</option>
+    <option value="last">Last Price</option>
+    <option value="change24">24h Change</option>
+  </select>
+</label>
+
   <div id="tableView"></div>
   <div id="cardView"></div>
 
@@ -355,6 +369,52 @@ function queueSymbolAnalysis(symbol, results){
     }
   });
 }
+  
+
+  // ------- Sorting helper (NEW) -------
+function applySort(results){
+  const field = el.sortField.value || 'score';
+  const order = el.sortOrder.value === 'asc' ? 1 : -1;
+
+  // getter for primary field
+  const getter = (r) => {
+    if(field === 'score') return r.score ?? -Infinity;
+    if(field === 'volSpike') return r.volSpike ?? -Infinity;
+    if(field === 'wickRatio') return r.wickRatio ?? -Infinity;
+    if(field === 'ema70DistPct') return r.ema70DistPct ?? -Infinity;
+    if(field === 'rsi4h') return r.rsi4h ?? -Infinity;
+    if(field === 'rsi1d') return r.rsi1d ?? -Infinity;
+    if(field === 'funding') return r.funding ?? -Infinity;
+    if(field === 'last') return r.last ?? -Infinity;
+    if(field === 'change24') return r.change24 ?? -Infinity;
+    return r.score ?? -Infinity;
+  };
+
+  // sort with primary key then stable tie-breakers (score desc, volSpike desc, ema70DistPct desc)
+  results.sort((a,b)=>{
+    const va = getter(a);
+    const vb = getter(b);
+
+    const na = (va === null || va === undefined || Number.isNaN(va));
+    const nb = (vb === null || vb === undefined || Number.isNaN(vb));
+    if(na && nb) return 0;
+    if(na) return 1 * order; // push missing to end
+    if(nb) return -1 * order;
+
+    // compare primary
+    if(typeof va === 'string' && typeof vb === 'string'){
+      const cmp = va.localeCompare(vb);
+      if(cmp !== 0) return cmp * order;
+    } else {
+      if(vb - va !== 0) return (va - vb) * order;
+    }
+
+    // tie-breakers (always descending where meaningful)
+    const tie = (b.score - a.score) || (b.volSpike - a.volSpike) || (b.ema70DistPct - a.ema70DistPct);
+    return tie;
+  });
+  }
+  
 
 /* ---------- PHASE DETECTION & HELPERS ---------- */
 function detectPhaseForSymbol(item){
