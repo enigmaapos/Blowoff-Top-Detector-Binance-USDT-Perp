@@ -91,6 +91,10 @@
     <option value="ema70DistPct">EMA stretch %</option>
     <option value="last">Last price</option>
     <option value="symbol">Symbol</option>
+    <option value="volSpike">Vol Spike</option>
+    <option value="vol1d">Volume 1D</option>
+<option value="vol4h">Volume 4H</option>
+<option value="vol15m">Volume 15m</option>
   </select>
 </label>
 <button id="sortDir" class="alt" title="Toggle sort direction" style="margin-left:6px">Desc</button>
@@ -1478,20 +1482,24 @@ function detectAccumulationGeneric(closes, highs, lows, vols, period=30, sensiti
   return {isAccum, score, reasons, confidence, relSD};
 }
 
+
 /* ---------- QUEUE ANALYSIS (fetch klines & compute features) ---------- */
 function queueSymbolAnalysis(symbol, results){
   queue.push(async ()=>{
     try{
       const promises = [];
+      // add 1d klines fetch
       promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=4h&limit=40`));
       promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1h&limit=60`));
       promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=15m&limit=80`));
+      promises.push(safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${symbol}&interval=1d&limit=10`)); // NEW: 1D
       promises.push(safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${symbol}&limit=1`));
-      const [k4h, k1h, k15, f] = await Promise.all(promises);
+      const [k4h, k1h, k15, k1d, f] = await Promise.all(promises);
 
       const closes4h = k4h.map(k=>Number(k[4])); const highs4h = k4h.map(k=>Number(k[2])); const lows4h = k4h.map(k=>Number(k[3])); const vols4h = k4h.map(k=>Number(k[5]));
       const closes1h = k1h.map(k=>Number(k[4])); const highs1h = k1h.map(k=>Number(k[2])); const lows1h = k1h.map(k=>Number(k[3])); const vols1h = k1h.map(k=>Number(k[5]));
       const closes15 = k15.map(k=>Number(k[4])); const highs15 = k15.map(k=>Number(k[2])); const lows15 = k15.map(k=>Number(k[3])); const vols15 = k15.map(k=>Number(k[5]));
+      const closes1d = (Array.isArray(k1d) ? k1d.map(k=>Number(k[4])) : []); const vols1d = (Array.isArray(k1d) ? k1d.map(k=>Number(k[5])) : []);
 
       const last4 = k4h[k4h.length-1], prev4 = k4h[k4h.length-2] || last4;
       const open4 = Number(last4[1]), high4 = Number(last4[2]), low4 = Number(last4[3]), close4 = Number(last4[4]);
@@ -1512,6 +1520,11 @@ function queueSymbolAnalysis(symbol, results){
       const rsi15 = rsiFromCloses(closes15, 14);
       const volMA15 = sma(vols15, Math.min(10, vols15.length)) || 1;
       const volSpike15 = Number((Number(closes15.length ? vols15[vols15.length-1] : 1) / volMA15).toFixed(2));
+
+      // --- NEW: raw last-candle volumes
+      const lastVol1d = (vols1d && vols1d.length) ? Number(vols1d[vols1d.length - 1]) : 0;
+      const lastVol4h = (vols4h && vols4h.length) ? Number(vols4h[vols4h.length - 1]) : 0;
+      const lastVol15m = (vols15 && vols15.length) ? Number(vols15[vols15.length - 1]) : 0;
 
       let score=0;
       const signals={};
@@ -1568,6 +1581,10 @@ function queueSymbolAnalysis(symbol, results){
         rsi1d, rsi4h,
         rsi1h, rsi15,
         volSpike4, volSpike15,
+        // NEW: raw volumes
+        volume1d: lastVol1d,
+        volume4h: lastVol4h,
+        volume15m: lastVol15m,
         wickRatio4,
         ema70DistPct: emaDistPct,
         lowerHigh,
@@ -1583,7 +1600,10 @@ function queueSymbolAnalysis(symbol, results){
       el.debug.innerText += `\nError ${symbol}: ${err.message}`;
     }
   });
-}
+                                                                                                                  }
+      
+
+      
 
 /* ---------- PHASE DETECTION & HELPERS ---------- */
 
@@ -1821,6 +1841,10 @@ function getValueForKey(r, key) {
     case 'ema70DistPct': return Math.abs(r.ema70DistPct || 0);
     case 'last': return r.closeNow || 0;
     case 'symbol': return (r.symbol || '').toUpperCase();
+      case 'volSpike': return (typeof r.volSpike4 === 'number') ? r.volSpike4 : -Infinity;
+case 'vol1d': return (typeof r.volume1d === 'number') ? r.volume1d : -Infinity;
+case 'vol4h': return (typeof r.volume4h === 'number') ? r.volume4h : -Infinity;
+case 'vol15m': return (typeof r.volume15m === 'number') ? r.volume15m : -Infinity;
 
     // phase text
     case 'phase': {
