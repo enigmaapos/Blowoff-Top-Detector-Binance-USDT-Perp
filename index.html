@@ -973,12 +973,15 @@ el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensiti
 if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}); } catch(e){} }
 (async function ping(){ try{ await fetch(API_BASE + '/fapi/v1/ping'); } catch(e){ console.warn('ping failed', e); } })();
 
-  // re-apply sort when user changes the sort field (re-renders last results if available)
-el.sortField.addEventListener('change', ()=>{
-  if(!lastResults || !lastResults.length) return;
+  // make sure el.sortField and el.sortOrder exist earlier, e.g.:
+// el.sortField = document.getElementById('sortField');
+// el.sortOrder = document.getElementById('sortOrder');
+
+el.sortField && el.sortField.addEventListener('change', () => {
+  if (!lastResults || !lastResults.length) return;
   applySort(lastResults);
-  if(window.innerWidth >= 680) renderTable(lastResults); else renderCards(lastResults);
-  sortOrder: document.getElementById('sortOrder'),
+  if (window.innerWidth >= 680) renderTable(lastResults);
+  else renderCards(lastResults);
 });
 
 </script>
