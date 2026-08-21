@@ -2376,10 +2376,7 @@ function renderTable(results){
         <td class="small">vol×${r.volSpike4} wick:${(r.wickRatio4||0).toFixed(2)} ema:${r.ema70DistPct}%</td>
         <td class="small">${(r.fundingRate||0).toFixed(6)}<br>Cycle sim: <strong>${simPct}%</strong><br>${accumHtml}<div class="small" style="color:#9fb3cc">TFs: ${tfList || '—'}</div></td>
       </tr>
-      <div class="small" style="color:#7edcff">
-  Cycle Match: <strong>${simPct}%</strong> —
-  <span>${r.simPhase || classifySimilarityPhase(r.similarity)}</span>
-</div>
+      
       <tr style="background:rgba(255,255,255,0.01)"><td colspan="5" style="padding:8px 12px;color:${expl.color}">
         <strong>${expl.label}</strong> — ${expl.explanation}
         ${r.phase? `<div style="margin-top:6px;color:#cfe8ff">Phase: <strong>${r.phase.phase}</strong> (${r.phase.confidence}%) • ${r.phase.reasons.join('; ')}</div>` : ''}
@@ -2435,7 +2432,10 @@ function renderCards(results){
           EMA∆: ${r.ema70DistPct}% • Funding: ${(r.fundingRate||0).toFixed(6)}<br>
           <small style="color:#cfe8ff">Cycle similarity: <strong>${simPct}%</strong></small>
         </div>
-        
+        <div class="small" style="color:#7edcff">
+  Cycle Match: <strong>${simPct}%</strong> —
+  <span>${r.simPhase || classifySimilarityPhase(r.similarity)}</span>
+</div>
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.03);">
           <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% reversal chance</div>
           <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
