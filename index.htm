@@ -1280,106 +1280,675 @@ function rsiFromCloses(closes,period=14){ if(!closes||closes.length<=period) ret
 function pct(a,b){ return b===0?0:((a-b)/b)*100; }
 
 /* ==========================================================
-   NEW CORRECTION GUIDE — GPS / TRIA / BTW / AVAAI / SANTOS
-   Purpose: identify the pre-correction risk stage and confirm
-   a significant correction by proximity/touch of 4H EMA200.
-   IMPORTANT: EMA200 proximity confirms depth; RSI alone does not.
+   FINAL CORRECTION GUIDE
+   Reference patterns:
+   GPS / TRIA / BTW / AVAAI / SANTOS / GALA / PENGU / WIF
+
+   CORE RULES
+   ----------------------------------------------------------
+   RSI       = extension / overheating
+   ACCUM     = continuation support vs weakness
+   VOLUME    = exhaustion / participation
+   WICK      = rejection / distribution evidence
+   STRUCTURE = lower-high / downside confirmation
+   EMA200    = significant-correction DEPTH confirmation
+
+   IMPORTANT:
+   - High RSI alone is NOT a significant-correction signal.
+   - Strong accumulation can allow an overbought coin to continue.
+   - EMA200 touch/near-touch confirms a materially significant
+     correction.
    ========================================================== */
-function getCorrectionGuide(item){
-  const rsi = Number(item.rsi4h || 0);
-  const accum = Number(item.accumCombined?.confidence || 0);
-  const accum4h = Number((item.accumChecks || []).find(t => t.tf === '4h')?.result?.confidence || 0);
-  const close = Number(item.closeNow || 0);
-  const ema200 = Number(item.ema200_4h || 0);
-  const emaDist = ema200 > 0 ? ((close - ema200) / ema200) * 100 : null;
-  const drop = Number(item.dropPctFromPeak || 0);
-  const wick = Number(item.wickRatio4 || 0);
-  const vol = Number(item.volSpike4 || 1);
-  const lowerHigh = !!item.lowerHigh;
-  const combinedAbove4h = accum4h > 0 && accum > accum4h;
 
-  // A correction is considered materially significant when price has
-  // touched or come very near 4H EMA200. This is the confirmation stage.
-  const lows = Array.isArray(item.k4h) ? item.k4h.slice(-8).map(k=>Number(k[3])).filter(Number.isFinite) : [];
-  const recentLow = lows.length ? Math.min(...lows) : close;
-  const touchedEMA200 = ema200 > 0 && recentLow <= ema200 * 1.01;
-  const nearEMA200 = ema200 > 0 && emaDist <= 5;
+function getCorrectionGuide(item) {
 
-  if(touchedEMA200 || nearEMA200){
+  /* ---------- DATA ---------- */
+
+  const rsi = Number(item.rsi4h ?? 0);
+
+  const accum = Number(
+    item.accumCombined?.confidence ??
+    item.accum ??
+    0
+  );
+
+  const accum4h = Number(
+    (item.accumChecks || [])
+      .find(x => x.tf === '4h')
+      ?.result?.confidence ?? 0
+  );
+
+  const close = Number(
+    item.closeNow ??
+    item.last ??
+    item.price ??
+    0
+  );
+
+  const ema200 = Number(
+    item.ema200_4h ??
+    item.ema2004h ??
+    0
+  );
+
+  const emaDist =
+    ema200 > 0
+      ? ((close - ema200) / ema200) * 100
+      : null;
+
+  const drop = Number(
+    item.dropPctFromPeak ??
+    0
+  );
+
+  const wick = Number(
+    item.wickRatio4 ??
+    0
+  );
+
+  const vol = Number(
+    item.volSpike4 ??
+    1
+  );
+
+  const lowerHigh =
+    !!item.lowerHigh ||
+    Number(item.lowerHighCount ?? 0) >= 2;
+
+  const higherLow =
+    !!item.higherLow ||
+    !!item.hasHigherLow ||
+    Number(item.higherLowCount ?? 0) >= 1;
+
+  const priceChange4h =
+    Number(item.priceChange4h ?? 0);
+
+  const priceChange1h =
+    Number(item.priceChange1h ?? 0);
+
+  const greenVolume =
+    Number(item.greenVolRatio ?? 0);
+
+  const combinedAbove4h =
+    accum4h > 0 &&
+    accum > accum4h;
+
+
+  /* ---------- RECENT 4H LOW ---------- */
+
+  const lows = Array.isArray(item.k4h)
+    ? item.k4h
+        .slice(-12)
+        .map(k => Number(k[3]))
+        .filter(Number.isFinite)
+    : [];
+
+  const recentLow =
+    lows.length > 0
+      ? Math.min(...lows)
+      : close;
+
+
+  /* ==========================================================
+     EMA200 DEPTH TEST
+     ========================================================== */
+
+  /*
+   * Touch:
+   * Recent 4H candle reaches EMA200 or penetrates it.
+   */
+
+  const touchedEMA200 =
+    ema200 > 0 &&
+    recentLow <= ema200 * 1.01;
+
+
+  /*
+   * Near:
+   * Current price is within ±5% of EMA200.
+   */
+
+  const nearEMA200 =
+    ema200 > 0 &&
+    emaDist !== null &&
+    emaDist <= 5 &&
+    emaDist >= -5;
+
+
+  const significantEMA200 =
+    touchedEMA200 ||
+    nearEMA200;
+
+
+  /* ==========================================================
+     RECOVERY CONDITIONS
+     ========================================================== */
+
+  const greenVolumeConfirmed =
+    greenVolume >= 1.5 ||
+    !!item.greenVolumeConfirmed;
+
+
+  /* ==========================================================
+     1. SIGNIFICANT CORRECTION / EMA200
+     ----------------------------------------------------------
+     HIGHEST PRIORITY.
+
+     GPS / TRIA / BTW pattern:
+     correction becomes significant when price reaches or
+     approaches the 4H EMA200.
+     ========================================================== */
+
+  if (significantEMA200) {
+
+    /*
+     * If momentum has cooled and 4H accumulation is recovering,
+     * classify as mature rather than active downside.
+     */
+
+    if (
+      accum4h >= 60 &&
+      rsi < 70 &&
+      (higherLow || !lowerHigh)
+    ) {
+
+      return {
+        code: "MATURE_CORRECTION_RETURN_TO_NORMAL",
+
+        label:
+          "MATURE CORRECTION / RETURN-TO-NORMAL",
+
+        level:
+          "CORRECTION MATURED",
+
+        color: "#ffd966",
+
+        confidence: 92,
+
+        emaDist,
+        ema200,
+        combinedAbove4h,
+
+        reasons: [
+          "EMA200 correction depth reached",
+          `4H RSI ${rsi.toFixed(1)}`,
+          `4H accumulation ${accum4h}%`,
+          `combined accumulation ${accum}%`,
+          higherLow
+            ? "higher-low forming"
+            : "structure stabilizing",
+          "momentum cooling"
+        ]
+      };
+    }
+
+
     return {
-      code:'SIGNIFICANT_CORRECTION_EMA200',
-      label:'SIGNIFICANT CORRECTION / EMA200',
-      level:'CONFIRMED',
-      color:'#ff6b43',
-      confidence:Math.min(99, Math.round(80 + Math.max(0, 5 - Math.max(0, emaDist || 0)) * 3)),
+      code:
+        "SIGNIFICANT_CORRECTION_EMA200",
+
+      label:
+        "SIGNIFICANT CORRECTION / EMA200",
+
+      level:
+        "CONFIRMED SIGNIFICANT CORRECTION",
+
+      color:
+        "#ff3f3f",
+
+      confidence:
+        touchedEMA200 ? 99 : 95,
+
       emaDist,
       ema200,
       combinedAbove4h,
-      reasons:[
-        `4H EMA200 ${ema200 ? ema200.toPrecision(8) : 'n/a'}`,
-        emaDist !== null ? `price ${emaDist.toFixed(1)}% from EMA200` : 'EMA200 distance unavailable',
-        touchedEMA200 ? 'recent 4H low touched EMA200' : 'price is within 5% of EMA200'
+
+      reasons: [
+        `4H EMA200 ${ema200 ? ema200.toPrecision(8) : "n/a"}`,
+
+        emaDist !== null
+          ? `price ${emaDist.toFixed(1)}% from EMA200`
+          : "EMA200 distance unavailable",
+
+        touchedEMA200
+          ? "recent 4H low touched/penetrated EMA200"
+          : "price is within 5% of EMA200",
+
+        `4H accumulation ${accum4h}%`,
+
+        `combined accumulation ${accum}%`,
+
+        "correction depth confirmed"
       ]
     };
   }
 
-  // Aggressive pre-drop / mania stage: this is the fast-warning setup seen
-  // before AVAAI/SANTOS-type corrections. Combined accumulation being above
-  // 4H accumulation is retained as a supporting warning, not a guarantee.
-  if(rsi >= 85 && accum <= 55 && (emaDist === null || emaDist > 8) &&
-     (vol >= 1.2 || wick >= 1.2 || lowerHigh || drop >= 15)){
+
+  /* ==========================================================
+     2. HIGH CORRECTION / ACTIVE DOWNSIDE
+     ----------------------------------------------------------
+     AVAAI / SANTOS-type aggressive correction behavior.
+
+     The coin is already showing meaningful downside pressure,
+     but EMA200 has NOT yet confirmed the full correction depth.
+     ========================================================== */
+
+  const activeDownside =
+    rsi >= 78 &&
+    accum4h <= 45 &&
+    (drop >= 15 || lowerHigh) &&
+    (
+      priceChange4h <= -3 ||
+      priceChange1h <= -2 ||
+      (drop >= 20 && lowerHigh) ||
+      Number(item.downsideAcceleration ?? 0) >= 1
+    );
+
+
+  if (activeDownside) {
+
     return {
-      code:'HIGH_CORRECTION_RISK_MANIA',
-      label:'HIGH CORRECTION RISK / MANIA',
-      level:'AGGRESSIVE PRE-CORRECTION',
-      color:'#ff4d4d',
-      confidence:Math.min(99, 70 + Math.round(Math.min(20, (rsi-85)*1.5)) + (combinedAbove4h ? 5 : 0)),
-      emaDist, ema200, combinedAbove4h,
-      reasons:[`4H RSI ${rsi.toFixed(1)}`, `combined accumulation ${accum}%`,
-        combinedAbove4h ? `combined accumulation > 4H (${accum}% > ${accum4h}%)` : `4H accumulation ${accum4h}%`,
-        wick >= 1.2 ? `upper wick ${wick.toFixed(2)}` : '', vol >= 1.2 ? `volume ×${vol}` : '', lowerHigh ? 'lower highs' : ''].filter(Boolean)
+      code:
+        "HIGH_CORRECTION_ACTIVE_DOWNSIDE",
+
+      label:
+        "HIGH CORRECTION / ACTIVE DOWNSIDE",
+
+      level:
+        "AGGRESSIVE ACTIVE CORRECTION",
+
+      color:
+        "#ff7043",
+
+      confidence:
+        Math.min(
+          99,
+          75 +
+          Math.round(
+            Math.min(
+              15,
+              Math.max(0, drop - 15) * 0.5
+            )
+          )
+        ),
+
+      emaDist,
+      ema200,
+      combinedAbove4h,
+
+      reasons: [
+        `4H RSI ${rsi.toFixed(1)}`,
+        `4H accumulation ${accum4h}%`,
+        `drop from peak ${drop.toFixed(1)}%`,
+
+        lowerHigh
+          ? "lower-high/downside structure"
+          : "downside pressure",
+
+        priceChange4h <= -3
+          ? `4H decline ${priceChange4h.toFixed(1)}%`
+          : "",
+
+        priceChange1h <= -2
+          ? `1H decline ${priceChange1h.toFixed(1)}%`
+          : "",
+
+        emaDist !== null
+          ? `EMA200 still ${emaDist.toFixed(1)}% away`
+          : "EMA200 unavailable",
+
+        "EMA200 not yet confirmed"
+      ].filter(Boolean)
     };
   }
 
-  // Already correcting, but still clearly above EMA200: active downside.
-  if(rsi >= 78 && accum <= 55 && (drop >= 15 || lowerHigh) && (emaDist === null || emaDist > 5)){
+
+  /* ==========================================================
+     3. HIGH CORRECTION RISK / MANIA
+     ----------------------------------------------------------
+     AVAAI / SANTOS early-warning pattern.
+
+     Extreme RSI + weak 4H accumulation + exhaustion evidence.
+
+     This is PRE-CORRECTION, not confirmation.
+     ========================================================== */
+
+  const mania =
+    rsi >= 85 &&
+    accum4h <= 45 &&
+    (emaDist === null || emaDist > 8) &&
+    (
+      vol >= 1.2 ||
+      wick >= 1.2 ||
+      lowerHigh ||
+      drop >= 15
+    );
+
+
+  if (mania) {
+
     return {
-      code:'HIGH_CORRECTION_ACTIVE_DOWNSIDE',
-      label:'HIGH CORRECTION / ACTIVE DOWNSIDE',
-      level:'AGGRESSIVE ACTIVE CORRECTION',
-      color:'#ff7a45',
-      confidence:Math.min(98, 65 + Math.round(Math.min(20, Math.max(0, drop-15)*0.7)) + (combinedAbove4h ? 4 : 0)),
-      emaDist, ema200, combinedAbove4h,
-      reasons:[`4H RSI ${rsi.toFixed(1)}`, `drop/extension ${drop.toFixed(1)}%`, `combined accumulation ${accum}%`,
-        combinedAbove4h ? `combined accumulation > 4H (${accum}% > ${accum4h}%)` : `4H accumulation ${accum4h}%`,
-        lowerHigh ? 'lower highs' : 'downside structure'].filter(Boolean)
+      code:
+        "HIGH_CORRECTION_RISK_MANIA",
+
+      label:
+        "HIGH CORRECTION RISK / MANIA",
+
+      level:
+        "AGGRESSIVE PRE-CORRECTION",
+
+      color:
+        "#ff3030",
+
+      confidence:
+        Math.min(
+          99,
+          78 +
+          Math.round(
+            Math.min(
+              15,
+              Math.max(0, rsi - 85) * 1.5
+            )
+          ) +
+          (combinedAbove4h ? 3 : 0)
+        ),
+
+      emaDist,
+      ema200,
+      combinedAbove4h,
+
+      reasons: [
+        `4H RSI ${rsi.toFixed(1)}`,
+
+        `4H accumulation ${accum4h}%`,
+
+        `combined accumulation ${accum}%`,
+
+        combinedAbove4h
+          ? `combined accumulation > 4H (${accum}% > ${accum4h}%)`
+          : "",
+
+        vol >= 1.2
+          ? `volume ×${vol.toFixed(2)}`
+          : "",
+
+        wick >= 1.2
+          ? `upper wick ${wick.toFixed(2)}`
+          : "",
+
+        lowerHigh
+          ? "lower highs"
+          : "",
+
+        drop >= 15
+          ? `drop from peak ${drop.toFixed(1)}%`
+          : "",
+
+        emaDist !== null
+          ? `EMA200 distance ${emaDist.toFixed(1)}%`
+          : ""
+      ].filter(Boolean)
     };
   }
 
-  // High-risk setup without enough evidence to call it mania.
-  if(rsi >= 78 && accum <= 50 && ((emaDist !== null && emaDist > 12) || lowerHigh || wick >= 1.8)){
+
+  /* ==========================================================
+     4. HIGH CORRECTION RISK / PRE-CORRECTION
+     ----------------------------------------------------------
+     General high-risk condition.
+
+     Less aggressive than MANIA.
+     ========================================================== */
+
+  const preCorrection =
+    rsi >= 78 &&
+    accum4h <= 50 &&
+    (
+      (emaDist !== null && emaDist > 12) ||
+      lowerHigh ||
+      wick >= 1.8 ||
+      drop >= 15
+    );
+
+
+  if (preCorrection) {
+
     return {
-      code:'HIGH_CORRECTION_RISK',
-      label:'HIGH CORRECTION RISK',
-      level:'HIGH WATCH',
-      color:'#ffd966',
-      confidence:Math.min(95, 60 + Math.round(Math.min(20, (rsi-78)*1.2)) + (combinedAbove4h ? 4 : 0)),
-      emaDist, ema200, combinedAbove4h,
-      reasons:[`4H RSI ${rsi.toFixed(1)}`, `accumulation ${accum}%`,
-        combinedAbove4h ? `combined accumulation > 4H (${accum}% > ${accum4h}%)` : `4H accumulation ${accum4h}%`,
-        lowerHigh ? 'lower highs' : '', wick >= 1.8 ? `upper wick ${wick.toFixed(2)}` : ''].filter(Boolean)
+      code:
+        "HIGH_CORRECTION_RISK",
+
+      label:
+        "HIGH CORRECTION RISK",
+
+      level:
+        "HIGH WATCH",
+
+      color:
+        "#ffd966",
+
+      confidence:
+        Math.min(
+          95,
+          65 +
+          Math.round(
+            Math.min(
+              20,
+              Math.max(0, rsi - 78) * 1.2
+            )
+          ) +
+          (combinedAbove4h ? 4 : 0)
+        ),
+
+      emaDist,
+      ema200,
+      combinedAbove4h,
+
+      reasons: [
+        `4H RSI ${rsi.toFixed(1)}`,
+        `4H accumulation ${accum4h}%`,
+        `combined accumulation ${accum}%`,
+
+        lowerHigh
+          ? "lower highs"
+          : "",
+
+        wick >= 1.8
+          ? `upper wick ${wick.toFixed(2)}`
+          : "",
+
+        drop >= 15
+          ? `drop from peak ${drop.toFixed(1)}%`
+          : "",
+
+        emaDist !== null
+          ? `EMA200 distance ${emaDist.toFixed(1)}%`
+          : ""
+      ].filter(Boolean)
     };
   }
 
-  if(rsi >= 75 && accum <= 60){
-    return { code:'CORRECTION_WATCH', label:'CORRECTION WATCH', level:'WATCH', color:'#9fb3cc', confidence:50,
-      emaDist, ema200, combinedAbove4h,
-      reasons:[`4H RSI ${rsi.toFixed(1)}`, `combined accumulation ${accum}%`, emaDist !== null ? `EMA200 distance ${emaDist.toFixed(1)}%` : 'EMA200 unavailable'] };
+
+  /* ==========================================================
+     5. CORRECTION WATCH
+     ----------------------------------------------------------
+     RSI elevated but insufficient evidence for HIGH RISK.
+     ========================================================== */
+
+  if (
+    rsi >= 75 &&
+    accum4h <= 60
+  ) {
+
+    return {
+      code:
+        "CORRECTION_WATCH",
+
+      label:
+        "CORRECTION WATCH",
+
+      level:
+        "WATCH",
+
+      color:
+        "#9fb3cc",
+
+      confidence:
+        50,
+
+      emaDist,
+      ema200,
+      combinedAbove4h,
+
+      reasons: [
+        `4H RSI ${rsi.toFixed(1)}`,
+        `4H accumulation ${accum4h}%`,
+        `combined accumulation ${accum}%`,
+
+        emaDist !== null
+          ? `EMA200 distance ${emaDist.toFixed(1)}%`
+          : "EMA200 unavailable"
+      ]
+    };
   }
 
-  return { code:'NO_SIGNIFICANT_CORRECTION_SIGNAL', label:'NO SIGNIFICANT CORRECTION SIGNAL', level:'LOW', color:'#9fb3cc', confidence:20,
-    emaDist, ema200, combinedAbove4h, reasons:[`4H RSI ${rsi.toFixed(1)}`, `combined accumulation ${accum}%`] };
-}
+
+  /* ==========================================================
+     6. POST-CORRECTION ACCUMULATION / RECOVERY
+     ----------------------------------------------------------
+     Important for PENGU/WIF-type situations:
+
+     Strong accumulation + improving structure should NOT be
+     classified as high correction merely because RSI was high.
+     ========================================================== */
+
+  if (
+    accum4h >= 70 &&
+    rsi >= 40 &&
+    rsi <= 70 &&
+    higherLow &&
+    (greenVolumeConfirmed || !lowerHigh)
+  ) {
+
+    return {
+      code:
+        "POST_CORRECTION_RECOVERY",
+
+      label:
+        "POST-CORRECTION ACCUMULATION / RECOVERY",
+
+      level:
+        "RECOVERY",
+
+      color:
+        "#66f9a1",
+
+      confidence:
+        88,
+
+      emaDist,
+      ema200,
+      combinedAbove4h,
+
+      reasons: [
+        `4H accumulation ${accum4h}%`,
+        `combined accumulation ${accum}%`,
+        `RSI ${rsi.toFixed(1)}`,
+        "higher-low structure",
+
+        greenVolumeConfirmed
+          ? "green-volume confirmation"
+          : "structure stabilizing",
+
+        "correction pressure weakening"
+      ]
+    };
+  }
+
+
+  /* ==========================================================
+     7. NORMAL / CONTINUATION
+     ----------------------------------------------------------
+     PENGU / WIF lesson:
+
+     High RSI + strong accumulation is NOT automatically
+     a correction.
+     ========================================================== */
+
+  if (
+    rsi >= 80 &&
+    accum4h >= 60 &&
+    !lowerHigh
+  ) {
+
+    return {
+      code:
+        "OVERBOUGHT_CONTINUATION_SUPPORTED",
+
+      label:
+        "OVERBOUGHT / CONTINUATION SUPPORTED",
+
+      level:
+        "CONTINUATION",
+
+      color:
+        "#66d9ff",
+
+      confidence:
+        80,
+
+      emaDist,
+      ema200,
+      combinedAbove4h,
+
+      reasons: [
+        `4H RSI ${rsi.toFixed(1)}`,
+        `4H accumulation ${accum4h}%`,
+        `combined accumulation ${accum}%`,
+        "strong accumulation supports continuation",
+        "RSI alone does not confirm correction",
+        emaDist !== null
+          ? `EMA200 distance ${emaDist.toFixed(1)}%`
+          : "EMA200 unavailable"
+      ]
+    };
+  }
+
+
+  /* ==========================================================
+     8. NO SIGNIFICANT CORRECTION SIGNAL
+     ========================================================== */
+
+  return {
+    code:
+      "NO_SIGNIFICANT_CORRECTION_SIGNAL",
+
+    label:
+      "NO SIGNIFICANT CORRECTION SIGNAL",
+
+    level:
+      "LOW",
+
+    color:
+      "#9fb3cc",
+
+    confidence:
+      20,
+
+    emaDist,
+    ema200,
+    combinedAbove4h,
+
+    reasons: [
+      `4H RSI ${rsi.toFixed(1)}`,
+      `4H accumulation ${accum4h}%`,
+      `combined accumulation ${accum}%`,
+
+      emaDist !== null
+        ? `EMA200 distance ${emaDist.toFixed(1)}%`
+        : "EMA200 unavailable"
+    ]
+  };
+    }
 
 function stdDev(arr){ if(!arr||arr.length===0) return 0; const mean = arr.reduce((s,x)=>s+x,0)/arr.length; const v = arr.reduce((s,x)=>s+Math.pow(x-mean,2),0)/arr.length; return Math.sqrt(v); }
 function dot(a,b){ let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s; }
