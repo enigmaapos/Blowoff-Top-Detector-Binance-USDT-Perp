@@ -1092,6 +1092,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const volSpike4 = Number((Number(last4[5]) / volMA4).toFixed(2));
     const ema70_4 = ema(closes4h, 70) || ema(closes4h, Math.min(21, closes4h.length));
     const emaDistPct = ema70_4 ? Number(pct(close4, ema70_4).toFixed(2)) : 0;
+    const ema200_4 = closes4h.length >= 200 ? ema(closes4h, 200) : null;
+    const ema200DistPct = ema200_4 ? Number(pct(close4, ema200_4).toFixed(2)) : null;
     const rsi4h = rsiFromCloses(closes4h, 14);
     const rsi1d = rsiFromCloses(closes4h.slice(-9).map(v=>v), 14);
     const lowerHigh = (k4h && k4h.length>1) ? Number(high4) < Number(k4h[k4h.length-2][2]) : false;
