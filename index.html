@@ -2435,10 +2435,7 @@ function renderCards(results){
           EMA∆: ${r.ema70DistPct}% • Funding: ${(r.fundingRate||0).toFixed(6)}<br>
           <small style="color:#cfe8ff">Cycle similarity: <strong>${simPct}%</strong></small>
         </div>
-        <div class="small" style="color:#7edcff">
-  Cycle Match: <strong>${simPct}%</strong> —
-  <span>${r.simPhase || classifySimilarityPhase(r.similarity)}</span>
-</div>
+        
         <div style="margin-top:8px;padding-top:8px;border-top:1px dashed rgba(255,255,255,0.03);">
           <div style="color:${expl.color};font-weight:700">${expl.label} — ${expl.prob}% reversal chance</div>
           <div style="color:#cfe8ff;font-size:13px;margin-top:6px">${expl.explanation}</div>
