@@ -1075,6 +1075,14 @@ el.symbolClearCache.addEventListener('click', () => {
   setTimeout(()=> el.symbolStatus.innerText = '', 2600);
 });
 
+  // Shared numeric average helper used by market-analysis layers.
+  // Kept global because 1D volume analysis runs during symbol analysis too.
+  function avg(a){
+    return Array.isArray(a) && a.length
+      ? a.reduce((x,y)=>x+Number(y||0),0)/a.length
+      : 0;
+  }
+
   /* ============================================================
    UPGRADED TOP-DETECTION STACK 
    Preferred stack:
@@ -1096,7 +1104,6 @@ function calculateTopDetectionStack(item){
     if(closes.length < 20) return {score:0, level:'INSUFFICIENT DATA', components:{}, reasons:[], meta:{}};
 
     const clamp=(n,a=0,b=100)=>Math.max(a,Math.min(b,n));
-    const avg=(a)=>a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
     const pct=(a,b)=>b ? ((a-b)/b)*100 : 0;
     const last=closes[closes.length-1];
     const recentHigh=Math.max(...highs.slice(-40));
