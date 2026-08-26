@@ -6,7 +6,7 @@
 
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Blowoff Scanner • Funding Filters • Secure Login</title>
+<title>Blowoff Scanner • Secure Login</title>
 <style>
   :root{
     --bg:#07101a;
@@ -792,12 +792,12 @@ body.authLocked{overflow:hidden}
             <option value="symbol">Symbol</option>
             <option value="volSpike">Vol Spike</option>
             <option value="vol1d">Volume 1D</option>
+            <option value="vol1dTrend">1D Volume Trend</option>
             <option value="vol4h">Volume 4H</option>
             <option value="vol15m">Volume 15m</option>
             <option value="cycleMatch">Cycle Match %</option>
             <option value="correctionRank">Correction Status</option>
             <option value="correctionConfidence">Correction Confidence</option>
-            <option value="fundingRate">Funding Rate</option>
             <option value="phase">Market Phase</option>
             <option value="phaseRank">Market Phase Rank</option>
             <option value="simPhase">Similarity Phase</option>
@@ -818,16 +818,6 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
       <div class="controlGrid three">
-        <div class="controlItem">
-          <label class="controlLabel">Funding Direction</label>
-          <select id="fundingFilter">
-            <option value="ALL">All Funding</option>
-            <option value="NEGATIVE">🔴 Negative Funding (&lt; 0)</option>
-            <option value="POSITIVE">🟢 Positive Funding (&gt; 0)</option>
-            <option value="NEUTRAL">⚪ Neutral Funding (= 0)</option>
-          </select>
-          <div class="dashboardHint">Filter results by the latest Binance futures funding rate.</div>
-        </div>
         <div class="controlItem">
           <label class="controlLabel">Correction Status</label>
           <select id="correctionFilter">
@@ -950,7 +940,6 @@ const el = {
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir'),
   correctionFilter: document.getElementById('correctionFilter'),
-  fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter')
 };
@@ -1136,6 +1125,8 @@ function calculateTopDetectionStack(item){
     }
     const rsi=rsiSeries(closes,14);
     const rsiNow=rsi.length?rsi[rsi.length-1]:Number(item.rsi4h||0);
+    const oneDVolumeWeakening = !!item.volume1dWeakening && Number(item.volume1dTrendPct) <= -10;
+    const oneDVolumeFalling = !!item.volume1dFalling && Number(item.volume1dTrendPct) <= -20;
     const rsiPrev=rsi.length?rsi[Math.max(0,rsi.length-5)]:rsiNow;
     const e20=emaSeries(closes,20); const e70=emaSeries(closes,70);
     const ema20=e20.length?e20[e20.length-1]:0;
@@ -1203,7 +1194,7 @@ function calculateTopDetectionStack(item){
       distribution: distribution ? clamp(45 + (volumeFalling?15:0) + (momentumDecel?15:0) + (lowerHighSignal?15:0)) : 0,
       failedBreakout: failedBreakout ? 100 : 0,
       lowerHighCHoCH: lowerHighSignal ? 70 : 0,
-      volumeExhaustion: (nearPeak && volumeFalling) ? 85 : (nearPeak && volSpike<0.9 ? 55 : 0),
+      volumeExhaustion: (nearPeak && volumeFalling) ? 85 : (nearPeak && oneDVolumeFalling ? 70 : (nearPeak && volSpike<0.9 ? 55 : 0)),
       parabolicExtension: parabolic ? clamp(45 + Math.max(0,emaStretch-18)*2) : 0
     };
 
@@ -1257,6 +1248,8 @@ function calculateTopDetectionStack(item){
     if(failedBreakout) reasons.push('Failed breakout / bull-trap rejection');
     if(lowerHighSignal) reasons.push('Lower-high / structure weakening');
     if(components.volumeExhaustion>=55) reasons.push('Volume participation weakening near highs');
+    if(nearPeak && oneDVolumeFalling) reasons.push(`1D volume declining ${Number(item.volume1dTrendPct).toFixed(1)}% vs prior 3D average`);
+    else if(nearPeak && oneDVolumeWeakening) reasons.push(`1D volume weakening ${Number(item.volume1dTrendPct).toFixed(1)}% vs prior 3D average`);
     if(parabolic) reasons.push(`Parabolic EMA extension (${emaStretch.toFixed(1)}%)`);
     if(distributionPhase) reasons.push('Market phase is Distribution / Breakdown');
     if(weakSupport) reasons.push(`Weak accumulation support (${Math.round(Number(item.accumCombined?.confidence ?? item.accum ?? 0))}%)`);
@@ -1268,7 +1261,7 @@ function calculateTopDetectionStack(item){
     }
     if(!reasons.length) reasons.push('No strong top-development alignment');
 
-    return {score,level,components,reasons,meta:{rsiNow, rsiPrev, priceHH, rsiLH, volSpike, volumeFalling, wickRatio, emaStretch, ema20Stretch, recentHigh, priorRangeHigh, failedBreakout, lowerHighSignal, ema200CorrectionConfirmed}};
+    return {score,level,components,reasons,meta:{rsiNow, rsiPrev, priceHH, rsiLH, volSpike, volumeFalling, oneDVolumeWeakening, oneDVolumeFalling, volume1dTrendPct:Number(item.volume1dTrendPct||0), volume1dDecliningDays:Number(item.volume1dDecliningDays||0), wickRatio, emaStretch, ema20Stretch, recentHigh, priorRangeHigh, failedBreakout, lowerHighSignal, ema200CorrectionConfirmed}};
   }catch(err){
     return {score:0,level:'TOP DETECTOR ERROR',components:{},reasons:[err.message],meta:{}};
   }
@@ -2254,6 +2247,21 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const closes15 = (k15||[]).map(k=>Number(k[4])); const highs15=(k15||[]).map(k=>Number(k[2])); const lows15=(k15||[]).map(k=>Number(k[3])); const vols15=(k15||[]).map(k=>Number(k[5]));
     const closes1d = (k1d||[]).map(k=>Number(k[4])); const highs1d=(k1d||[]).map(k=>Number(k[2])); const lows1d=(k1d||[]).map(k=>Number(k[3])); const vols1d=(k1d||[]).map(k=>Number(k[5]));
 
+    // ===== 1D VOLUME PARTICIPATION TREND =====
+    // Use completed daily candles only so the still-forming current day does not
+    // falsely appear to have low volume. Compare recent 3D average vs prior 3D.
+    const completedVols1d = vols1d.length > 1 ? vols1d.slice(0,-1) : vols1d.slice();
+    const recentVol1dAvg = completedVols1d.length >= 3 ? avg(completedVols1d.slice(-3)) : (completedVols1d.length ? avg(completedVols1d) : 0);
+    const priorVol1dAvg = completedVols1d.length >= 6 ? avg(completedVols1d.slice(-6,-3)) : 0;
+    const volume1dTrendPct = priorVol1dAvg > 0 ? ((recentVol1dAvg/priorVol1dAvg)-1)*100 : 0;
+    const volume1dFalling = priorVol1dAvg > 0 && volume1dTrendPct <= -20;
+    const volume1dWeakening = priorVol1dAvg > 0 && volume1dTrendPct <= -10;
+    let volume1dDecliningDays = 0;
+    for(let i=completedVols1d.length-1; i>0; i--){
+      if(Number(completedVols1d[i]) < Number(completedVols1d[i-1])) volume1dDecliningDays++;
+      else break;
+    }
+
     const last4 = (k4h && k4h.length) ? k4h[k4h.length-1] : null;
     if(!last4) throw new Error('No 4H candles returned');
 
@@ -2353,6 +2361,12 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       volSpike4, volSpike15,
       // NEW: raw volumes included for sorting/display
       volume1d: lastVol1d,
+      volume1dRecentAvg: recentVol1dAvg,
+      volume1dPriorAvg: priorVol1dAvg,
+      volume1dTrendPct,
+      volume1dFalling,
+      volume1dWeakening,
+      volume1dDecliningDays,
       volume4h: lastVol4h,
       volume15m: lastVol15m,
       wickRatio4,
@@ -4313,6 +4327,7 @@ function getValueForKey(r, key) {
     case 'symbol': return getText(r.symbol);
     case 'volSpike': return getNumeric(r.volSpike4, 0);
     case 'vol1d': return getNumeric(r.volume1d, 0);
+    case 'vol1dTrend': return getNumeric(r.volume1dTrendPct, 0);
     case 'vol4h': return getNumeric(r.volume4h, 0);
     case 'vol15m': return getNumeric(r.volume15m, 0);
 
@@ -4321,8 +4336,6 @@ function getValueForKey(r, key) {
     case 'correctionRank': return getCorrectionRank(r);
     case 'correctionConfidence':
       return getNumeric(r.correctionGuide && r.correctionGuide.confidence, 0);
-    case 'fundingRate':
-      return getNumeric(r.fundingRate, 0);
     case 'phase': {
       if (!r.phase) return '';
       if (typeof r.phase === 'string') return r.phase;
@@ -4410,21 +4423,6 @@ function filterResultsForDist(results) {
   const correctionCode = el.correctionFilter ? el.correctionFilter.value : 'ALL';
   if (correctionCode !== 'ALL') {
     filtered = filtered.filter(r => String(r?.correctionGuide?.code || '').toUpperCase() === correctionCode);
-  }
-
-  // Dedicated Funding Direction filter.
-  // Uses the authoritative latest Binance fundingRate already stored on each result.
-  // Negative = fundingRate < 0, Positive = fundingRate > 0, Neutral = exactly 0.
-  const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
-  if (fundingFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const funding = Number(r?.fundingRate);
-      if (!Number.isFinite(funding)) return false;
-      if (fundingFilter === 'NEGATIVE') return funding < 0;
-      if (fundingFilter === 'POSITIVE') return funding > 0;
-      if (fundingFilter === 'NEUTRAL') return funding === 0;
-      return true;
-    });
   }
 
   // Dedicated Market Exhaustion filter. This is intentionally independent
@@ -4688,9 +4686,6 @@ if (el.sortBy) {
 }
 if (el.correctionFilter) {
   el.correctionFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.fundingFilter) {
-  el.fundingFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.accumDoubleTopFilter) {
   el.accumDoubleTopFilter.addEventListener('change', () => renderActiveView(true));
@@ -5373,6 +5368,9 @@ function renderCards(results){
           <span class="phaseTag" style="margin-left:0;flex:1 1 100%">${phase.phase}</span>
           <div style="flex:1 1 100%;margin-top:6px">${renderTopDetectionStack(r)}</div>
           <div style="flex:1 1 100%;margin-top:6px">${renderAccumulationReversal(r)}</div>
+          <div style="flex:1 1 100%;margin-top:4px;padding:7px 10px;border:1px solid rgba(255,217,102,.18);border-radius:9px;background:rgba(255,217,102,.035)">
+            <strong>📉 1D Volume Participation:</strong> ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% vs prior 3D avg' : 'n/a'} — ${r.volume1dFalling?'DECLINING':r.volume1dWeakening?'WEAKENING':'STABLE / IMPROVING'}
+          </div>
           <div class="latestUpdateCompact" style="flex:1 1 100%;margin-top:4px;padding:9px 10px;border:1px solid rgba(126,220,255,.22);border-radius:10px;background:rgba(126,220,255,.045)">
             <div style="font-size:12px;font-weight:900;letter-spacing:.04em;color:#cfe8ff">⚡ LATEST UPDATE</div>
             <div style="margin-top:4px;line-height:1.5;font-size:13px">
@@ -5385,6 +5383,7 @@ function renderCards(results){
               <strong>EMA70:</strong> ${ema70.toFixed(1)}%
               <span style="opacity:.55"> • </span>
               <strong>EMA200:</strong> ${ema200==null?'n/a':Number(ema200).toFixed(1)+'%'}
+              <span style="opacity:.55"> • </span><strong>1D Vol:</strong> ${Number.isFinite(Number(r.volume1dTrendPct))?(Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% '+(r.volume1dFalling?'📉':'↔'): 'n/a'}
               ${Number.isFinite(Number(r.dropFromPeak))?`<span style="opacity:.55"> • </span><strong>Peak DD:</strong> -${Math.abs(Number(r.dropFromPeak)).toFixed(1)}%`:''}
             </div>
             <div class="small" style="margin-top:3px;color:#9fb3cc">${lowerHighReasons.length?lowerHighReasons[0]:(dist?'Distribution / Breakdown risk developing':'No major structural top warning')}</div>
@@ -5400,6 +5399,7 @@ function renderCards(results){
           Last: ${r.closeNow}<br>
           RSI4H: ${rsi4h.toFixed(1)} • Vol×${Number(r.volSpike4||0).toFixed(2)} • Wick: ${wick.toFixed(2)}<br>
           EMA70 Extension: ${ema70.toFixed(2)}% • 15m EMA200 Stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} • Funding: ${Number(r.fundingRate||0).toFixed(6)}<br>
+          1D Volume: ${Number(r.volume1d||0).toLocaleString()} • 1D Volume Trend: ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'%' : 'n/a'} ${r.volume1dFalling?'📉 DECLINING':r.volume1dWeakening?'📉 WEAKENING':'↔ STABLE'} • Declining days: ${Number(r.volume1dDecliningDays||0)}<br>
           <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
         </div>
 
@@ -5415,6 +5415,7 @@ function renderCards(results){
             <div class="signalItem"><strong>🧠 Cycle</strong><br>${cyclePhase}<br><span class="small">Similarity ${simPct}% • context only</span></div><div class="signalItem"><strong>🟠 Trend State</strong><br>${calculateTrendExhaustionState(r).label}<br><span class="small">Score ${calculateTrendExhaustionState(r).score}/100 • warning only</span></div>
             <div class="signalItem"><strong>🔥 Exhaustion</strong><br>${r.preCrash?.score||0}/${r.preCrash?.max||13}<br><span class="small">warning</span></div>
             <div class="signalItem"><strong>🟢 Accumulation</strong><br>${accum.confidence}%<br><span class="small">support</span></div>
+            <div class="signalItem"><strong>📉 1D Volume</strong><br>${Number.isFinite(Number(r.volume1dTrendPct))?(Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'%':'n/a'}<br><span class="small">${r.volume1dFalling?'participation declining':r.volume1dWeakening?'participation weakening':'stable / improving'}</span></div>
             <div class="signalItem"><strong>🔴 Correction</strong><br>${confirmed?'CONFIRMED':'NOT CONFIRMED'}<br><span class="small">authoritative</span></div>
           </div>
         </div>
@@ -5800,6 +5801,7 @@ function buildTradingInterpretation(item){
       <summary><strong>More data / targets</strong></summary>
       <div class="recBox" style="margin-top:8px">
         <strong>Funding:</strong> ${funding} — ${fundingMeaning}<br>
+        <strong>1D Volume Participation:</strong> ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% vs prior 3D average' : 'n/a'} — ${r.volume1dFalling?'declining':r.volume1dWeakening?'weakening':'stable / improving'} (${Number(r.volume1dDecliningDays||0)} consecutive declines)<br>
         <strong>Upper wick:</strong> ${wick}<br>
         <strong>Long-term upside:</strong> ${longTargets.t1} • ${longTargets.t2} • ${longTargets.t3}<br>
         <strong>Support Levels:</strong> ${longTargets.s1 ?? '—'} • ${longTargets.s2 ?? '—'} • ${longTargets.s3 ?? '—'}<br>
