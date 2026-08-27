@@ -2229,16 +2229,21 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     }
   }
 
-  // rate-limit manual lookups to avoid bursts (user clicks many times)
-  const since = Date.now() - lastSymbolReq;
-  if(since < MIN_MS_BETWEEN_SYMBOL_REQ) {
-    const wait = MIN_MS_BETWEEN_SYMBOL_REQ - since;
-    await delay(wait);
+  // Manual Symbol Search gets an extra pacing delay. Market scans already use
+  // the global safeFetch scheduler, so they can explicitly skip this duplicate
+  // per-symbol delay while retaining the global Binance request pacing.
+  if(!opts.skipSymbolPacing){
+    const since = Date.now() - lastSymbolReq;
+    if(since < MIN_MS_BETWEEN_SYMBOL_REQ) {
+      const wait = MIN_MS_BETWEEN_SYMBOL_REQ - since;
+      await delay(wait);
+    }
+    lastSymbolReq = Date.now();
   }
-  lastSymbolReq = Date.now();
 
-  // validate symbol exists (lazy)
-  const exch = await ensureExchangeInfo().catch(()=>null);
+  // Validate symbol exists (lazy). Market scans already received symbols from
+  // ticker/24hr, so they can skip the redundant exchangeInfo validation.
+  const exch = opts.skipExchangeValidation ? null : await ensureExchangeInfo().catch(()=>null);
   if(exch && Array.isArray(exch.symbols)) {
     const found = exch.symbols.find(s => s.symbol === sym);
     if(!found) {
@@ -6128,7 +6133,7 @@ async function runScan(once=false, suppliedSession=null){
     if(session !== modeSession || activeViewMode !== 'scan') return;
     //  BALANCED FAST+SAFE MARKET SCREENING.
     // Stage 1 uses one lightweight 15m request per candidate. Stage 2 runs
-    // the existing full 5-request analysis only on the strongest candidates.
+    // the existing full deep analysis for EVERY fast-screened candidate.
     const scanBatchSize = SCAN_BATCH_SIZE;
     const fastCandidates = await fastScreenMarketCandidates(top, session);
     if(session !== modeSession || activeViewMode !== 'scan') return;
@@ -6161,33 +6166,62 @@ async function runScan(once=false, suppliedSession=null){
       });
     };
 
-    for(let batchStart=0; batchStart<deepTop.length && running && session===modeSession && activeViewMode==='scan'; batchStart+=scanBatchSize){
+    // FULL-DEEP EXECUTION: process every selected symbol one-at-a-time.
+    // This is intentionally sequential at the symbol level: safeFetch() still
+    // owns the global Binance pacing, while completing one symbol before the
+    // next prevents five-symbol bursts from causing avoidable 429/network
+    // failures. Each symbol gets bounded retries, so transient API failures do
+    // not silently reduce a 15-symbol scan to 8 results.
+    async function analyzeMarketSymbolWithRetry(t, maxAttempts=4){
+      let lastErr = null;
+      for(let attempt=1; attempt<=maxAttempts; attempt++){
+        if(session!==modeSession || activeViewMode!=='scan') return null;
+        try{
+          return await analyzeSymbol(t.symbol,{
+            allowIfNotRunning:true,
+            useCache:false,
+            prefetchedK15:t.k15,
+            skipSymbolPacing:true,
+            skipExchangeValidation:true
+          });
+        }catch(e){
+          lastErr = e;
+          el.debug.innerText += `\nDeep analysis ${t.symbol} attempt ${attempt}/${maxAttempts} failed: ${e.message}`;
+          if(attempt < maxAttempts){
+            const retryWait = Math.min(12000, 1500 * Math.pow(2, attempt-1));
+            el.message.innerText = `Retrying ${t.symbol} (${attempt+1}/${maxAttempts})…`;
+            await delay(retryWait);
+          }
+        }
+      }
+      throw lastErr || new Error('Deep analysis failed');
+    }
+
+    for(let i=0; i<deepTop.length && running && session===modeSession && activeViewMode==='scan'; i++){
       if(checkSafetyAndMaybePause()){
         await delay(RATE_LIMIT_PAUSE_MS);
-        if(checkSafetyAndMaybePause()) break;
       }
-
-      const batch = deepTop.slice(batchStart,batchStart+scanBatchSize);
-      const batchResults = await Promise.all(batch.map(async t=>{
-        try{
-          return await analyzeSymbol(t.symbol,{allowIfNotRunning:true,useCache:false,prefetchedK15:t.k15});
-        }catch(e){
-          el.debug.innerText += `\nError ${t.symbol}: ${e.message}`;
-          return null;
-        }
-      }));
-
-      const valid=batchResults.filter(Boolean);
-      results.push(...valid);
-      doneTasks += batch.length;
-      updateProgress();
-
-      finalizeBatch(valid);
       if(session!==modeSession || activeViewMode!=='scan') return;
 
-      // ATOMIC REFRESH: keep the previous completed scan visible while the
-      // next scan is still running. Only progress/status changes here.
-      // The new result dataset is committed after every batch has completed.
+      const t = deepTop[i];
+      let r = null;
+      try{
+        r = await analyzeMarketSymbolWithRetry(t, 4);
+      }catch(e){
+        // Continue the full scan instead of aborting the remaining symbols.
+        // A failed symbol is reported explicitly in Debug, but successful
+        // symbols are never discarded because another symbol failed.
+        el.debug.innerText += `\nFINAL deep-analysis failure ${t.symbol}: ${e.message}`;
+      }
+
+      if(r){
+        results.push(r);
+        finalizeBatch([r]);
+      }
+      doneTasks++;
+      updateProgress();
+
+      if(session!==modeSession || activeViewMode!=='scan') return;
       await delay(Math.max(0,Math.min(delayMs,150)));
     }
 
