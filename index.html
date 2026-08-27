@@ -3382,7 +3382,7 @@ function detectAccumulationGeneric(closes, highs, lows, vols, period=30, sensiti
   const lowerLow_max = 2 + Math.round((100 - sensitivity)/50);
   if(lowerLowCount <= lowerLow_max){ score += 2; reasons.push(`limited lower-lows (${lowerLowCount} ≤ ${lowerLow_max})`); }
   else reasons.push(`lower-lows (${lowerLowCount})`);
-  const volBaseline = sma(sliceV, Math.min(8, sliceV.length)) || 0.000001;
+  const volBaseline = sma(sliceV, Math.min(15, sliceV.length)) || 0.000001;
   let upCount = 0, upVolHigher = 0;
   for(let i=1;i<sliceC.length;i++){
     if(sliceC[i] > sliceC[i-1]){ upCount++; if(sliceV[i] > volBaseline * (1 + (50 - sensitivity)/200)) upVolHigher++; }
@@ -3797,7 +3797,7 @@ function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidenc
       const afterRetestClose=closes.at(-1);
       const confirmed=afterRetestClose < neckline*(1-BREAK_PCT);
       const confidence=Math.round(Math.min(98,
-        70 + Math.min(10,Number(accumConfidence)/10) + Math.min(8,depth*100) +
+        70 + Math.min(10,Number(accumConfidence)/10) + Math.min(15,depth*100) +
         Math.min(6,eqQuality*6) + (confirmed?8:0)
       ));
       return {
@@ -3862,7 +3862,7 @@ function detectPhaseForSymbol(item){
     for(let i=1;i<recentLows.length;i++) if(recentLows[i] > recentLows[i-1]) higherLCount++;
 
     // volume trend
-    const volMA8 = sma(vols4, Math.min(8, vols4.length)) || 1;
+    const volMA8 = sma(vols4, Math.min(15, vols4.length)) || 1;
     const lastVol = vols4.length ? vols4[vols4.length-1] : 0;
     const volSpike = volMA8 ? lastVol / volMA8 : 1;
 
@@ -4091,7 +4091,7 @@ function histSnapshotFromResult(r){
       exhaustion:histNum(r.preCrash?.confidence ?? r.preCrashConfidence),
       exhaustionScore:histNum(r.preCrash?.score),
       correctionLabel:String(cg.label || ''), correctionCode:String(cg.code || ''),
-      correctionConfidence:histNum(cg.confidence), correctionReasons:Array.isArray(cg.reasons)?cg.reasons.slice(0,8):[],
+      correctionConfidence:histNum(cg.confidence), correctionReasons:Array.isArray(cg.reasons)?cg.reasons.slice(0,15):[],
       marketPhase:String(phase.phase || ''), marketPhaseConfidence:histNum(phase.confidence),
       cyclePhase:String(cycle.cyclePhase || ''), similarity:histNum(cycle.similarityPct),
       structuralBias:String(r.marketStructure?.bias || r.structureBias || ''),
@@ -6133,10 +6133,13 @@ async function runScan(once=false, suppliedSession=null){
     const fastCandidates = await fastScreenMarketCandidates(top, session);
     if(session !== modeSession || activeViewMode !== 'scan') return;
 
-    // Normally deep-scan 6–8 symbols. A minimum of 6 preserves coverage on
-    // small scans, while the fast screen keeps the request count controlled.
-    const deepCount = Math.min(top.length, Math.max(6, Math.min(8, Math.ceil(top.length * 0.55))));
-    const deepTop = fastCandidates.slice(0, deepCount);
+    // FULL-DEEP MARKET SCAN:
+    // Stage 1 fast-screens every prefiltered candidate.
+    // Stage 2 deep-analyzes EVERY fast-screened candidate, so a Prefilter
+    // value of 15 produces up to 15 complete deep-analysis results.
+    // Do not reintroduce a fixed 6–8 deep-analysis cap here.
+    const deepTop = fastCandidates.slice(0, top.length);
+    // With Prefilter=15: fast-screen 15 -> deep-analyze up to 15 -> publish up to 15.
     queue = []; totalTasks = deepTop.length; doneTasks = 0; updateProgress(); const results = [];
     const finalizeBatch = (batch) => {
       batch.forEach(r => {
