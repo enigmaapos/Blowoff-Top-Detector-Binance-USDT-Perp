@@ -798,6 +798,7 @@ body.authLocked{overflow:hidden}
             <option value="cycleMatch">Cycle Match %</option>
             <option value="correctionRank">Correction Status</option>
             <option value="correctionConfidence">Correction Confidence</option>
+            <option value="fundingRate">Funding Rate</option>
             <option value="phase">Market Phase</option>
             <option value="phaseRank">Market Phase Rank</option>
             <option value="simPhase">Similarity Phase</option>
@@ -818,6 +819,16 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
       <div class="controlGrid three">
+        <div class="controlItem">
+          <label class="controlLabel">Funding Direction</label>
+          <select id="fundingFilter">
+            <option value="ALL">All Funding</option>
+            <option value="NEGATIVE">🔴 Negative Funding (&lt; 0)</option>
+            <option value="POSITIVE">🟢 Positive Funding (&gt; 0)</option>
+            <option value="NEUTRAL">⚪ Neutral Funding (= 0)</option>
+          </select>
+          <div class="dashboardHint">Filter by the latest funding rate.</div>
+        </div>
         <div class="controlItem">
           <label class="controlLabel">Correction Status</label>
           <select id="correctionFilter">
@@ -940,6 +951,7 @@ const el = {
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir'),
   correctionFilter: document.getElementById('correctionFilter'),
+  fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter')
 };
@@ -4343,6 +4355,8 @@ function getValueForKey(r, key) {
     case 'correctionRank': return getCorrectionRank(r);
     case 'correctionConfidence':
       return getNumeric(r.correctionGuide && r.correctionGuide.confidence, 0);
+    case 'fundingRate':
+      return getNumeric(r.fundingRate, 0);
     case 'phase': {
       if (!r.phase) return '';
       if (typeof r.phase === 'string') return r.phase;
@@ -4430,6 +4444,17 @@ function filterResultsForDist(results) {
   const correctionCode = el.correctionFilter ? el.correctionFilter.value : 'ALL';
   if (correctionCode !== 'ALL') {
     filtered = filtered.filter(r => String(r?.correctionGuide?.code || '').toUpperCase() === correctionCode);
+  }
+  const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
+  if (fundingFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const funding = Number(r?.fundingRate);
+      if (!Number.isFinite(funding)) return false;
+      if (fundingFilter === 'NEGATIVE') return funding < 0;
+      if (fundingFilter === 'POSITIVE') return funding > 0;
+      if (fundingFilter === 'NEUTRAL') return funding === 0;
+      return true;
+    });
   }
 
   // Dedicated Market Exhaustion filter. This is intentionally independent
@@ -4693,6 +4718,9 @@ if (el.sortBy) {
 }
 if (el.correctionFilter) {
   el.correctionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.fundingFilter) {
+  el.fundingFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.accumDoubleTopFilter) {
   el.accumDoubleTopFilter.addEventListener('change', () => renderActiveView(true));
