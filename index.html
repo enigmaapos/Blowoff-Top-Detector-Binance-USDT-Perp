@@ -607,6 +607,12 @@ body.authLocked{overflow:hidden}
 .authForm{display:grid;gap:12px}.authField{display:grid;gap:6px}.authField label{font-size:12px;font-weight:800;color:#cfe8ff}.authField input{width:100%;min-height:42px;padding:10px 11px;border-radius:9px}.authPrimary{width:100%;min-height:44px;border-radius:9px;font-weight:900;background:#1f6feb}.authHint{font-size:11px;color:#8195ad;line-height:1.45}.authError,.authSuccess{display:none;padding:9px 10px;border-radius:9px;font-size:12px}.authError{background:rgba(255,92,92,.09);border:1px solid rgba(255,92,92,.25);color:#ffb3b3}.authSuccess{background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.22);color:#a8f6e6}
 #protectedApp[hidden]{display:none!important}.accountBar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;margin-bottom:12px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.accountIdentity{display:flex;align-items:center;gap:9px;min-width:0}.accountAvatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#173548;color:#8ff4e0;font-weight:900}.accountText{min-width:0}.accountText strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.accountText span{display:block;color:#8195ad;font-size:10px}.accountActions{display:flex;gap:6px;flex-wrap:wrap}.accountBtn{padding:7px 9px!important;font-size:11px!important}.accountBadge{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.18);color:#9ef4e2;font-size:10px;font-weight:900}.accountBadge i{width:6px;height:6px;border-radius:50%;background:#2dd4bf}.profilePanel{display:none;margin-bottom:12px;padding:13px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.profileGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.profileItem{padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:rgba(255,255,255,.02)}.profileItem small{display:block;color:#8195ad;font-size:10px}.profileItem strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.profileNote{margin-top:9px;font-size:11px;color:#9fb3cc;line-height:1.4}.authPhaseCard{margin-top:12px;padding:12px;border:1px dashed #29445b;border-radius:10px;background:rgba(126,220,255,.035)}.authPhaseCard strong{font-size:12px}.authPhaseCard p{margin:5px 0 0;color:#9fb3cc;font-size:11px;line-height:1.4}@media(max-width:520px){.authCard{padding:18px}.profileGrid{grid-template-columns:1fr}.accountBar{align-items:flex-start}.accountActions{justify-content:flex-end}}
 </style>
+<style id="favorites-view-fix-css">
+.favoriteViewBtn{display:inline-flex!important;align-items:center;justify-content:center;font-weight:900}
+.favoriteViewBtn.favoriteActive{border-color:rgba(250,204,21,.55)!important;box-shadow:0 0 0 1px rgba(250,204,21,.16),0 6px 18px rgba(0,0,0,.18)!important}
+#favoritesViewBanner{display:none;margin:10px 0 12px;padding:10px 12px;border:1px solid rgba(250,204,21,.28);border-radius:10px;background:rgba(250,204,21,.055);color:#fef3c7;font-size:12px;line-height:1.4}
+#favoritesViewBanner strong{font-size:13px}
+</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -744,7 +750,7 @@ body.authLocked{overflow:hidden}
         <button id="startBtn">Start</button>
         <button id="oneShot" class="alt">Run Once</button>
         <button id="stopBtn" class="alt" disabled>Stop</button>
-        <button id="favoritesBtn" class="alt" title="Show favorites only">☆ Favorites</button>
+        <button id="favoritesBtn" class="alt favoriteViewBtn" title="Show favorites only" type="button">☆ Favorites</button>
         <button id="restoreClosedBtn" class="alt" title="Restore coins closed from this view">↻ Restore Closed</button>
       </div>
     </div>
@@ -902,6 +908,10 @@ body.authLocked{overflow:hidden}
       <span class="resultsBadge">LIVE ANALYSIS</span>
     </div>
   </div>
+<div id="favoritesViewBanner">
+<strong>⭐ FAVORITES VIEW</strong><span id="favoritesViewCount"> • 0 saved coins</span>
+<div style="margin-top:3px;color:var(--muted)">Saved coins only. Funding, 1D volume, correction, and other result filters remain active.</div>
+</div>
 <div id="tableView"></div>
   <div id="cardView"></div>
 </div>
@@ -4566,9 +4576,15 @@ function toggleFavorite(symbol){
 function updateFavoritesButton(){
   if(el.favoritesBtn){
     el.favoritesBtn.innerText = showFavoritesOnly
-      ? '★ Favorites'
+      ? `★ Favorites${favoriteSymbols.size ? ` (${favoriteSymbols.size})` : ''}`
       : `☆ Favorites${favoriteSymbols.size ? ` (${favoriteSymbols.size})` : ''}`;
+    el.favoritesBtn.classList.toggle('favoriteActive', !!showFavoritesOnly);
+    el.favoritesBtn.title = showFavoritesOnly ? 'Return to Market Scan' : 'Show favorites only';
   }
+  const banner = document.getElementById('favoritesViewBanner');
+  const count = document.getElementById('favoritesViewCount');
+  if(banner) banner.style.display = showFavoritesOnly ? 'block' : 'none';
+  if(count) count.textContent = ` • ${favoriteSymbols.size} saved coin${favoriteSymbols.size === 1 ? '' : 's'}`;
 }
 
 function updateFavoritesLiveStatus(extra=''){
