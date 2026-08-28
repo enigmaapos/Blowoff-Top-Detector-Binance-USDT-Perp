@@ -1433,196 +1433,6 @@ function renderAccumulationReversal(r){
   </div>`;
 }
 
-
-/* ============================================================
-   COOLING / UPSIDE EXPANSION ENGINE
-   ------------------------------------------------------------
-   This is a SECOND interpretation layer. It does not alter or
-   replace Top Detection, Correction Guide, accumulation, funding,
-   volume, structure, or any existing calculation.
-
-   Purpose:
-   - recognize when most top-risk components are LOW
-   - distinguish healthy cooling/reset from simple weakness
-   - estimate constructive upside-expansion potential
-   - never override the authoritative 15m EMA200 correction layer
-   ============================================================ */
-function calculateCoolingExpansion(item){
-  item=item||{};
-  try{
-    const clamp=(n,a=0,b=100)=>Math.max(a,Math.min(b,n));
-    const top=item.topDetection || calculateTopDetectionStack(item);
-    const c=top.components||{};
-    const m=top.meta||{};
-
-    const vals=[
-      Number(c.blowoff||0), Number(c.momentumExhaustion||0),
-      Number(c.rsiDivergence||0), Number(c.distribution||0),
-      Number(c.failedBreakout||0), Number(c.lowerHighCHoCH||0),
-      Number(c.volumeExhaustion||0), Number(c.parabolicExtension||0)
-    ];
-    const lowCount=vals.filter(v=>v<25).length;
-    const veryLowCount=vals.filter(v=>v<15).length;
-    const lowPressurePct=Math.round((lowCount/vals.length)*100);
-
-    const rsi=Number(item.rsi4h ?? m.rsiNow ?? 0);
-    const ema70=Number(item.ema70DistPct ?? m.emaStretch ?? 0);
-    const ema200=Number(item.ema200Stretch15);
-    const ema200Confirmed=Number.isFinite(ema200) && ema200<0;
-    const accum=Number(item.accumCombined?.confidence ?? item.accum ?? 0);
-    const vol4=Number(item.volSpike4||1);
-    const vol1dTrend=Number(item.volume1dTrendPct||0);
-    const lowerHigh=!!item.lowerHigh || Number(item.lowerHighs||0)>0 || !!m.lowerHighSignal;
-    const lowerLow=Number(item.lowerLows||0)>0;
-    const higherLow=Number(item.higherLows||0)>0;
-    const higherHigh=Number(item.higherHighs||0)>0;
-    const phase=String(item.phase?.phase || item.phase?.phaseName || item.phase || item.structurePhase || '').toLowerCase();
-    const structureBias=String(item.structureBias || item.marketStructure?.bias || '').toUpperCase();
-    const breakdown=/breakdown|capitulation|post-crash/.test(phase) || structureBias.includes('BEARISH');
-    const distribution=/distribution/.test(phase) || structureBias.includes('DISTRIBUTION');
-    const funding=Number(item.fundingRate);
-
-    // Cooling = low top pressure + normalized/not-overheated RSI + reset extension.
-    let cooling=0;
-    cooling += lowPressurePct*0.42;                    // majority-low principle
-    cooling += clamp(veryLowCount*5,0,20);             // rewards broad quietness
-    if(rsi>=38 && rsi<=68) cooling+=15;
-    else if(rsi>30 && rsi<75) cooling+=7;
-    if(ema70>=-8 && ema70<=15) cooling+=12;
-    else if(ema70<25) cooling+=5;
-    if(!ema200Confirmed) cooling+=8;
-    if(Number(c.blowoff||0)<25) cooling+=4;
-    if(Number(c.distribution||0)<25) cooling+=4;
-    if(Number(c.volumeExhaustion||0)<25) cooling+=4;
-    cooling=clamp(Math.round(cooling));
-
-    // Constructive factors: cooling must be supported by structure/participation.
-    let constructive=0;
-    if(accum>=60) constructive+=24;
-    else if(accum>=45) constructive+=18;
-    else if(accum>=35) constructive+=10;
-    else if(accum>=25) constructive+=4;
-
-    if(higherLow) constructive+=12;
-    if(higherHigh) constructive+=6;
-    if(structureBias.includes('BULLISH')) constructive+=12;
-    else if(structureBias.includes('MIXED')) constructive+=5;
-
-    if(!lowerHigh) constructive+=7;
-    if(!lowerLow) constructive+=4;
-    if(!breakdown) constructive+=8;
-    if(!distribution) constructive+=5;
-    if(!ema200Confirmed) constructive+=8;
-
-    // Quiet/contracting volume can be constructive ONLY when structure is not breaking.
-    if(vol4>0 && vol4<1.15 && !breakdown) constructive+=5;
-    if(vol1dTrend<0 && vol1dTrend>-35 && !breakdown) constructive+=4;
-
-    // Neutral funding is healthier for an upside setup than crowded positive funding.
-    if(Number.isFinite(funding)){
-      const af=Math.abs(funding);
-      if(af<=0.0005) constructive+=5;
-      else if(funding>0.002) constructive-=5;
-    }
-
-    // A very hot RSI is not cooling, even if other top components are quiet.
-    if(rsi>=78) constructive-=10;
-    if(rsi<30) constructive-=8;
-    if(breakdown) constructive-=15;
-    if(distribution) constructive-=10;
-    if(lowerHigh && lowerLow) constructive-=8;
-    constructive=clamp(Math.round(constructive));
-
-    // Expansion potential is intentionally gated by cooling; it is not simply
-    // the inverse of Top Risk. This prevents "everything low" from becoming
-    // an automatic bullish call during weak/capitulation conditions.
-    let expansion=Math.round((cooling*0.52)+(constructive*0.48));
-    if(cooling<45) expansion=Math.min(expansion,49);
-    if(constructive<35) expansion=Math.min(expansion,54);
-    if(ema200Confirmed) expansion=Math.min(expansion,34);
-    if(breakdown) expansion=Math.min(expansion,39);
-    expansion=clamp(expansion);
-
-    let code,label,tone,explanation;
-    if(ema200Confirmed){
-      code='CORRECTION_CONFIRMED';
-      label='🔵 CORRECTION CONFIRMED — COOLING IS NOT A BULLISH SIGNAL';
-      tone='info';
-      explanation='The market is below the authoritative 15m EMA200 confirmation level. Low top-risk readings can occur during a correction and are not treated as an upside setup.';
-    }else if(top.score>=70 || distribution || breakdown){
-      code='TOP_RISK_DOMINANT';
-      label='🔴 TOP / DISTRIBUTION RISK DOMINANT';
-      tone='risk';
-      explanation='Downside/top-development evidence remains dominant. The cooling layer does not override aligned structural deterioration.';
-    }else if(expansion>=70 && cooling>=60 && constructive>=55){
-      code='COOLED_UPSIDE_EXPANSION_WATCH';
-      label='🚀 COOLED — UPSIDE EXPANSION WATCH';
-      tone='good';
-      explanation='Most top-pressure components are currently low, the market has cooled/reset, and enough constructive structure/support remains for a potential upside expansion. This is a setup detector, not a price prediction.';
-    }else if(expansion>=55 && cooling>=55){
-      code='COOLING_CONSTRUCTIVE';
-      label='🟢 COOLING / CONSTRUCTIVE RESET';
-      tone='good';
-      explanation='Top pressure has cooled and the structure is not sufficiently damaged. Upside potential is improving, but stronger expansion confirmation is still needed.';
-    }else if(cooling>=70 && constructive<45){
-      code='COOLED_BUT_WEAK';
-      label='🟡 COOLED BUT WEAK';
-      tone='warn';
-      explanation='Most warning components are low, but accumulation/structure support is too weak to call the cooling phase a constructive upside setup.';
-    }else if(cooling>=55){
-      code='COOLING_NEUTRAL';
-      label='⚪ COOLING / WAIT FOR STRUCTURE';
-      tone='neutral';
-      explanation='The market has cooled, but the existing components are not aligned strongly enough to classify the reset as either a bullish expansion setup or a topping event.';
-    }else{
-      code='NO_CLEAR_COOLING_EDGE';
-      label='⚪ NO CLEAR COOLING EDGE';
-      tone='neutral';
-      explanation='The low-reading majority is not strong enough, or the market structure does not support a cooling/expansion interpretation.';
-    }
-
-    const evidence=[];
-    evidence.push(`${lowCount}/${vals.length} top-pressure components below 25%`);
-    if(veryLowCount) evidence.push(`${veryLowCount}/${vals.length} components below 15%`);
-    evidence.push(`Cooling ${cooling}/100`);
-    evidence.push(`Constructive ${constructive}/100`);
-    evidence.push(`Accumulation ${Math.round(accum)}%`);
-    if(Number.isFinite(rsi)) evidence.push(`RSI4H ${rsi.toFixed(1)}`);
-    if(Number.isFinite(ema70)) evidence.push(`EMA70 ${ema70.toFixed(1)}%`);
-    if(Number.isFinite(ema200)) evidence.push(`15m EMA200 ${ema200.toFixed(1)}%`);
-
-    return {
-      score:expansion,
-      coolingScore:cooling,
-      constructiveScore:constructive,
-      lowPressurePct,
-      lowComponentCount:lowCount,
-      veryLowComponentCount:veryLowCount,
-      code,label,tone,explanation,evidence,
-      meta:{rsi,ema70,ema200,ema200Confirmed,accum,vol4,vol1dTrend,lowerHigh,lowerLow,higherLow,higherHigh,breakdown,distribution,structureBias}
-    };
-  }catch(err){
-    return {score:0,coolingScore:0,constructiveScore:0,lowPressurePct:0,lowComponentCount:0,veryLowComponentCount:0,code:'ERROR',label:'⚪ COOLING ENGINE UNAVAILABLE',tone:'neutral',explanation:'Cooling/expansion interpretation failed; all existing scanner calculations remain unchanged.',evidence:[err.message],meta:{}};
-  }
-}
-
-function renderCoolingExpansion(r){
-  const x=calculateCoolingExpansion(r||{});
-  const toneClass=x.tone==='good'?'good':x.tone==='risk'?'risk':x.tone==='warn'?'warn':'neutral';
-  const bar=(label,val)=>`<div style="display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:8px;align-items:center;margin:7px 0"><div><div style="font-size:12px;opacity:.88;margin-bottom:3px">${mspEscape(label)}</div><div style="height:7px;background:rgba(148,163,184,.14);border-radius:99px;overflow:hidden"><i style="display:block;height:100%;width:${Math.max(0,Math.min(100,Number(val)||0))}%;background:currentColor;opacity:.75"></i></div></div><b style="font-size:12px;text-align:right">${Math.round(Number(val)||0)}%</b></div>`;
-  return `<div class="mspPanel" style="margin-top:12px">
-    <div class="mspTitle"><span class="mspTitleDot"></span> Cooling &amp; Upside Expansion</div>
-    <div style="padding:10px 0 4px;font-weight:800"><span class="mspTag ${toneClass}">${mspEscape(x.label)}</span></div>
-    <div style="font-size:12px;line-height:1.55;opacity:.82;margin-bottom:8px">${mspEscape(x.explanation)}</div>
-    ${bar('❄️ Cooling / Reset',x.coolingScore)}
-    ${bar('🚀 Upside Expansion Potential',x.score)}
-    ${bar('🧱 Constructive Support',x.constructiveScore)}
-    <div style="font-size:12px;line-height:1.55;margin-top:8px"><strong>Low-reading evidence:</strong> ${mspEscape(x.lowComponentCount)}/${mspEscape(8)} top-pressure components are below 25%; ${mspEscape(x.veryLowComponentCount)}/8 are below 15%.</div>
-    <div style="font-size:12px;line-height:1.55;opacity:.78;margin-top:5px"><strong>Evidence:</strong> ${x.evidence.map(v=>mspEscape(v)).join(' • ')}</div>
-    <div style="font-size:11px;line-height:1.5;opacity:.62;margin-top:7px">Low readings alone do not mean bullish. The engine requires cooling plus constructive structure/support and never overrides the authoritative 15m EMA200 correction confirmation.</div>
-  </div>`;
-}
-
 function renderTopDetectionStack(r){
   // IMPORTANT: do not trust a stale/cached topDetection.level.
   // The authoritative post-top override is re-evaluated at render time
@@ -1926,7 +1736,6 @@ function renderMarketStructurePsychology(r){
 
   return `
 ${renderOverallMarketVerdict(r)}
-    ${renderCoolingExpansion(r)}
     <div class="mspPanel">
       <div class="mspTitle"><span class="mspTitleDot"></span> Market Structure Psychology</div>
 
@@ -2415,27 +2224,21 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         else if(cached.topDetection.score>=45) cached.topDetection.level='🟠 TOPPING DEVELOPING';
         else if(cached.topDetection.score>=25) cached.topDetection.level='🟡 TOP RISK INCREASING';
       }
-      cached.coolingExpansion = calculateCoolingExpansion(cached);
       el.symbolStatus.innerText = `Loaded ${sym} from cache (${Math.round((Date.now()-cached._cachedAt)/1000)}s ago)`;
       return cached;
     }
   }
 
-  // Manual Symbol Search gets an extra pacing delay. Market scans already use
-  // the global safeFetch scheduler, so they can explicitly skip this duplicate
-  // per-symbol delay while retaining the global Binance request pacing.
-  if(!opts.skipSymbolPacing){
-    const since = Date.now() - lastSymbolReq;
-    if(since < MIN_MS_BETWEEN_SYMBOL_REQ) {
-      const wait = MIN_MS_BETWEEN_SYMBOL_REQ - since;
-      await delay(wait);
-    }
-    lastSymbolReq = Date.now();
+  // rate-limit manual lookups to avoid bursts (user clicks many times)
+  const since = Date.now() - lastSymbolReq;
+  if(since < MIN_MS_BETWEEN_SYMBOL_REQ) {
+    const wait = MIN_MS_BETWEEN_SYMBOL_REQ - since;
+    await delay(wait);
   }
+  lastSymbolReq = Date.now();
 
-  // Validate symbol exists (lazy). Market scans already received symbols from
-  // ticker/24hr, so they can skip the redundant exchangeInfo validation.
-  const exch = opts.skipExchangeValidation ? null : await ensureExchangeInfo().catch(()=>null);
+  // validate symbol exists (lazy)
+  const exch = await ensureExchangeInfo().catch(()=>null);
   if(exch && Array.isArray(exch.symbols)) {
     const found = exch.symbols.find(s => s.symbol === sym);
     if(!found) {
@@ -2683,9 +2486,6 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // Correction Status is the authoritative confirmation layer, so compute it
     // BEFORE the final recommendation can synthesize the complete state.
     result.correctionGuide = getCorrectionGuide(result);
-    // New interpretation layer only: preserves every existing calculation
-    // while classifying low top-pressure readings as cooling/reset/expansion.
-    result.coolingExpansion = calculateCoolingExpansion(result);
     result.longTargets = getLongTermTargets(result);
     result.finalRec = getFinalRecommendation(result);
     result.shortRec = getShortTermRecommendation(result);
@@ -6328,7 +6128,7 @@ async function runScan(once=false, suppliedSession=null){
     if(session !== modeSession || activeViewMode !== 'scan') return;
     //  BALANCED FAST+SAFE MARKET SCREENING.
     // Stage 1 uses one lightweight 15m request per candidate. Stage 2 runs
-    // the existing full deep analysis for EVERY fast-screened candidate.
+    // the existing full 5-request analysis only on the strongest candidates.
     const scanBatchSize = SCAN_BATCH_SIZE;
     const fastCandidates = await fastScreenMarketCandidates(top, session);
     if(session !== modeSession || activeViewMode !== 'scan') return;
@@ -6361,62 +6161,33 @@ async function runScan(once=false, suppliedSession=null){
       });
     };
 
-    // FULL-DEEP EXECUTION: process every selected symbol one-at-a-time.
-    // This is intentionally sequential at the symbol level: safeFetch() still
-    // owns the global Binance pacing, while completing one symbol before the
-    // next prevents five-symbol bursts from causing avoidable 429/network
-    // failures. Each symbol gets bounded retries, so transient API failures do
-    // not silently reduce a 15-symbol scan to 8 results.
-    async function analyzeMarketSymbolWithRetry(t, maxAttempts=4){
-      let lastErr = null;
-      for(let attempt=1; attempt<=maxAttempts; attempt++){
-        if(session!==modeSession || activeViewMode!=='scan') return null;
-        try{
-          return await analyzeSymbol(t.symbol,{
-            allowIfNotRunning:true,
-            useCache:false,
-            prefetchedK15:t.k15,
-            skipSymbolPacing:true,
-            skipExchangeValidation:true
-          });
-        }catch(e){
-          lastErr = e;
-          el.debug.innerText += `\nDeep analysis ${t.symbol} attempt ${attempt}/${maxAttempts} failed: ${e.message}`;
-          if(attempt < maxAttempts){
-            const retryWait = Math.min(12000, 1500 * Math.pow(2, attempt-1));
-            el.message.innerText = `Retrying ${t.symbol} (${attempt+1}/${maxAttempts})…`;
-            await delay(retryWait);
-          }
-        }
-      }
-      throw lastErr || new Error('Deep analysis failed');
-    }
-
-    for(let i=0; i<deepTop.length && running && session===modeSession && activeViewMode==='scan'; i++){
+    for(let batchStart=0; batchStart<deepTop.length && running && session===modeSession && activeViewMode==='scan'; batchStart+=scanBatchSize){
       if(checkSafetyAndMaybePause()){
         await delay(RATE_LIMIT_PAUSE_MS);
-      }
-      if(session!==modeSession || activeViewMode!=='scan') return;
-
-      const t = deepTop[i];
-      let r = null;
-      try{
-        r = await analyzeMarketSymbolWithRetry(t, 4);
-      }catch(e){
-        // Continue the full scan instead of aborting the remaining symbols.
-        // A failed symbol is reported explicitly in Debug, but successful
-        // symbols are never discarded because another symbol failed.
-        el.debug.innerText += `\nFINAL deep-analysis failure ${t.symbol}: ${e.message}`;
+        if(checkSafetyAndMaybePause()) break;
       }
 
-      if(r){
-        results.push(r);
-        finalizeBatch([r]);
-      }
-      doneTasks++;
+      const batch = deepTop.slice(batchStart,batchStart+scanBatchSize);
+      const batchResults = await Promise.all(batch.map(async t=>{
+        try{
+          return await analyzeSymbol(t.symbol,{allowIfNotRunning:true,useCache:false,prefetchedK15:t.k15});
+        }catch(e){
+          el.debug.innerText += `\nError ${t.symbol}: ${e.message}`;
+          return null;
+        }
+      }));
+
+      const valid=batchResults.filter(Boolean);
+      results.push(...valid);
+      doneTasks += batch.length;
       updateProgress();
 
+      finalizeBatch(valid);
       if(session!==modeSession || activeViewMode!=='scan') return;
+
+      // ATOMIC REFRESH: keep the previous completed scan visible while the
+      // next scan is still running. Only progress/status changes here.
+      // The new result dataset is committed after every batch has completed.
       await delay(Math.max(0,Math.min(delayMs,150)));
     }
 
