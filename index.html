@@ -607,12 +607,6 @@ body.authLocked{overflow:hidden}
 .authForm{display:grid;gap:12px}.authField{display:grid;gap:6px}.authField label{font-size:12px;font-weight:800;color:#cfe8ff}.authField input{width:100%;min-height:42px;padding:10px 11px;border-radius:9px}.authPrimary{width:100%;min-height:44px;border-radius:9px;font-weight:900;background:#1f6feb}.authHint{font-size:11px;color:#8195ad;line-height:1.45}.authError,.authSuccess{display:none;padding:9px 10px;border-radius:9px;font-size:12px}.authError{background:rgba(255,92,92,.09);border:1px solid rgba(255,92,92,.25);color:#ffb3b3}.authSuccess{background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.22);color:#a8f6e6}
 #protectedApp[hidden]{display:none!important}.accountBar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;margin-bottom:12px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.accountIdentity{display:flex;align-items:center;gap:9px;min-width:0}.accountAvatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#173548;color:#8ff4e0;font-weight:900}.accountText{min-width:0}.accountText strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.accountText span{display:block;color:#8195ad;font-size:10px}.accountActions{display:flex;gap:6px;flex-wrap:wrap}.accountBtn{padding:7px 9px!important;font-size:11px!important}.accountBadge{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.18);color:#9ef4e2;font-size:10px;font-weight:900}.accountBadge i{width:6px;height:6px;border-radius:50%;background:#2dd4bf}.profilePanel{display:none;margin-bottom:12px;padding:13px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.profileGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.profileItem{padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:rgba(255,255,255,.02)}.profileItem small{display:block;color:#8195ad;font-size:10px}.profileItem strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.profileNote{margin-top:9px;font-size:11px;color:#9fb3cc;line-height:1.4}.authPhaseCard{margin-top:12px;padding:12px;border:1px dashed #29445b;border-radius:10px;background:rgba(126,220,255,.035)}.authPhaseCard strong{font-size:12px}.authPhaseCard p{margin:5px 0 0;color:#9fb3cc;font-size:11px;line-height:1.4}@media(max-width:520px){.authCard{padding:18px}.profileGrid{grid-template-columns:1fr}.accountBar{align-items:flex-start}.accountActions{justify-content:flex-end}}
 </style>
-<style id="favorites-view-fix-css">
-.favoriteViewBtn{display:inline-flex!important;align-items:center;justify-content:center;font-weight:900}
-.favoriteViewBtn.favoriteActive{border-color:rgba(250,204,21,.55)!important;box-shadow:0 0 0 1px rgba(250,204,21,.16),0 6px 18px rgba(0,0,0,.18)!important}
-#favoritesViewBanner{display:none;margin:10px 0 12px;padding:10px 12px;border:1px solid rgba(250,204,21,.28);border-radius:10px;background:rgba(250,204,21,.055);color:#fef3c7;font-size:12px;line-height:1.4}
-#favoritesViewBanner strong{font-size:13px}
-</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -750,7 +744,7 @@ body.authLocked{overflow:hidden}
         <button id="startBtn">Start</button>
         <button id="oneShot" class="alt">Run Once</button>
         <button id="stopBtn" class="alt" disabled>Stop</button>
-        <button id="favoritesBtn" class="alt favoriteViewBtn" title="Show favorites only" type="button">☆ Favorites</button>
+        <button id="favoritesBtn" class="alt" title="Show favorites only">☆ Favorites</button>
         <button id="restoreClosedBtn" class="alt" title="Restore coins closed from this view">↻ Restore Closed</button>
       </div>
     </div>
@@ -908,10 +902,6 @@ body.authLocked{overflow:hidden}
       <span class="resultsBadge">LIVE ANALYSIS</span>
     </div>
   </div>
-<div id="favoritesViewBanner">
-<strong>⭐ FAVORITES VIEW</strong><span id="favoritesViewCount"> • 0 saved coins</span>
-<div style="margin-top:3px;color:var(--muted)">Saved coins only. Funding, 1D volume, correction, and other result filters remain active.</div>
-</div>
 <div id="tableView"></div>
   <div id="cardView"></div>
 </div>
@@ -3382,7 +3372,7 @@ function detectAccumulationGeneric(closes, highs, lows, vols, period=30, sensiti
   const lowerLow_max = 2 + Math.round((100 - sensitivity)/50);
   if(lowerLowCount <= lowerLow_max){ score += 2; reasons.push(`limited lower-lows (${lowerLowCount} ≤ ${lowerLow_max})`); }
   else reasons.push(`lower-lows (${lowerLowCount})`);
-  const volBaseline = sma(sliceV, Math.min(15, sliceV.length)) || 0.000001;
+  const volBaseline = sma(sliceV, Math.min(8, sliceV.length)) || 0.000001;
   let upCount = 0, upVolHigher = 0;
   for(let i=1;i<sliceC.length;i++){
     if(sliceC[i] > sliceC[i-1]){ upCount++; if(sliceV[i] > volBaseline * (1 + (50 - sensitivity)/200)) upVolHigher++; }
@@ -3797,7 +3787,7 @@ function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidenc
       const afterRetestClose=closes.at(-1);
       const confirmed=afterRetestClose < neckline*(1-BREAK_PCT);
       const confidence=Math.round(Math.min(98,
-        70 + Math.min(10,Number(accumConfidence)/10) + Math.min(15,depth*100) +
+        70 + Math.min(10,Number(accumConfidence)/10) + Math.min(8,depth*100) +
         Math.min(6,eqQuality*6) + (confirmed?8:0)
       ));
       return {
@@ -3862,7 +3852,7 @@ function detectPhaseForSymbol(item){
     for(let i=1;i<recentLows.length;i++) if(recentLows[i] > recentLows[i-1]) higherLCount++;
 
     // volume trend
-    const volMA8 = sma(vols4, Math.min(15, vols4.length)) || 1;
+    const volMA8 = sma(vols4, Math.min(8, vols4.length)) || 1;
     const lastVol = vols4.length ? vols4[vols4.length-1] : 0;
     const volSpike = volMA8 ? lastVol / volMA8 : 1;
 
@@ -4091,7 +4081,7 @@ function histSnapshotFromResult(r){
       exhaustion:histNum(r.preCrash?.confidence ?? r.preCrashConfidence),
       exhaustionScore:histNum(r.preCrash?.score),
       correctionLabel:String(cg.label || ''), correctionCode:String(cg.code || ''),
-      correctionConfidence:histNum(cg.confidence), correctionReasons:Array.isArray(cg.reasons)?cg.reasons.slice(0,15):[],
+      correctionConfidence:histNum(cg.confidence), correctionReasons:Array.isArray(cg.reasons)?cg.reasons.slice(0,8):[],
       marketPhase:String(phase.phase || ''), marketPhaseConfidence:histNum(phase.confidence),
       cyclePhase:String(cycle.cyclePhase || ''), similarity:histNum(cycle.similarityPct),
       structuralBias:String(r.marketStructure?.bias || r.structureBias || ''),
@@ -4576,15 +4566,9 @@ function toggleFavorite(symbol){
 function updateFavoritesButton(){
   if(el.favoritesBtn){
     el.favoritesBtn.innerText = showFavoritesOnly
-      ? `★ Favorites${favoriteSymbols.size ? ` (${favoriteSymbols.size})` : ''}`
+      ? '★ Favorites'
       : `☆ Favorites${favoriteSymbols.size ? ` (${favoriteSymbols.size})` : ''}`;
-    el.favoritesBtn.classList.toggle('favoriteActive', !!showFavoritesOnly);
-    el.favoritesBtn.title = showFavoritesOnly ? 'Return to Market Scan' : 'Show favorites only';
   }
-  const banner = document.getElementById('favoritesViewBanner');
-  const count = document.getElementById('favoritesViewCount');
-  if(banner) banner.style.display = showFavoritesOnly ? 'block' : 'none';
-  if(count) count.textContent = ` • ${favoriteSymbols.size} saved coin${favoriteSymbols.size === 1 ? '' : 's'}`;
 }
 
 function updateFavoritesLiveStatus(extra=''){
@@ -6133,13 +6117,10 @@ async function runScan(once=false, suppliedSession=null){
     const fastCandidates = await fastScreenMarketCandidates(top, session);
     if(session !== modeSession || activeViewMode !== 'scan') return;
 
-    // FULL-DEEP MARKET SCAN:
-    // Stage 1 fast-screens every prefiltered candidate.
-    // Stage 2 deep-analyzes EVERY fast-screened candidate, so a Prefilter
-    // value of 15 produces up to 15 complete deep-analysis results.
-    // Do not reintroduce a fixed 6–8 deep-analysis cap here.
-    const deepTop = fastCandidates.slice(0, top.length);
-    // With Prefilter=15: fast-screen 15 -> deep-analyze up to 15 -> publish up to 15.
+    // Normally deep-scan 6–8 symbols. A minimum of 6 preserves coverage on
+    // small scans, while the fast screen keeps the request count controlled.
+    const deepCount = Math.min(top.length, Math.max(6, Math.min(8, Math.ceil(top.length * 0.55))));
+    const deepTop = fastCandidates.slice(0, deepCount);
     queue = []; totalTasks = deepTop.length; doneTasks = 0; updateProgress(); const results = [];
     const finalizeBatch = (batch) => {
       batch.forEach(r => {
