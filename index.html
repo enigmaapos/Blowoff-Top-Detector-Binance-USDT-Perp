@@ -2542,15 +2542,7 @@ function updateSingleLiveStatus(extra=''){
 }
 
 function updateMarketAutoStatus(){
-  if(!el.countdown) return;
-  if(activeViewMode !== 'scan') return;
-  if(running) return;
-  if(!marketAutoEnabled){
-    el.countdown.innerText = 'Market scan auto-refresh paused';
-  }else if(autoTimer && marketNextScanAt){
-    const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
-    el.countdown.innerText = `Next scan in: ${left}s`;
-  }
+  updateUnifiedScanCountdown();
 }
 
 function updateLiveModeUI(){
@@ -6133,8 +6125,8 @@ function startCountdown(sec){
       clearInterval(countdownTimer); countdownTimer=null;
       return;
     }
-    if(el.countdown) el.countdown.innerText = `Next scan in: ${left}s`;
-    if(left <= 0){ clearInterval(countdownTimer); countdownTimer=null; if(el.countdown) el.countdown.innerText='Starting market scan…'; }
+    if(el.countdown) el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+    if(left <= 0){ clearInterval(countdownTimer); countdownTimer=null; if(el.countdown) el.countdown.innerText=`Starting ${getActiveScannerLabel()}…`; }
   }, 250);
 }
 
@@ -6165,6 +6157,84 @@ function pauseMarketAutoRefresh(){
   if(countdownTimer) clearInterval(countdownTimer);
   autoTimer = null;
   countdownTimer = null;
+}
+
+// Unified auto-refresh/countdown for EVERY scanner mode exposed by Scan Mode.
+// Market Scan keeps its existing scheduler; Top30 Gainers, Top30 Losers and
+// Below-50 now use the same visible countdown and the same Refresh Interval.
+function getActiveScannerLabel(){
+  const mode = String(activeScannerMode || el.scanMode?.value || 'main');
+  if(mode === 'topGreen') return 'Top30 Gainers';
+  if(mode === 'topRed') return 'Top30 Losers';
+  if(mode === 'below50') return 'Below-50';
+  return 'Market Scan';
+}
+
+function updateUnifiedScanCountdown(){
+  if(!el.countdown || activeViewMode !== 'scan') return;
+  if(running) return;
+  if(!marketAutoEnabled){
+    el.countdown.innerText = `${getActiveScannerLabel()} auto-refresh paused`;
+    return;
+  }
+  if(autoTimer && marketNextScanAt){
+    const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
+    el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+  }
+}
+
+function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
+  if(autoTimer) clearTimeout(autoTimer);
+  if(countdownTimer) clearInterval(countdownTimer);
+  autoTimer = null;
+  countdownTimer = null;
+  if(activeViewMode !== 'scan' || !marketAutoEnabled) return;
+
+  const delay = Math.max(1000, Number(delayMs) || 1000);
+  const session = modeSession;
+  activeScannerMode = scannerMode || activeScannerMode || 'main';
+  marketNextScanAt = Date.now() + delay;
+
+  countdownTimer = setInterval(()=>{
+    if(session !== modeSession || activeViewMode !== 'scan' || !marketAutoEnabled){
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      return;
+    }
+    const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
+    if(el.countdown) el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+    if(left <= 0){
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      if(el.countdown) el.countdown.innerText = `Starting ${getActiveScannerLabel()}…`;
+    }
+  }, 250);
+
+  autoTimer = setTimeout(async ()=>{
+    autoTimer = null;
+    marketNextScanAt = 0;
+    if(session !== modeSession || activeViewMode !== 'scan' || running) return;
+    const mode = scannerMode || activeScannerMode || 'main';
+    try{
+      if(mode === 'topGreen') await runTop30Scan({positive:true, mode:'resistance', session});
+      else if(mode === 'topRed') await runTop30Scan({positive:false, mode:'bearish', session});
+      else if(mode === 'below50'){
+        if(typeof window.runBelow50ScanUI === 'function') await window.runBelow50ScanUI({session});
+        else if(typeof runBelow50Scan === 'function') await runBelow50Scan({session});
+        else if(typeof runBelow50 === 'function') await runBelow50({session});
+      }else await runScan(false, session);
+
+      if(session === modeSession && activeViewMode === 'scan' && !running){
+        const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
+        scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
+      }
+    }catch(e){
+      console.warn(`${getActiveScannerLabel()} auto-refresh failed:`, e);
+      if(session === modeSession && activeViewMode === 'scan') scheduleUnifiedScannerAutoRefresh(5000, mode);
+    }
+  }, delay);
+
+  updateUnifiedScanCountdown();
 }
 
 // v3 startup restoration.
@@ -6347,6 +6417,7 @@ async function runScan(once=false, suppliedSession=null){
     singleViewLocked = false;
     clearSingleLiveTimer();
     running=true; el.startBtn.disabled=true; el.stopBtn.disabled=false; el.debug.innerText=''; resetWindow(); el.message.innerText='Fetching top symbols...';
+    if(el.countdown) el.countdown.innerText = 'Scanning Market Scan…';
     const N = Math.max(5, Math.min(60, parseInt(el.prefilter.value,10) || 30));
     const delayMs = Math.max(50, Math.min(2000, parseInt(el.delay.value,10) || 450));
     const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 60));
@@ -6589,6 +6660,11 @@ el.unifiedScanBtn.addEventListener('click', async () => {
   // Selecting any scanner immediately stops Single Search/Favorites refreshes
   // and invalidates every older async operation.
   const session = setActiveMode('scan', mode);
+  // Selecting any scanner starts a fresh countdown for that scanner only.
+  if(autoTimer) clearTimeout(autoTimer);
+  if(countdownTimer) clearInterval(countdownTimer);
+  autoTimer = null; countdownTimer = null; marketNextScanAt = 0;
+  marketAutoEnabled = false;
   showFavoritesOnly = false;
   updateFavoritesButton();
   persistActiveMode();
@@ -6596,18 +6672,34 @@ el.unifiedScanBtn.addEventListener('click', async () => {
   el.unifiedScanBtn.disabled = true;
   try{
     clearQuickTradingInterpretation();
+    if(el.countdown) el.countdown.innerText = `Scanning ${getActiveScannerLabel()}…`;
     if (mode === 'topGreen') {
       el.scanStatus.innerText = 'Running Top30 Gainers (green) scan...';
       await runTop30Scan({ positive:true, mode:'resistance', session });
+      if(session === modeSession && activeViewMode === 'scan'){
+        marketAutoEnabled = true;
+        const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
+        scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
+      }
     } else if (mode === 'topRed') {
       el.scanStatus.innerText = 'Running Top30 Losers (red) scan...';
       await runTop30Scan({ positive:false, mode:'bearish', session });
+      if(session === modeSession && activeViewMode === 'scan'){
+        marketAutoEnabled = true;
+        const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
+        scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
+      }
     } else if (mode === 'below50') {
       el.scanStatus.innerText = 'Running Below-50 Accumulation / PreCrash scan...';
       if(typeof window.runBelow50ScanUI === 'function') await window.runBelow50ScanUI({session});
       else if(typeof runBelow50Scan === 'function') await runBelow50Scan({session});
       else if(typeof runBelow50 === 'function') await runBelow50({session});
       else throw new Error('Below-50 scanner function was not found.');
+      if(session === modeSession && activeViewMode === 'scan'){
+        marketAutoEnabled = true;
+        const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
+        scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
+      }
     } else {
       el.scanStatus.innerText = 'Running Market scan...';
       prevBlowoffSet = new Set();
