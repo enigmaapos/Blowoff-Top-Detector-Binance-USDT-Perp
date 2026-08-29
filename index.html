@@ -2271,8 +2271,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       cached.bearishStructure = Array.isArray(cached.k15m) ? detectBearishStructure({
         k15m:cached.k15m, k4h:cached.k4h||[], closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow)
       }) : null;
-      cached.smcBreakerBlock = Array.isArray(cached.k15m) ? detectSMCBreakerBlock({
-        k15m:cached.k15m, closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow)
+      cached.smcBreakerBlock = Array.isArray(cached.k4h) ? detectSMCBreakerBlock({
+        k4h:cached.k4h, closeNow:Number(cached.k4h.at(-1)?.[4]||cached.closeNow)
       }) : null;
       cached.topDetection = calculateTopDetectionStack(cached);
       const cachedAdrStage=cached.accumulationReversal?.stage||'NONE';
@@ -2449,8 +2449,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       closeNow: close4
     });
     const smcBreakerBlock = detectSMCBreakerBlock({
-      k15m: k15,
-      closeNow: Number(k15?.at(-1)?.[4]||close4)
+      k4h,
+      closeNow: Number(k4h?.at(-1)?.[4]||close4)
     });
 
     // build the result object (compatible shape)
@@ -3510,18 +3510,18 @@ function queueSymbolAnalysis(symbol, results){
 // separate authoritative SIGNIFICANT CORRECTION CONFIRMED layer.
 function detectBearishStructure({k15m=[], k4h=[], closeNow=0} = {}){
   const empty=(state='NO BEARISH STRUCTURE CONFIRMATION',reason='No complete bearish sequence is currently confirmed.')=>({
-    state,stage:'NONE',stageRank:0,confidence:0,confirmed:false,reason,timeframe:'15m',
+    state,stage:'NONE',stageRank:0,confidence:0,confirmed:false,reason,timeframe:'4h',
     mss:false,choch:false,bos:false,retest:false,breakdown:false,
     mssIndex:-1,chochIndex:-1,bosIndex:-1,retestIndex:-1,breakdownIndex:-1,
     mssLevel:null,chochLevel:null,bosLevel:null,retestLevel:null
   });
   try{
-    const raw=Array.isArray(k15m)?k15m:[];
-    if(raw.length<30) return empty('INSUFFICIENT DATA','At least 30 fifteen-minute candles are required for the unified bearish structure detector.');
+    const raw=Array.isArray(k4h)?k4h:[];
+    if(raw.length<30) return empty('INSUFFICIENT DATA','At least 30 four-hour candles are required for the unified bearish structure detector.');
 
     const now=Date.now();
     const candles=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
-    if(candles.length<30) return empty('INSUFFICIENT DATA','Not enough completed fifteen-minute candles are available.');
+    if(candles.length<30) return empty('INSUFFICIENT DATA','Not enough completed four-hour candles are available.');
 
     const o=candles.map(k=>Number(k[1])), h=candles.map(k=>Number(k[2])), l=candles.map(k=>Number(k[3])), c=candles.map(k=>Number(k[4]));
     if(![...o,...h,...l,...c].every(Number.isFinite)) return empty('DATA ERROR','Invalid OHLC data prevented structural analysis.');
@@ -3663,25 +3663,25 @@ function detectBearishStructure({k15m=[], k4h=[], closeNow=0} = {}){
 }
 
 // ===== SMC BREAKER BLOCK DETECTOR =====
-// 15m price-action detector inspired by the supplied breaker-block schematic:
+// 4H price-action detector inspired by the supplied breaker-block schematic:
 // liquidity sweep -> market-structure shift -> displacement/BOS -> breaker zone -> retest.
 // This is an independent setup/context layer and never replaces the scanner's
 // authoritative 15m EMA200 correction confirmation.
-function detectSMCBreakerBlock({k15m=[], closeNow=0} = {}){
+function detectSMCBreakerBlock({k4h=[], closeNow=0} = {}){
   const empty=(state='NO BREAKER SETUP',reason='No complete liquidity-sweep → structure-shift → breaker sequence is currently detected.')=>({
     state,direction:'NONE',stage:'NONE',stageRank:0,score:0,confidence:0,confirmed:false,
-    reason,timeframe:'15m',liquiditySweep:false,mss:false,bos:false,displacement:false,
+    reason,timeframe:'4h',liquiditySweep:false,mss:false,bos:false,displacement:false,
     retest:false,continuation:false,sweepIndex:-1,bosIndex:-1,retestIndex:-1,continuationIndex:-1,
     sweepLevel:null,sweepExtreme:null,shiftLevel:null,breakerHigh:null,breakerLow:null,
     entryLow:null,entryHigh:null,invalidation:null,tp1:null,tp2:null,rr1:null,rr2:null,
     barsSinceBOS:null,barsSinceRetest:null
   });
   try{
-    const raw=Array.isArray(k15m)?k15m:[];
-    if(raw.length<35) return empty('INSUFFICIENT DATA','At least 35 fifteen-minute candles are required for the SMC breaker detector.');
+    const raw=Array.isArray(k4h)?k4h:[];
+    if(raw.length<35) return empty('INSUFFICIENT DATA','At least 35 four-hour candles are required for the SMC breaker detector.');
     const now=Date.now();
     const candles=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
-    if(candles.length<35) return empty('INSUFFICIENT DATA','Not enough completed fifteen-minute candles are available.');
+    if(candles.length<35) return empty('INSUFFICIENT DATA','Not enough completed four-hour candles are available.');
     const o=candles.map(k=>Number(k[1])), h=candles.map(k=>Number(k[2])), l=candles.map(k=>Number(k[3])), c=candles.map(k=>Number(k[4]));
     if(![...o,...h,...l,...c].every(Number.isFinite)) return empty('DATA ERROR','Invalid OHLC data prevented breaker-block analysis.');
     const n=c.length, price=Number(closeNow)||c[n-1];
@@ -3753,7 +3753,7 @@ function detectSMCBreakerBlock({k15m=[], closeNow=0} = {}){
         state:continuation?'🟢 BULLISH BREAKER CONFIRMED':retest?'🟢 BULLISH BREAKER — RETEST ACTIVE':'🟡 BULLISH BREAKER — WAIT FOR RETEST',
         direction:'BULLISH',stage:continuation?'CONFIRMED':retest?'RETEST':'BOS',stageRank:continuation?5:retest?4:3,
         score,confidence,confirmed:!!continuation,reason:continuation?'SSL swept → bullish MSS/BOS → breaker retest → continuation confirmed.':retest?'SSL swept and structure shifted bullishly; price has returned to the breaker zone.':'Sell-side liquidity was swept and price displaced through the prior swing high. Wait for the breaker retest.',
-        timeframe:'15m',liquiditySweep:true,mss:true,bos:true,displacement:true,retest:!!retest,continuation:!!continuation,
+        timeframe:'4h',liquiditySweep:true,mss:true,bos:true,displacement:true,retest:!!retest,continuation:!!continuation,
         sweepIndex:sweep.index,bosIndex:bos.index,retestIndex:retest?.index??-1,continuationIndex:continuation?.index??-1,
         sweepLevel:sweep.level,sweepExtreme:sweep.extreme,shiftLevel:refHigh.value,breakerHigh:zHigh,breakerLow:zLow,
         entryLow:zLow,entryHigh:zHigh,invalidation:sweep.extreme-tol,
@@ -3802,7 +3802,7 @@ function detectSMCBreakerBlock({k15m=[], closeNow=0} = {}){
         state:continuation?'🔴 BEARISH BREAKER CONFIRMED':retest?'🔴 BEARISH BREAKER — RETEST ACTIVE':'🟠 BEARISH BREAKER — WAIT FOR RETEST',
         direction:'BEARISH',stage:continuation?'CONFIRMED':retest?'RETEST':'BOS',stageRank:continuation?5:4,
         score,confidence,confirmed:!!continuation,reason:continuation?'BSL swept → bearish MSS/BOS → breaker retest → continuation confirmed.':retest?'BSL swept and structure shifted bearishly; price has returned to the breaker zone.':'Buy-side liquidity was swept and price displaced through the prior swing low. Wait for the breaker retest.',
-        timeframe:'15m',liquiditySweep:true,mss:true,bos:true,displacement:true,retest:!!retest,continuation:!!continuation,
+        timeframe:'4h',liquiditySweep:true,mss:true,bos:true,displacement:true,retest:!!retest,continuation:!!continuation,
         sweepIndex:sweep.index,bosIndex:bos.index,retestIndex:retest?.index??-1,continuationIndex:continuation?.index??-1,
         sweepLevel:sweep.level,sweepExtreme:sweep.extreme,shiftLevel:refLow.value,breakerHigh:zHigh,breakerLow:zLow,
         entryLow:zLow,entryHigh:zHigh,invalidation:sweep.extreme+tol,
@@ -3825,8 +3825,8 @@ function detectSMCBreakerBlock({k15m=[], closeNow=0} = {}){
 
 function renderSMCBreakerBlock(r){
   r=r||{};
-  const b=r.smcBreakerBlock||detectSMCBreakerBlock({k15m:r.k15m||[],closeNow:r.closeNow});
-  if(!b || b.direction==='NONE' || b.stage==='NONE') return `<div class="smcBreakerPanel"><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 15m</div><div class="smcBreakerEmpty" style="margin-top:5px">${mspEscape(b?.reason||'No breaker setup detected.')}</div></div>`;
+  const b=r.smcBreakerBlock||detectSMCBreakerBlock({k4h:r.k4h||[],closeNow:r.closeNow});
+  if(!b || b.direction==='NONE' || b.stage==='NONE') return `<div class="smcBreakerPanel"><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerEmpty" style="margin-top:5px">${mspEscape(b?.reason||'No breaker setup detected.')}</div></div>`;
   const bull=b.direction==='BULLISH';
   const accent=bull?'#2dd4bf':'#ff5c5c';
   const money=v=>Number.isFinite(Number(v))?Number(v).toLocaleString(undefined,{maximumFractionDigits:8}):'—';
@@ -3840,7 +3840,7 @@ function renderSMCBreakerBlock(r){
   ];
   const action=b.continuation?'Continuation confirmed — do not chase outside the zone.':b.retest?'Price is interacting with the breaker zone; wait for rejection/continuation.':'Wait for price to return to the breaker zone before treating it as an entry setup.';
   return `<div class="smcBreakerPanel" style="border-left:4px solid ${accent}">
-    <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 15m</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
+    <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
     <div class="smcBreakerReason">${mspEscape(b.reason||'')}</div>
     <div class="smcBreakerFlow">${steps.map(x=>`<div class="smcBreakerStep"><div class="sbsIcon">${x[0]}</div><div class="sbsLabel">${x[1]}</div><div class="sbsValue" style="color:${accent}">${x[2]}</div></div>`).join('')}</div>
     <div class="smcBreakerZone ${bull?'':'smcBreakerZoneBear'}" style="border-color:${accent}33">
@@ -4084,11 +4084,11 @@ function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfiden
   try{
     const raw=Array.isArray(k15m)?k15m:[];
     const empty=(state,reason)=>({
-      state,confidence:0,detected:false,confirmed:false,stage:'NONE',reason,timeframe:'15m',
+      state,confidence:0,detected:false,confirmed:false,stage:'NONE',reason,timeframe:'4h',
       firstTop:null,secondTop:null,neckline:null,breakoutPrice:null,retestPrice:null,
       firstTopIndex:-1,secondTopIndex:-1,breakoutIndex:-1,retestIndex:-1
     });
-    if(raw.length<20) return empty('INSUFFICIENT DATA','At least 20 fifteen-minute candles are required.');
+    if(raw.length<20) return empty('INSUFFICIENT DATA','At least 20 four-hour candles are required.');
 
     // Only completed 15m candles can create/confirm a structural stage.
     const now=Date.now();
@@ -4215,7 +4215,7 @@ function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfiden
       const state=stage==='FORMING'?'DOUBLE TOP — DEVELOPING':
                   stage==='DOUBLE_TOP'?'DOUBLE TOP — WATCH':'NECKLINE DEFINED — BREAK WATCH';
       return {
-        state,confidence:baseConfidence,detected:true,confirmed:false,stage,timeframe:'15m',
+        state,confidence:baseConfidence,detected:true,confirmed:false,stage,timeframe:'4h',
         reason:stage==='FORMING'
           ? 'Accumulation context + two similar highs are developing; the valley between them defines a provisional neckline. A neckline break is still required.'
           : stage==='DOUBLE_TOP'
@@ -4249,7 +4249,7 @@ function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfiden
       ));
       return {
         state:confirmed?'REVERSAL CONFIRMED':'NECKLINE RETEST — BEARISH',
-        confidence,detected:true,confirmed,stage:confirmed?'REVERSAL_CONFIRMED':'RETEST',timeframe:'15m',
+        confidence,detected:true,confirmed,stage:confirmed?'REVERSAL_CONFIRMED':'RETEST',timeframe:'4h',
         reason:confirmed
           ? 'Accumulation → double top → neckline break → failed retest → bearish continuation confirmed.'
           : 'Neckline broke and price retested/rejected the neckline; bearish reversal is developing. Confirmation requires continued closes below the neckline.',
@@ -4264,7 +4264,7 @@ function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfiden
     return {
       state:'NECKLINE BREAK — RETEST PENDING',
       confidence:Math.round(Math.min(92,60+Math.min(15,Number(accumConfidence)/7)+Math.min(10,depth*100)+Math.min(5,eqQuality*5))),
-      detected:true,confirmed:false,stage:'BREAKOUT',timeframe:'15m',
+      detected:true,confirmed:false,stage:'BREAKOUT',timeframe:'4h',
       reason:'The double-top neckline has broken decisively; wait for a failed retest before treating the reversal as confirmed.',
       firstTop:p1.value,secondTop:p2.value,firstTopIndex:p1.index,secondTopIndex:p2.index,
       neckline,breakoutPrice:closes[breakIndex],retestPrice:null,breakoutIndex:breakIndex,retestIndex:-1,
@@ -5936,7 +5936,6 @@ function renderCards(results){
           <div style="flex:1 1 100%;margin-top:2px">${renderTrendExhaustionState(r)}</div>
           <span class="phaseTag" style="margin-left:0;flex:1 1 100%">${phase.phase}</span>
           <div style="flex:1 1 100%;margin-top:6px">${renderBearishStructureDetector(r)}</div>
-          <div style="flex:1 1 100%;margin-top:6px">${renderSMCBreakerBlock(r)}</div>
           <div style="flex:1 1 100%;margin-top:6px">${renderAccumulationReversal(r)}</div>
           <div style="flex:1 1 100%;margin-top:4px;padding:7px 10px;border:1px solid rgba(255,217,102,.18);border-radius:9px;background:rgba(255,217,102,.035)">
             <strong>📉 1D Volume Participation:</strong> ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% vs prior 3D avg' : 'n/a'} — ${r.volume1dFalling?'DECLINING':r.volume1dWeakening?'WEAKENING':'STABLE / IMPROVING'}
@@ -5960,6 +5959,7 @@ function renderCards(results){
             </div>
             <div class="small" style="margin-top:3px;color:#9fb3cc">${lowerHighReasons.length?lowerHighReasons[0]:(dist?'Distribution / Breakdown risk developing':'No major structural top warning')}</div>
           </div>
+          <div style="flex:1 1 100%;margin-top:6px">${renderSMCBreakerBlock(r)}</div>
           <div style="flex:1 1 100%;margin-top:8px">${renderTopDetectionStack(r)}</div>
           <div style="flex:1 1 100%;margin-top:3px">${histCardActionsHtml(r)}</div>
         </div>
