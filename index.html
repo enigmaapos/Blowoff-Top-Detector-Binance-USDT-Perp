@@ -608,6 +608,21 @@ body.authLocked{overflow:hidden}
 #protectedApp[hidden]{display:none!important}.accountBar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;margin-bottom:12px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.accountIdentity{display:flex;align-items:center;gap:9px;min-width:0}.accountAvatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#173548;color:#8ff4e0;font-weight:900}.accountText{min-width:0}.accountText strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.accountText span{display:block;color:#8195ad;font-size:10px}.accountActions{display:flex;gap:6px;flex-wrap:wrap}.accountBtn{padding:7px 9px!important;font-size:11px!important}.accountBadge{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.18);color:#9ef4e2;font-size:10px;font-weight:900}.accountBadge i{width:6px;height:6px;border-radius:50%;background:#2dd4bf}.profilePanel{display:none;margin-bottom:12px;padding:13px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.profileGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.profileItem{padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:rgba(255,255,255,.02)}.profileItem small{display:block;color:#8195ad;font-size:10px}.profileItem strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.profileNote{margin-top:9px;font-size:11px;color:#9fb3cc;line-height:1.4}.authPhaseCard{margin-top:12px;padding:12px;border:1px dashed #29445b;border-radius:10px;background:rgba(126,220,255,.035)}.authPhaseCard strong{font-size:12px}.authPhaseCard p{margin:5px 0 0;color:#9fb3cc;font-size:11px;line-height:1.4}@media(max-width:520px){.authCard{padding:18px}.profileGrid{grid-template-columns:1fr}.accountBar{align-items:flex-start}.accountActions{justify-content:flex-end}}
 </style>
 
+<style id="smc-breaker-block-ui">
+.smcBreakerPanel{margin-top:10px;padding:12px 13px;border-radius:12px;border:1px solid rgba(126,220,255,.16);background:linear-gradient(135deg,rgba(126,220,255,.045),rgba(255,255,255,.018));overflow:hidden}
+.smcBreakerHeader{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.smcBreakerTitle{font-size:12px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#dff7ff}
+.smcBreakerState{font-size:17px;font-weight:950;margin-top:3px;line-height:1.25}
+.smcBreakerScore{font-size:13px;font-weight:950;white-space:nowrap;padding:5px 8px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}
+.smcBreakerReason{margin-top:6px;font-size:11px;line-height:1.45;color:#dbe9f7}
+.smcBreakerFlow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin-top:10px}
+.smcBreakerStep{min-width:0;padding:7px 5px;border-radius:8px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);text-align:center}
+.smcBreakerStep .sbsIcon{font-size:13px}.smcBreakerStep .sbsLabel{margin-top:2px;color:#9fb3cc;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.smcBreakerStep .sbsValue{margin-top:3px;font-size:9px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smcBreakerZone{position:relative;margin-top:10px;padding:10px;border-radius:10px;border:1px solid rgba(45,212,191,.18);background:linear-gradient(180deg,rgba(45,212,191,.075),rgba(45,212,191,.025))}
+.smcBreakerZoneBear{border-color:rgba(255,92,92,.18);background:linear-gradient(180deg,rgba(255,92,92,.075),rgba(255,92,92,.025))}
+.smcBreakerZoneTitle{font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.06em}.smcBreakerZoneGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:7px}.smcBreakerMetric{min-width:0;padding:7px;border-radius:8px;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.06)}.smcBreakerMetric span{display:block;color:#8fa6bd;font-size:8px;font-weight:800;text-transform:uppercase}.smcBreakerMetric strong{display:block;margin-top:3px;font-size:10px;overflow-wrap:anywhere}.smcBreakerMeta{margin-top:7px;color:#9fb3cc;font-size:9px;line-height:1.45}.smcBreakerAuthority{margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,.06);color:#8195ad;font-size:9px;line-height:1.4}.smcBreakerEmpty{color:#9fb3cc;font-size:11px}
+@media(max-width:600px){.smcBreakerFlow{grid-template-columns:repeat(5,minmax(55px,1fr));overflow-x:auto;padding-bottom:2px}.smcBreakerZoneGrid{grid-template-columns:1fr 1fr}.smcBreakerScore{font-size:11px}}
+</style>
 <style id="bearish-structure-detector-ui">
 .bearStructPanel{margin-top:10px;padding:12px 13px;border-radius:11px;border:1px solid rgba(255,92,92,.18);border-left:5px solid #ff7b7b;background:rgba(255,92,92,.035)}
 .bearStructTitle{font-size:12px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:#ffd0d0}
@@ -2231,6 +2246,9 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       cached.bearishStructure = Array.isArray(cached.k15m) ? detectBearishStructure({
         k15m:cached.k15m, k4h:cached.k4h||[], closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow)
       }) : null;
+      cached.smcBreakerBlock = Array.isArray(cached.k15m) ? detectSMCBreakerBlock({
+        k15m:cached.k15m, closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow)
+      }) : null;
       cached.topDetection = calculateTopDetectionStack(cached);
       const cachedAdrStage=cached.accumulationReversal?.stage||'NONE';
       const cachedAdrBoost={DOUBLE_TOP:4,BREAKOUT:10,RETEST:16,REVERSAL_CONFIRMED:20}[cachedAdrStage]||0;
@@ -2405,6 +2423,10 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       k4h,
       closeNow: close4
     });
+    const smcBreakerBlock = detectSMCBreakerBlock({
+      k15m: k15,
+      closeNow: Number(k15?.at(-1)?.[4]||close4)
+    });
 
     // build the result object (compatible shape)
     const result = {
@@ -2439,6 +2461,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       k4h, k1h, k15m: k15, k1d,
       marketStructure: structure4h,
       bearishStructure,
+      smcBreakerBlock,
       accumulationReversal,
       higherHighs: structure4h.higherHighs,
       higherLows: structure4h.higherLows,
@@ -3612,6 +3635,202 @@ function detectBearishStructure({k15m=[], k4h=[], closeNow=0} = {}){
   }catch(err){
     return empty('DETECTOR ERROR',err.message);
   }
+}
+
+// ===== SMC BREAKER BLOCK DETECTOR =====
+// 15m price-action detector inspired by the supplied breaker-block schematic:
+// liquidity sweep -> market-structure shift -> displacement/BOS -> breaker zone -> retest.
+// This is an independent setup/context layer and never replaces the scanner's
+// authoritative 15m EMA200 correction confirmation.
+function detectSMCBreakerBlock({k15m=[], closeNow=0} = {}){
+  const empty=(state='NO BREAKER SETUP',reason='No complete liquidity-sweep → structure-shift → breaker sequence is currently detected.')=>({
+    state,direction:'NONE',stage:'NONE',stageRank:0,score:0,confidence:0,confirmed:false,
+    reason,timeframe:'15m',liquiditySweep:false,mss:false,bos:false,displacement:false,
+    retest:false,continuation:false,sweepIndex:-1,bosIndex:-1,retestIndex:-1,continuationIndex:-1,
+    sweepLevel:null,sweepExtreme:null,shiftLevel:null,breakerHigh:null,breakerLow:null,
+    entryLow:null,entryHigh:null,invalidation:null,tp1:null,tp2:null,rr1:null,rr2:null,
+    barsSinceBOS:null,barsSinceRetest:null
+  });
+  try{
+    const raw=Array.isArray(k15m)?k15m:[];
+    if(raw.length<35) return empty('INSUFFICIENT DATA','At least 35 fifteen-minute candles are required for the SMC breaker detector.');
+    const now=Date.now();
+    const candles=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
+    if(candles.length<35) return empty('INSUFFICIENT DATA','Not enough completed fifteen-minute candles are available.');
+    const o=candles.map(k=>Number(k[1])), h=candles.map(k=>Number(k[2])), l=candles.map(k=>Number(k[3])), c=candles.map(k=>Number(k[4]));
+    if(![...o,...h,...l,...c].every(Number.isFinite)) return empty('DATA ERROR','Invalid OHLC data prevented breaker-block analysis.');
+    const n=c.length, price=Number(closeNow)||c[n-1];
+    const tol=Math.max(price*0.0015,1e-12);
+    const look=2;
+    function pivots(values,type){
+      const out=[];
+      for(let i=look;i<values.length-look;i++){
+        let ok=true;
+        for(let j=1;j<=look;j++){
+          if(type==='H' && (values[i]<values[i-j] || values[i]<values[i+j])) {ok=false;break;}
+          if(type==='L' && (values[i]>values[i-j] || values[i]>values[i+j])) {ok=false;break;}
+        }
+        if(ok) out.push({index:i,value:values[i]});
+      }
+      return out;
+    }
+    const highs=pivots(h,'H'), lows=pivots(l,'L');
+    if(highs.length<4 || lows.length<4) return empty('INSUFFICIENT SWING STRUCTURE','Not enough confirmed swing highs/lows to establish the breaker sequence.');
+    const body=i=>Math.abs(c[i]-o[i]);
+    const range=i=>Math.max(h[i]-l[i],1e-12);
+    const bodyAvg=(from,to)=>{
+      const a=[]; for(let i=Math.max(0,from);i<Math.min(n,to);i++) a.push(body(i));
+      a.sort((x,y)=>x-y); return a.length ? a[Math.floor(a.length/2)] : 0;
+    };
+    const candidates=[];
+    const minI=Math.max(5,n-100);
+    // Bullish: sell-side liquidity sweep below a prior swing low, followed by a
+    // close above a pre-sweep swing high and a displacement candle.
+    for(let si=lows.length-1;si>=0;si--){
+      const sw=lows[si]; if(sw.index<minI || sw.index>n-5) continue;
+      const priorL=lows.filter(x=>x.index<sw.index).at(-1); if(!priorL) continue;
+      // Prefer a meaningful sweep of a visible liquidity pool.
+      let sweep=null;
+      for(let i=sw.index+1;i<Math.min(n,sw.index+12);i++){
+        if(l[i] < sw.value-tol && c[i] > sw.value){ sweep={index:i,level:sw.value,extreme:l[i]}; break; }
+      }
+      if(!sweep) continue;
+      const refHighs=highs.filter(x=>x.index<sweep.index && x.index>Math.max(0,sweep.index-45));
+      if(!refHighs.length) continue;
+      const refHigh=refHighs.at(-1);
+      let bos=null;
+      for(let i=sweep.index+1;i<Math.min(n,sweep.index+35);i++){
+        const med=bodyAvg(Math.max(0,i-12),i);
+        const disp=c[i]>refHigh.value+tol && c[i]>o[i] && body(i)>=Math.max(med*1.25,tol*1.5) && body(i)/range(i)>=0.55;
+        if(disp){ bos={index:i,level:refHigh.value,displacement:true}; break; }
+      }
+      if(!bos) continue;
+      // Last bearish candle before BOS is the bullish breaker/order-block zone.
+      let ob=-1;
+      for(let i=bos.index-1;i>sweep.index;i--){ if(c[i]<o[i]){ob=i;break;} }
+      if(ob<0) ob=Math.max(sweep.index,bos.index-1);
+      const zLow=l[ob], zHigh=h[ob];
+      let retest=null, continuation=null;
+      for(let i=bos.index+1;i<n;i++){
+        const touched=l[i]<=zHigh+tol && h[i]>=zLow-tol;
+        const rejected=c[i]>zHigh+tol*0.25 || (c[i]>o[i] && c[i]>=zLow);
+        if(!retest && touched && rejected){ retest={index:i}; continue; }
+        if(retest && i>retest.index && c[i]>zHigh+tol){ continuation={index:i}; break; }
+      }
+      const age=n-1-bos.index;
+      let score=25+25+15;
+      if(retest) score+=15;
+      if(continuation) score+=10;
+      const distance=Math.abs(price-((zLow+zHigh)/2))/Math.max(price,1e-12);
+      if(distance<0.01) score+=5;
+      const confidence=Math.min(97,Math.round(score + (continuation?3:0)));
+      candidates.push({
+        state:continuation?'🟢 BULLISH BREAKER CONFIRMED':retest?'🟢 BULLISH BREAKER — RETEST ACTIVE':'🟡 BULLISH BREAKER — WAIT FOR RETEST',
+        direction:'BULLISH',stage:continuation?'CONFIRMED':retest?'RETEST':'BOS',stageRank:continuation?5:retest?4:3,
+        score,confidence,confirmed:!!continuation,reason:continuation?'SSL swept → bullish MSS/BOS → breaker retest → continuation confirmed.':retest?'SSL swept and structure shifted bullishly; price has returned to the breaker zone.':'Sell-side liquidity was swept and price displaced through the prior swing high. Wait for the breaker retest.',
+        timeframe:'15m',liquiditySweep:true,mss:true,bos:true,displacement:true,retest:!!retest,continuation:!!continuation,
+        sweepIndex:sweep.index,bosIndex:bos.index,retestIndex:retest?.index??-1,continuationIndex:continuation?.index??-1,
+        sweepLevel:sweep.level,sweepExtreme:sweep.extreme,shiftLevel:refHigh.value,breakerHigh:zHigh,breakerLow:zLow,
+        entryLow:zLow,entryHigh:zHigh,invalidation:sweep.extreme-tol,
+        tp1:price>zHigh?price+(price-zLow)*2: zHigh+(zHigh-zLow)*2,
+        tp2:price>zHigh?price+(price-zLow)*3: zHigh+(zHigh-zLow)*3,
+        barsSinceBOS:age,barsSinceRetest:retest?n-1-retest.index:null
+      });
+    }
+    // Bearish mirror: buy-side liquidity sweep -> close below swing low -> last bullish candle is breaker.
+    for(let si=highs.length-1;si>=0;si--){
+      const sw=highs[si]; if(sw.index<minI || sw.index>n-5) continue;
+      const priorH=highs.filter(x=>x.index<sw.index).at(-1); if(!priorH) continue;
+      let sweep=null;
+      for(let i=sw.index+1;i<Math.min(n,sw.index+12);i++){
+        if(h[i] > sw.value+tol && c[i] < sw.value){ sweep={index:i,level:sw.value,extreme:h[i]}; break; }
+      }
+      if(!sweep) continue;
+      const refLows=lows.filter(x=>x.index<sweep.index && x.index>Math.max(0,sweep.index-45));
+      if(!refLows.length) continue;
+      const refLow=refLows.at(-1);
+      let bos=null;
+      for(let i=sweep.index+1;i<Math.min(n,sweep.index+35);i++){
+        const med=bodyAvg(Math.max(0,i-12),i);
+        const disp=c[i]<refLow.value-tol && c[i]<o[i] && body(i)>=Math.max(med*1.25,tol*1.5) && body(i)/range(i)>=0.55;
+        if(disp){ bos={index:i,level:refLow.value,displacement:true}; break; }
+      }
+      if(!bos) continue;
+      let ob=-1;
+      for(let i=bos.index-1;i>sweep.index;i--){ if(c[i]>o[i]){ob=i;break;} }
+      if(ob<0) ob=Math.max(sweep.index,bos.index-1);
+      const zLow=l[ob], zHigh=h[ob];
+      let retest=null, continuation=null;
+      for(let i=bos.index+1;i<n;i++){
+        const touched=l[i]<=zHigh+tol && h[i]>=zLow-tol;
+        const rejected=c[i]<zLow-tol*0.25 || (c[i]<o[i] && c[i]<=zHigh);
+        if(!retest && touched && rejected){ retest={index:i}; continue; }
+        if(retest && i>retest.index && c[i]<zLow-tol){ continuation={index:i}; break; }
+      }
+      let score=65;
+      if(retest) score+=15;
+      if(continuation) score+=10;
+      const distance=Math.abs(price-((zLow+zHigh)/2))/Math.max(price,1e-12);
+      if(distance<0.01) score+=5;
+      const confidence=Math.min(97,Math.round(score + (continuation?3:0)));
+      candidates.push({
+        state:continuation?'🔴 BEARISH BREAKER CONFIRMED':retest?'🔴 BEARISH BREAKER — RETEST ACTIVE':'🟠 BEARISH BREAKER — WAIT FOR RETEST',
+        direction:'BEARISH',stage:continuation?'CONFIRMED':retest?'RETEST':'BOS',stageRank:continuation?5:4,
+        score,confidence,confirmed:!!continuation,reason:continuation?'BSL swept → bearish MSS/BOS → breaker retest → continuation confirmed.':retest?'BSL swept and structure shifted bearishly; price has returned to the breaker zone.':'Buy-side liquidity was swept and price displaced through the prior swing low. Wait for the breaker retest.',
+        timeframe:'15m',liquiditySweep:true,mss:true,bos:true,displacement:true,retest:!!retest,continuation:!!continuation,
+        sweepIndex:sweep.index,bosIndex:bos.index,retestIndex:retest?.index??-1,continuationIndex:continuation?.index??-1,
+        sweepLevel:sweep.level,sweepExtreme:sweep.extreme,shiftLevel:refLow.value,breakerHigh:zHigh,breakerLow:zLow,
+        entryLow:zLow,entryHigh:zHigh,invalidation:sweep.extreme+tol,
+        tp1:price<zLow?price-(zHigh-price)*2: zLow-(zHigh-zLow)*2,
+        tp2:price<zLow?price-(zHigh-price)*3: zLow-(zHigh-zLow)*3,
+        barsSinceBOS:n-1-bos.index,barsSinceRetest:retest?n-1-retest.index:null
+      });
+    }
+    if(!candidates.length) return empty();
+    candidates.sort((a,b)=> (b.score-a.score) || (b.bosIndex-a.bosIndex));
+    const best=candidates[0];
+    const targetRisk=Math.abs(((best.entryLow+best.entryHigh)/2)-best.invalidation);
+    const t1risk=Math.abs(((best.entryLow+best.entryHigh)/2)-best.tp1);
+    const t2risk=Math.abs(((best.entryLow+best.entryHigh)/2)-best.tp2);
+    best.rr1=targetRisk?Math.abs(t1risk/targetRisk):null;
+    best.rr2=targetRisk?Math.abs(t2risk/targetRisk):null;
+    return best;
+  }catch(err){ return empty('DETECTOR ERROR',err.message); }
+}
+
+function renderSMCBreakerBlock(r){
+  r=r||{};
+  const b=r.smcBreakerBlock||detectSMCBreakerBlock({k15m:r.k15m||[],closeNow:r.closeNow});
+  if(!b || b.direction==='NONE' || b.stage==='NONE') return `<div class="smcBreakerPanel"><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 15m</div><div class="smcBreakerEmpty" style="margin-top:5px">${mspEscape(b?.reason||'No breaker setup detected.')}</div></div>`;
+  const bull=b.direction==='BULLISH';
+  const accent=bull?'#2dd4bf':'#ff5c5c';
+  const money=v=>Number.isFinite(Number(v))?Number(v).toLocaleString(undefined,{maximumFractionDigits:8}):'—';
+  const state=mspEscape(b.state||'BREAKER SETUP');
+  const steps=[
+    ['💧','Liquidity',b.liquiditySweep?(bull?'SSL SWEPT':'BSL SWEPT'):'PENDING'],
+    ['↗','Shift',b.mss?'MSS / BOS':'PENDING'],
+    ['⚡','Displacement',b.displacement?'CONFIRMED':'PENDING'],
+    ['▣','Breaker',b.bos?'DEFINED':'PENDING'],
+    ['↩','Retest',b.continuation?'CONFIRMED':b.retest?'ACTIVE':'WAIT']
+  ];
+  const action=b.continuation?'Continuation confirmed — do not chase outside the zone.':b.retest?'Price is interacting with the breaker zone; wait for rejection/continuation.':'Wait for price to return to the breaker zone before treating it as an entry setup.';
+  return `<div class="smcBreakerPanel" style="border-left:4px solid ${accent}">
+    <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 15m</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
+    <div class="smcBreakerReason">${mspEscape(b.reason||'')}</div>
+    <div class="smcBreakerFlow">${steps.map(x=>`<div class="smcBreakerStep"><div class="sbsIcon">${x[0]}</div><div class="sbsLabel">${x[1]}</div><div class="sbsValue" style="color:${accent}">${x[2]}</div></div>`).join('')}</div>
+    <div class="smcBreakerZone ${bull?'':'smcBreakerZoneBear'}" style="border-color:${accent}33">
+      <div class="smcBreakerZoneTitle" style="color:${accent}">${bull?'🟢 BULLISH':'🔴 BEARISH'} BREAKER ZONE</div>
+      <div class="smcBreakerZoneGrid">
+        <div class="smcBreakerMetric"><span>Entry zone</span><strong>${money(b.entryLow)} — ${money(b.entryHigh)}</strong></div>
+        <div class="smcBreakerMetric"><span>Invalidation</span><strong>${money(b.invalidation)}</strong></div>
+        <div class="smcBreakerMetric"><span>TP1</span><strong>${money(b.tp1)}</strong></div>
+        <div class="smcBreakerMetric"><span>TP2</span><strong>${money(b.tp2)}</strong></div>
+      </div>
+      <div class="smcBreakerMeta">Sweep ${money(b.sweepLevel)} • Extreme ${money(b.sweepExtreme)} • Structure break ${money(b.shiftLevel)} • R:R ≈ ${b.rr1==null?'—':b.rr1.toFixed(1)} / ${b.rr2==null?'—':b.rr2.toFixed(1)} • ${Number(b.confidence||0)}% confidence</div>
+      <div class="smcBreakerMeta"><strong>Now:</strong> ${mspEscape(action)}</div>
+    </div>
+    <div class="smcBreakerAuthority">SMC setup detector only. It does not confirm a significant correction and does not override the scanner's separate 15m EMA200 confirmation layer.</div>
+  </div>`;
 }
 
 function renderBearishStructureDetector(r){
@@ -5433,6 +5652,7 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
     </div>
 
     ${renderBearishStructureDetector(r)}
+    ${renderSMCBreakerBlock(r)}
     ${renderAccumulationReversal(r)}
 
     ${dist ? `<div class="recBox" style="margin-top:10px;border-left:4px solid ${dist.level==='low'?'#ffd966':dist.level==='moderate'?'#ff9f43':'#ff5c5c'}">
@@ -5567,7 +5787,7 @@ function renderTable(results){
     let status=r.score>=threshold?'<span class="blowBadge">🔥 Blowoff</span>':r.score===threshold-1?'<span class="potBadge">⚠ Potential</span>':'<span class="small">normal</span>';
     const tf=(r.accumChecks||[]).map(t=>`${t.tf}:${t.result.confidence}%${t.result.isAccum?'✓':''}`).join(' | ');
     const pro=renderProfessionalAnalysis(r,rec,srec,lt);
-    return `<tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><td class="coinCell"><div class="coinName">${String(r.symbol||'').replace(/USDT$/i,'')}</div><div class="coinTicker">${r.symbol}</div><div style="margin-top:7px">${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div><div style="margin-top:7px">${histGet(histSymbol(r)) ? histCardActionsHtml(r) : `<button type="button" class="alt histSaveBtn" data-symbol="${histSymbol(r)}">📌 Save observation</button>`}</div><div style="margin-top:7px">${status} <span class="accBadge">Accum ${accum.confidence}%</span> <span class="phaseTag">${phase.phase}</span></div><div style="margin-top:7px">${renderTrendExhaustionState(r)}</div></td><td>${r.closeNow}</td><td>${Number(r.rsi4h||0).toFixed(1)}</td><td class="small">Vol×${r.volSpike4} • Wick ${Number(r.wickRatio4||0).toFixed(2)} • EMA70 ${r.ema70DistPct}%<br>EMA200 ${cg.ema200Stretch15==null?'n/a':Number(cg.ema200Stretch15).toFixed(2)+'%'}</td><td class="small"><span class="phasePill">${cyclePhase}</span><br><strong>Similarity:</strong> <span class="metricPill">${simPct}%</span> • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>${tf}</td></tr><tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ><td colspan="5" style="padding:10px 12px"><div class="small" style="color:var(--muted)">${expl.label} • reversal estimate ${expl.prob}%</div><details class="coinDetails"><summary><strong>＋ Detailed evidence</strong></summary><div class="coinDetailsBody" style="margin-top:10px">${pro}</div></details></td></tr>`;
+    return `<tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><td class="coinCell"><div class="coinName">${String(r.symbol||'').replace(/USDT$/i,'')}</div><div class="coinTicker">${r.symbol}</div><div style="margin-top:7px">${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div><div style="margin-top:7px">${histGet(histSymbol(r)) ? histCardActionsHtml(r) : `<button type="button" class="alt histSaveBtn" data-symbol="${histSymbol(r)}">📌 Save observation</button>`}</div><div style="margin-top:7px">${status} <span class="accBadge">Accum ${accum.confidence}%</span> <span class="phaseTag">${phase.phase}</span></div><div style="margin-top:7px">${renderTrendExhaustionState(r)}</div></td><td>${r.closeNow}</td><td>${Number(r.rsi4h||0).toFixed(1)}</td><td class="small">Vol×${r.volSpike4} • Wick ${Number(r.wickRatio4||0).toFixed(2)} • EMA70 ${r.ema70DistPct}%<br>EMA200 ${cg.ema200Stretch15==null?'n/a':Number(cg.ema200Stretch15).toFixed(2)+'%'}</td><td class="small"><span class="phasePill">${cyclePhase}</span><br><strong>Similarity:</strong> <span class="metricPill">${simPct}%</span> • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>${tf}<br><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'No setup'}</td></tr><tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ><td colspan="5" style="padding:10px 12px"><div class="small" style="color:var(--muted)">${expl.label} • reversal estimate ${expl.prob}%</div><details class="coinDetails"><summary><strong>＋ Detailed evidence</strong></summary><div class="coinDetailsBody" style="margin-top:10px">${pro}</div></details></td></tr>`;
   }).join('');
   el.tableView.innerHTML=`<div class="card-panel"><div class="tableScroll"><table><thead><tr><th>Symbol / Status</th><th>Last</th><th>RSI4H</th><th>Signals</th><th>Context / Accumulation</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
@@ -5635,6 +5855,7 @@ function renderCards(results){
           <div style="flex:1 1 100%;margin-top:2px">${renderTrendExhaustionState(r)}</div>
           <span class="phaseTag" style="margin-left:0;flex:1 1 100%">${phase.phase}</span>
           <div style="flex:1 1 100%;margin-top:6px">${renderBearishStructureDetector(r)}</div>
+          <div style="flex:1 1 100%;margin-top:6px">${renderSMCBreakerBlock(r)}</div>
           <div style="flex:1 1 100%;margin-top:6px">${renderAccumulationReversal(r)}</div>
           <div style="flex:1 1 100%;margin-top:4px;padding:7px 10px;border:1px solid rgba(255,217,102,.18);border-radius:9px;background:rgba(255,217,102,.035)">
             <strong>📉 1D Volume Participation:</strong> ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% vs prior 3D avg' : 'n/a'} — ${r.volume1dFalling?'DECLINING':r.volume1dWeakening?'WEAKENING':'STABLE / IMPROVING'}
@@ -5644,6 +5865,7 @@ function renderCards(results){
             <div style="margin-top:4px;line-height:1.5;font-size:13px">
               <strong>Top Risk:</strong> ${Number(r.topDetection?.score||0)}/100 ${r.topDetection?.label||'—'}
               <span style="opacity:.55"> • </span><strong>Bear Structure:</strong> ${r.bearishStructure?.state||'—'}
+              <span style="opacity:.55"> • </span><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'—'}
               <span style="opacity:.55"> • </span>
               <strong>Correction:</strong> ${confirmed?'CONFIRMED':'NOT CONFIRMED'}
               <span style="opacity:.55"> • </span>
@@ -5670,7 +5892,7 @@ function renderCards(results){
           RSI4H: ${rsi4h.toFixed(1)} • Vol×${Number(r.volSpike4||0).toFixed(2)} • Wick: ${wick.toFixed(2)}<br>
           EMA70 Extension: ${ema70.toFixed(2)}% • 15m EMA200 Stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} • Funding: ${Number(r.fundingRate||0).toFixed(6)}<br>
           1D Volume: ${Number(r.volume1d||0).toLocaleString()} • 1D Volume Trend: ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'%' : 'n/a'} ${r.volume1dFalling?'📉 DECLINING':r.volume1dWeakening?'📉 WEAKENING':'↔ STABLE'} • Declining days: ${Number(r.volume1dDecliningDays||0)}<br>
-          <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderBearishStructureDetector(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
+          <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderBearishStructureDetector(r)}${renderSMCBreakerBlock(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
         </div>
 
         <div class="proRead" style="border-left:4px solid ${state.tone==='red'?'#ff5c5c':state.tone==='orange'?'#ff9f43':state.tone==='yellow'?'#ffd966':state.tone==='green'?'#2dd4bf':'#7edcff'};background:rgba(255,255,255,.025);padding:12px;border-radius:10px;margin-top:0">
