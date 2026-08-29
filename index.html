@@ -832,6 +832,9 @@ body.authLocked{overflow:hidden}
             <option value="phaseRank">Market Phase Rank</option>
             <option value="simPhase">Similarity Phase</option>
             <option value="simPhaseRank">Similarity Phase Rank</option>
+            <option value="smcStrength">🧩 SMC Breaker Strength</option>
+            <option value="smcConfidence">🧩 SMC Confidence</option>
+            <option value="smcStageRank">🧩 SMC Stage</option>
           </select>
         </div>
         <div class="controlItem">
@@ -912,6 +915,26 @@ body.authLocked{overflow:hidden}
             <option value="BREAKDOWN">🔴 Bearish Breakdown Confirmed</option>
           </select>
           <div class="dashboardHint">Filters by the unified MSS → CHoCH → BOS → failed retest → breakdown sequence. It never overrides the authoritative correction status.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">SMC Breaker Stage</label>
+          <select id="smcBreakerFilter">
+            <option value="ALL">All SMC Setups</option>
+            <option value="ANY_SETUP">🧩 Any Breaker Setup</option>
+            <option value="WAIT_FOR_RETEST">🟡 Wait for Retest</option>
+            <option value="RETEST_ACTIVE">🟠 Retest Active</option>
+            <option value="CONFIRMED">🟢 Confirmed</option>
+          </select>
+          <div class="dashboardHint">Filters the 15m SMC breaker lifecycle. Confirmed ranks above active retests and waiting setups.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">SMC Direction</label>
+          <select id="smcDirectionFilter">
+            <option value="ALL">Both Directions</option>
+            <option value="BULLISH">🟢 Bullish Breakers</option>
+            <option value="BEARISH">🔴 Bearish Breakers</option>
+          </select>
+          <div class="dashboardHint">Optional direction filter for the 15m breaker detector.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Scan Status</label>
@@ -995,7 +1018,9 @@ const el = {
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
-  bearishStructureFilter: document.getElementById('bearishStructureFilter')
+  bearishStructureFilter: document.getElementById('bearishStructureFilter'),
+  smcBreakerFilter: document.getElementById('smcBreakerFilter'),
+  smcDirectionFilter: document.getElementById('smcDirectionFilter')
 };
 
   // ---------------------- Symbol search + single-symbol analyzer ----------------------
@@ -4797,6 +4822,22 @@ function getValueForKey(r, key) {
     case 'phaseRank': return getPhaseRank(r.phase);
     case 'simPhase': return getText(r.simPhase);
     case 'simPhaseRank': return getSimPhaseRank(r.simPhase);
+    // SMC breaker ranking: stage is deliberately dominant, then confidence.
+    // CONFIRMED (5) > RETEST ACTIVE (4) > WAIT FOR RETEST (3) > no setup (0).
+    case 'smcStrength': {
+      const b = r.smcBreakerBlock || {};
+      const stage = Number(b.stageRank || 0);
+      const confidence = getNumeric(b.confidence, getNumeric(b.score, 0));
+      return stage * 1000 + confidence;
+    }
+    case 'smcConfidence': {
+      const b = r.smcBreakerBlock || {};
+      return getNumeric(b.confidence, getNumeric(b.score, 0));
+    }
+    case 'smcStageRank': {
+      const b = r.smcBreakerBlock || {};
+      return getNumeric(b.stageRank, 0);
+    }
     default: return 0;
   }
 }
@@ -4938,6 +4979,28 @@ function filterResultsForDist(results) {
       if (adrFilter === 'DETECTED') return !!adr.detected && stage !== 'NONE' && stage !== 'ERROR';
       return stage === adrFilter;
     });
+  }
+
+  // Dedicated SMC Breaker filter. This layer is independent from the
+  // correction, exhaustion, accumulation and unified-bearish filters.
+  // Stage semantics intentionally match the visual panel:
+  // CONFIRMED > RETEST ACTIVE > WAIT FOR RETEST.
+  const smcFilter = el.smcBreakerFilter ? el.smcBreakerFilter.value : 'ALL';
+  if (smcFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const b = r?.smcBreakerBlock || {};
+      const rank = Number(b.stageRank || 0);
+      if (smcFilter === 'ANY_SETUP') return rank >= 3;
+      if (smcFilter === 'WAIT_FOR_RETEST') return rank === 3 && !b.retest && !b.continuation;
+      if (smcFilter === 'RETEST_ACTIVE') return rank === 4 && !!b.retest && !b.continuation;
+      if (smcFilter === 'CONFIRMED') return rank >= 5 && !!b.continuation;
+      return false;
+    });
+  }
+
+  const smcDirection = el.smcDirectionFilter ? el.smcDirectionFilter.value : 'ALL';
+  if (smcDirection !== 'ALL') {
+    filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
   }
 
   if (!showOnlyDist) return filtered;
@@ -5178,6 +5241,24 @@ if (el.marketExhaustionFilter) {
 }
 if (el.bearishStructureFilter) {
   el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.smcBreakerFilter) {
+  el.smcBreakerFilter.addEventListener('change', () => {
+    // Selecting an SMC lifecycle stage automatically switches to the
+    // SMC strength sorter so the strongest matching breaker appears first.
+    if (el.sortBy) {
+      if (el.smcBreakerFilter.value !== 'ALL') {
+        el.sortBy.value = 'smcStrength';
+        if (el.sortDir) { sortDesc = true; el.sortDir.innerText = 'Desc'; }
+      } else if (el.sortBy.value === 'smcStrength' || el.sortBy.value === 'smcConfidence' || el.sortBy.value === 'smcStageRank') {
+        el.sortBy.value = 'score';
+      }
+    }
+    renderActiveView(true);
+  });
+}
+if (el.smcDirectionFilter) {
+  el.smcDirectionFilter.addEventListener('change', () => renderActiveView(true));
 }
 
 
