@@ -481,6 +481,9 @@
 .controlSection:nth-of-type(3)::before{background:rgba(255,159,67,.75)}
 .controlSection:nth-of-type(4)::before{background:rgba(139,124,255,.75)}
 .controlSection:nth-of-type(5)::before{background:rgba(255,92,92,.70)}
+  .hvdZone{border-color:rgba(255,159,67,.16);background:linear-gradient(180deg,rgba(255,159,67,.045),rgba(255,255,255,.012))}
+  .hvdZone::before{background:rgba(255,159,67,.75)!important}
+  .hvdZone .controlSectionTitle span{background:rgba(255,159,67,.10)}
 .controlSectionTitle{
   padding-bottom:9px;
   margin-bottom:12px;
@@ -716,6 +719,29 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
 
+    <div class="controlSection controlZone hvdZone">
+      <div class="controlSectionTitle"><span>🕯️</span> 3 · High-Volume Doji Detection</div>
+      <div class="controlGrid two">
+        <div class="controlItem">
+          <label class="controlLabel">HVD Timeframes</label>
+          <div class="tfChoices">
+            <label class="tfChoice"><input type="checkbox" id="hvd1d" checked> 1D</label>
+            <label class="tfChoice"><input type="checkbox" id="hvd1w" checked> 1W</label>
+            <label class="tfChoice"><input type="checkbox" id="hvd1m" checked> 1M</label>
+          </div>
+          <div class="dashboardHint">Detects completed small-body/doji candles with unusually high volume. Recent candles are checked on each selected timeframe.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">Detection Rule</label>
+          <div class="controlInline">
+            <span class="mutedBadge">Doji body ≤ 28% of range</span>
+            <span class="mutedBadge">High volume ≥ 1.5× prior average</span>
+          </div>
+          <div class="dashboardHint">Stronger when the candle is near a high, has upper rejection, or follows a strong advance. This is an early-warning signal, not correction confirmation.</div>
+        </div>
+      </div>
+    </div>
+
     <div class="controlSection controlZone alertSection alertZone">
       <div class="controlSectionTitle"><span>🔔</span> 3 · Conditional Alerts</div>
       <div class="controlGrid three">
@@ -824,6 +850,10 @@ body.authLocked{overflow:hidden}
             <option value="vol1dTrend">1D Volume Trend</option>
             <option value="vol4h">Volume 4H</option>
             <option value="vol15m">Volume 15m</option>
+            <option value="hvdScore">🕯️ High-Volume Doji Score</option>
+            <option value="hvd1d">🕯️ HVD 1D</option>
+            <option value="hvd1w">🕯️ HVD 1W</option>
+            <option value="hvd1m">🕯️ HVD 1M</option>
             <option value="cycleMatch">Cycle Match %</option>
             <option value="correctionRank">Correction Status</option>
             <option value="correctionConfidence">Correction Confidence</option>
@@ -1172,6 +1202,165 @@ el.symbolClearCache.addEventListener('click', () => {
    This is a WARNING / TOP-DEVELOPMENT engine. It does NOT replace
    the existing correction confirmation layer.
    ============================================================ */
+
+/* ============================================================
+   HIGH-VOLUME DOJI / INDECISION DETECTOR
+   Timeframes: 1D / 1W / 1M
+
+   Uses COMPLETED candles only and checks the most recent few
+   completed candles. A small body alone is not enough: volume
+   must also be elevated versus prior completed candles.
+
+   This is an EARLY-WARNING context signal. It does not confirm
+   a correction and never overrides the 15m EMA200 confirmation.
+   ============================================================ */
+function getHVDTimeframes(){
+  const out=[];
+  const d=document.getElementById('hvd1d');
+  const w=document.getElementById('hvd1w');
+  const m=document.getElementById('hvd1m');
+  if(!d || d.checked) out.push('1D');
+  if(!w || w.checked) out.push('1W');
+  if(!m || m.checked) out.push('1M');
+  return out;
+}
+
+function detectHighVolumeDojiMultiTF(item){
+  item=item||{};
+  const selected=getHVDTimeframes();
+  const specs=[
+    {key:'1D', data:item.k1d, move:8},
+    {key:'1W', data:item.k1w, move:15},
+    {key:'1M', data:item.k1m, move:25}
+  ];
+  const byTf={};
+  const reasons=[];
+  let best=null;
+
+  const clamp=(n,a=0,b=100)=>Math.max(a,Math.min(b,n));
+  const pct=(a,b)=>b ? ((a-b)/b)*100 : 0;
+
+  for(const spec of specs){
+    if(!selected.includes(spec.key)){
+      byTf[spec.key]={score:0,state:'DISABLED',valid:false};
+      continue;
+    }
+    const rows=Array.isArray(spec.data)?spec.data:[];
+    const completed=rows.length>1 ? rows.slice(0,-1) : rows.slice();
+    if(completed.length<8){
+      byTf[spec.key]={score:0,state:'INSUFFICIENT DATA',valid:false};
+      continue;
+    }
+
+    const start=Math.max(0,completed.length-3);
+    let bestTf=null;
+
+    for(let i=start;i<completed.length;i++){
+      const c=completed[i];
+      const o=Number(c[1]), h=Number(c[2]), l=Number(c[3]), cl=Number(c[4]), v=Number(c[5]);
+      const range=Math.max(0,h-l);
+      if(![o,h,l,cl,v].every(Number.isFinite) || range<=0) continue;
+
+      const body=Math.abs(cl-o);
+      const bodyPct=body/range;
+      const priorVols=completed.slice(Math.max(0,i-10),i).map(x=>Number(x[5])).filter(Number.isFinite);
+      if(priorVols.length<5) continue;
+      const volAvg=avg(priorVols);
+      const volRatio=volAvg>0 ? v/volAvg : 0;
+
+      // Doji / small-body score.
+      const dojiScore = bodyPct<=0.12 ? 100 :
+                        bodyPct<=0.20 ? 85 :
+                        bodyPct<=0.28 ? 65 :
+                        bodyPct<=0.35 ? 40 : 0;
+
+      // High-volume score.
+      const volumeScore = volRatio>=2.5 ? 100 :
+                          volRatio>=2.0 ? 90 :
+                          volRatio>=1.5 ? 75 :
+                          volRatio>=1.25 ? 50 : 0;
+
+      if(dojiScore<=0 || volumeScore<=0) continue;
+
+      const upperWick=Math.max(0,h-Math.max(o,cl));
+      const lowerWick=Math.max(0,Math.min(o,cl)-l);
+      const upperWickPct=upperWick/range;
+      const lowerWickPct=lowerWick/range;
+
+      const priorHighs=completed.slice(Math.max(0,i-20),i).map(x=>Number(x[2])).filter(Number.isFinite);
+      const priorHigh=priorHighs.length?Math.max(...priorHighs):h;
+      const nearHigh=priorHigh>0 && h>=priorHigh*0.97;
+
+      const prevIdx=Math.max(0,i-3);
+      const prevClose=Number(completed[prevIdx]?.[4]);
+      const advancePct=Number.isFinite(prevClose) && prevClose>0 ? ((cl-prevClose)/prevClose)*100 : 0;
+
+      // Core requires BOTH characteristics. Context then tells us whether
+      // the doji is more useful as a topping/exhaustion warning.
+      let score=Math.round(dojiScore*0.55 + volumeScore*0.45);
+      if(nearHigh) score+=8;
+      if(upperWickPct>=0.35) score+=7;
+      if(advancePct>=spec.move) score+=7;
+      score=clamp(score);
+
+      const bearishContext=nearHigh && (upperWickPct>=0.25 || advancePct>=spec.move);
+      const state=score>=75 && bearishContext ? 'BEARISH EXHAUSTION' :
+                  score>=70 ? 'HIGH-VOLUME INDECISION' :
+                  score>=55 ? 'DEVELOPING' : 'WEAK';
+
+      const signal={
+        score,
+        state,
+        bodyPct:bodyPct*100,
+        volRatio,
+        upperWickPct:upperWickPct*100,
+        lowerWickPct:lowerWickPct*100,
+        nearHigh,
+        advancePct,
+        timestamp:Number(c[0])||0,
+        candleIndex:i
+      };
+      if(!bestTf || signal.score>bestTf.score) bestTf=signal;
+    }
+
+    if(bestTf){
+      byTf[spec.key]=bestTf;
+      if(bestTf.score>=65){
+        const near=bestTf.nearHigh?' near highs':'';
+        reasons.push(`${spec.key} HVD ${bestTf.score}% • ${bestTf.volRatio.toFixed(2)}× volume • ${bestTf.bodyPct.toFixed(1)}% body${near}`);
+      }
+      if(!best || bestTf.score>best.score) best={tf:spec.key,...bestTf};
+    }else{
+      byTf[spec.key]={score:0,state:'NONE',valid:false};
+    }
+  }
+
+  const active=Object.values(byTf).filter(x=>x && x.valid!==false && Number(x.score)>0);
+  const strong=active.filter(x=>Number(x.score)>=65).length;
+  const veryStrong=active.filter(x=>Number(x.score)>=80).length;
+
+  // Multi-timeframe agreement is valuable, but deliberately modest.
+  let score=best ? Number(best.score) : 0;
+  if(strong>=2) score=clamp(score+8);
+  if(veryStrong>=2) score=clamp(score+5);
+  if(strong>=3) score=clamp(score+5);
+
+  const state = score>=80 && strong>=1 ? 'BEARISH EXHAUSTION / HIGH-VOLUME INDECISION' :
+                score>=70 ? 'HIGH-VOLUME INDECISION' :
+                score>=55 ? 'DEVELOPING' : 'NONE';
+
+  return {
+    score:Math.round(score),
+    state,
+    bestTf:best?.tf||null,
+    timeframes:byTf,
+    selected,
+    strongCount:strong,
+    reasons,
+    meta:best||{}
+  };
+}
+
 function calculateTopDetectionStack(item){
   try{
     item = item || {};
@@ -1281,7 +1470,8 @@ function calculateTopDetectionStack(item){
       failedBreakout: failedBreakout ? 100 : 0,
       lowerHighCHoCH: lowerHighSignal ? 70 : 0,
       volumeExhaustion: (nearPeak && volumeFalling) ? 85 : (nearPeak && oneDVolumeFalling ? 70 : (nearPeak && volSpike<0.9 ? 55 : 0)),
-      parabolicExtension: parabolic ? clamp(45 + Math.max(0,emaStretch-18)*2) : 0
+      parabolicExtension: parabolic ? clamp(45 + Math.max(0,emaStretch-18)*2) : 0,
+      highVolumeDoji: clamp(Number(item.hvd?.score||0))
     };
 
     // Weighted stack. Distribution/structure are deliberately stronger than raw RSI.
@@ -1302,6 +1492,15 @@ function calculateTopDetectionStack(item){
     if(overextended) contextBoost += 6;
     if(overheated) contextBoost += 4;
     score=clamp(Math.round(score + contextBoost));
+
+    // High-volume doji is a supporting top-development signal, not a standalone
+    // top call. A modest additive boost prevents it from overpowering structure.
+    const hvdScore=Number(item.hvd?.score||0);
+    const hvdStrongCount=Number(item.hvd?.strongCount||0);
+    if(hvdScore>=85) score=clamp(score+8);
+    else if(hvdScore>=70) score=clamp(score+5);
+    else if(hvdScore>=55) score=clamp(score+3);
+    if(hvdStrongCount>=2) score=clamp(score+2);
 
     // A structural distribution/breakdown setup with weak support and/or
     // significant extension must not be labelled "Trend Healthy" merely
@@ -1334,6 +1533,10 @@ function calculateTopDetectionStack(item){
     if(failedBreakout) reasons.push('Failed breakout / bull-trap rejection');
     if(lowerHighSignal) reasons.push('Lower-high / structure weakening');
     if(components.volumeExhaustion>=55) reasons.push('Volume participation weakening near highs');
+    if(components.highVolumeDoji>=70){
+      const hvdBest=item.hvd?.bestTf ? ` (${item.hvd.bestTf})` : '';
+      reasons.push(`High-volume doji / indecision${hvdBest}`);
+    }
     if(nearPeak && oneDVolumeFalling) reasons.push(`1D volume declining ${Number(item.volume1dTrendPct).toFixed(1)}% vs prior 3D average`);
     else if(nearPeak && oneDVolumeWeakening) reasons.push(`1D volume weakening ${Number(item.volume1dTrendPct).toFixed(1)}% vs prior 3D average`);
     if(parabolic) reasons.push(`Parabolic EMA extension (${emaStretch.toFixed(1)}%)`);
@@ -1371,12 +1574,13 @@ function calculateTrendExhaustionState(item){
     const failedBreakout=!!m.failedBreakout || c.failedBreakout>=70;
     const momentum=!!m.momentumDecel || c.momentumExhaustion>=55;
     const volumeExhaust=c.volumeExhaustion>=55;
+    const hvd=c.highVolumeDoji>=65;
     const parabolic=c.parabolicExtension>=55 || ema70>=25 || ema20>=12;
     const rsiExtreme=rsi>=80;
     const rsiHot=rsi>=70;
     const weakSupport=accum<50;
     const structureCount=[lowerHigh,failedBreakout,distributionPhase].filter(Boolean).length;
-    const exhaustionCount=[rsiExtreme,parabolic,momentum,volumeExhaust].filter(Boolean).length;
+    const exhaustionCount=[rsiExtreme,parabolic,momentum,volumeExhaust,hvd].filter(Boolean).length;
 
     // Dedicated development score. This is a state classifier, not a
     // probability of a correction and never confirms the EMA200 layer.
@@ -1387,6 +1591,7 @@ function calculateTrendExhaustionState(item){
     if(breakdownPhase) score+=14;
     if(momentum) score+=12;
     if(volumeExhaust) score+=8;
+    if(hvd) score+=7;
     if(c.rsiDivergence>=70) score+=8;
     if(parabolic) score+=10;
     if(rsiExtreme) score+=7;
@@ -1440,6 +1645,7 @@ function calculateTrendExhaustionState(item){
     if(distributionPhase) reasons.push('Distribution phase');
     if(momentum) reasons.push('Momentum deceleration');
     if(volumeExhaust) reasons.push('Volume exhaustion');
+    if(hvd) reasons.push(`High-volume doji / indecision${item.hvd?.bestTf ? ` (${item.hvd.bestTf})` : ''}`);
     if(parabolic) reasons.push(`EMA extension ${ema70.toFixed(1)}%`);
     if(rsiExtreme) reasons.push(`4H RSI ${rsi.toFixed(1)}`);
     if(weakSupport) reasons.push(`Weak accumulation ${Math.round(accum)}%`);
@@ -1490,6 +1696,24 @@ function renderAccumulationReversal(r){
   </div>`;
 }
 
+
+function renderHighVolumeDojiSummary(r){
+  const h=r?.hvd || detectHighVolumeDojiMultiTF(r||{});
+  if(!h || !h.selected?.length) return '';
+  const esc=(v)=>mspEscape(v);
+  const items=h.selected.map(tf=>{
+    const d=h.timeframes?.[tf]||{};
+    if(d.state==='DISABLED') return '';
+    const score=Number(d.score||0);
+    const tone=score>=80?'danger':score>=70?'warn':score>=55?'watch':score>0?'good':'muted';
+    const label=score>0 ? `${tf} ${score}%` : `${tf} —`;
+    return `<span class="hvdTf ${tone}">${esc(label)}</span>`;
+  }).join('');
+  const best=h.bestTf ? `${esc(h.bestTf)} • ${esc(h.state)} • ${Number(h.score||0)}%` : 'No qualifying high-volume doji';
+  const detail=h.bestTf && h.meta ? `Best: ${best} • Vol ${Number(h.meta.volRatio||0).toFixed(2)}× • Body ${Number(h.meta.bodyPct||0).toFixed(1)}%${h.meta.nearHigh?' • Near high':''}` : best;
+  return `<div class="hvdSummary"><strong>🕯️ High-Volume Doji / Indecision</strong><div>${items}</div><div style="margin-top:4px;color:#cfe8ff">${detail}</div></div>`;
+}
+
 function renderTopDetectionStack(r){
   // IMPORTANT: do not trust a stale/cached topDetection.level.
   // The authoritative post-top override is re-evaluated at render time
@@ -1524,8 +1748,10 @@ function renderTopDetectionStack(r){
       ${bar('🔻 Lower High / CHoCH',c.lowerHighCHoCH)}
       ${bar('📊 Volume Exhaustion',c.volumeExhaustion)}
       ${bar('🚀 Parabolic Extension',c.parabolicExtension)}
+      ${bar('🕯️ High-Volume Doji',c.highVolumeDoji)}
       ${c.accumulationDoubleTop!=null ? bar('📐 Accumulation Double Top',c.accumulationDoubleTop) : ''}
     </div>
+    ${renderHighVolumeDojiSummary(r)}
     <div class="topDetReasons"><strong>Evidence:</strong> ${t.reasons.map(x=>mspEscape(x)).join(' • ')}</div>
     <div class="topDetNote">Top risk is an early-warning/formation detector. It does not confirm a correction and never overrides the scanner's separate 15m EMA200 confirmation layer.</div>
   </div>`;
@@ -2263,7 +2489,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
   const useCache = opts.useCache !== false;
   if(useCache){
     const cached = getCachedSymbol(sym);
-    if(cached && Number(cached.ema200_15) > 0) {
+    if(cached && Number(cached.ema200_15) > 0 && Array.isArray(cached.k1w) && Array.isArray(cached.k1m)) {
       cached.correctionGuide = getCorrectionGuide(cached);
       cached.accumulationReversal = Array.isArray(cached.k15m) ? detectAccumulationDoubleTopReversal({
         k15m:cached.k15m, closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow), accumConfidence:Number(cached.accum15?.confidence||0)
@@ -2274,6 +2500,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       cached.smcBreakerBlock = Array.isArray(cached.k4h) ? detectSMCBreakerBlock({
         k4h:cached.k4h, closeNow:Number(cached.k4h.at(-1)?.[4]||cached.closeNow)
       }) : null;
+      cached.hvd = detectHighVolumeDojiMultiTF(cached);
       cached.topDetection = calculateTopDetectionStack(cached);
       const cachedAdrStage=cached.accumulationReversal?.stage||'NONE';
       const cachedAdrBoost={DOUBLE_TOP:4,BREAKOUT:10,RETEST:16,REVERSAL_CONFIRMED:20}[cachedAdrStage]||0;
@@ -2325,10 +2552,12 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       opts.prefetchedK15
         ? Promise.resolve(opts.prefetchedK15)
         : safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
-      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // NEW: 1D
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=30`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D volume + HVD
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1w&limit=20`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1W
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1M&limit=12`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1M
       safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${sym}&limit=1`, { allowIfNotRunning: opts.allowIfNotRunning })
     ];
-    const [k4hFull, k1h, k15, k1d, f] = await Promise.all(promises);
+    const [k4hFull, k1h, k15, k1d, k1w, k1m, f] = await Promise.all(promises);
 
     // Keep the OLD version's 40-candle core calculations, while retaining
     // enough full 4H history to calculate the NEW authoritative EMA200 rule.
@@ -2338,6 +2567,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const closes1h = (k1h||[]).map(k=>Number(k[4])); const highs1h=(k1h||[]).map(k=>Number(k[2])); const lows1h=(k1h||[]).map(k=>Number(k[3])); const vols1h=(k1h||[]).map(k=>Number(k[5]));
     const closes15 = (k15||[]).map(k=>Number(k[4])); const highs15=(k15||[]).map(k=>Number(k[2])); const lows15=(k15||[]).map(k=>Number(k[3])); const vols15=(k15||[]).map(k=>Number(k[5]));
     const closes1d = (k1d||[]).map(k=>Number(k[4])); const highs1d=(k1d||[]).map(k=>Number(k[2])); const lows1d=(k1d||[]).map(k=>Number(k[3])); const vols1d=(k1d||[]).map(k=>Number(k[5]));
+    const closes1w = (k1w||[]).map(k=>Number(k[4])); const closes1m = (k1m||[]).map(k=>Number(k[4]));
 
     // ===== 1D VOLUME PARTICIPATION TREND =====
     // Use completed daily candles only so the still-forming current day does not
@@ -2483,7 +2713,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       dropPctFromPeak,
       fundingRate,
       closeNow: close4,
-      k4h, k1h, k15m: k15, k1d,
+      k4h, k1h, k15m: k15, k1d, k1w, k1m,
       marketStructure: structure4h,
       bearishStructure,
       smcBreakerBlock,
@@ -2514,6 +2744,9 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       }),
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
     };
+
+    // ===== high-volume doji context =====
+    result.hvd = detectHighVolumeDojiMultiTF(result);
 
     // ===== upgraded multi-detector top stack =====
     result.topDetection = calculateTopDetectionStack(result);
@@ -4845,6 +5078,10 @@ function getValueForKey(r, key) {
     case 'vol1dTrend': return getNumeric(r.volume1dTrendPct, 0);
     case 'vol4h': return getNumeric(r.volume4h, 0);
     case 'vol15m': return getNumeric(r.volume15m, 0);
+    case 'hvdScore': return getNumeric(r.hvd && r.hvd.score, 0);
+    case 'hvd1d': return getNumeric(r.hvd && r.hvd.timeframes && r.hvd.timeframes['1D'] && r.hvd.timeframes['1D'].score, 0);
+    case 'hvd1w': return getNumeric(r.hvd && r.hvd.timeframes && r.hvd.timeframes['1W'] && r.hvd.timeframes['1W'].score, 0);
+    case 'hvd1m': return getNumeric(r.hvd && r.hvd.timeframes && r.hvd.timeframes['1M'] && r.hvd.timeframes['1M'].score, 0);
 
     // ---- Expanded sorting keys ----
     case 'cycleMatch': return getNumeric(r.cycleMatch, getNumeric(r.similarity, 0) * 100);
@@ -6012,6 +6249,7 @@ function renderCards(results){
           RSI4H: ${rsi4h.toFixed(1)} • Vol×${Number(r.volSpike4||0).toFixed(2)} • Wick: ${wick.toFixed(2)}<br>
           EMA70 Extension: ${ema70.toFixed(2)}% • 15m EMA200 Stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} • Funding: ${Number(r.fundingRate||0).toFixed(6)}<br>
           1D Volume: ${Number(r.volume1d||0).toLocaleString()} • 1D Volume Trend: ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'%' : 'n/a'} ${r.volume1dFalling?'📉 DECLINING':r.volume1dWeakening?'📉 WEAKENING':'↔ STABLE'} • Declining days: ${Number(r.volume1dDecliningDays||0)}<br>
+          HVD: ${r.hvd?.state||'NONE'} • Score ${Number(r.hvd?.score||0)}% • 1D ${Number(r.hvd?.timeframes?.['1D']?.score||0)}% • 1W ${Number(r.hvd?.timeframes?.['1W']?.score||0)}% • 1M ${Number(r.hvd?.timeframes?.['1M']?.score||0)}%<br>
           <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderBearishStructureDetector(r)}${renderSMCBreakerBlock(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
         </div>
 
@@ -7108,6 +7346,9 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 /*  TOP-DETECTION STACK */
 /* RENDERER STALE-RESULT GUARD: re-check EMA200 correction at render time */
+.hvdSummary{margin-top:10px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,159,67,.16);background:rgba(255,159,67,.035);font-size:11px;line-height:1.45}
+.hvdSummary strong{color:#ffe2bd}.hvdTf{display:inline-flex;align-items:center;gap:4px;margin:3px 4px 0 0;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);font-weight:800}
+.hvdTf.good{color:#c9fff4}.hvdTf.watch{color:#ffe58a}.hvdTf.warn{color:#ffc27a}.hvdTf.danger{color:#ffb3aa}.hvdTf.muted{color:#9fb3cc}
 .topDetPanel{margin-top:12px;padding:14px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(255,255,255,.035)}
 .topDetHeader{display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:800}
 .topDetScore{font-size:18px;padding:4px 9px;border-radius:9px}
