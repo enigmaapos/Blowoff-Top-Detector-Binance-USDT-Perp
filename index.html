@@ -3826,11 +3826,41 @@ function detectSMCBreakerBlock({k4h=[], closeNow=0} = {}){
 function renderSMCBreakerBlock(r){
   r=r||{};
   const b=r.smcBreakerBlock||detectSMCBreakerBlock({k4h:r.k4h||[],closeNow:r.closeNow});
+  const bear=r.bearishStructure||{};
+  const cg=r.correctionGuide||{};
+  const correctionConfirmed=Number.isFinite(Number(cg.ema200Stretch15)) && Number(cg.ema200Stretch15)<0;
+  const bearState=String(bear.state||'');
+  const bearishDeveloping=/MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED|RETEST CONFIRMED|BEARISH BREAKDOWN/i.test(bearState);
+  const topScore=Number(r.topDetection?.score||0);
+  const topLabel=String(r.topDetection?.label||'');
+  const topDeveloping=/TOPPING|DISTRIBUTION|RISK/i.test(topLabel) || topScore>=40;
   if(!b || b.direction==='NONE' || b.stage==='NONE') return `<div class="smcBreakerPanel"><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerEmpty" style="margin-top:5px">${mspEscape(b?.reason||'No breaker setup detected.')}</div></div>`;
   const bull=b.direction==='BULLISH';
   const accent=bull?'#2dd4bf':'#ff5c5c';
   const money=v=>Number.isFinite(Number(v))?Number(v).toLocaleString(undefined,{maximumFractionDigits:8}):'—';
   const state=mspEscape(b.state||'BREAKER SETUP');
+  const status=b.continuation ? '✅ ENTRY CONDITION MET' : b.retest ? '🟠 RETEST ACTIVE — CONFIRMATION NEEDED' : '⏳ NO ENTRY YET';
+  const action=b.continuation
+    ? 'Continuation confirmed — do not chase outside the zone. Prefer confirmation on the 15m structure before acting.'
+    : b.retest
+      ? 'Price is interacting with the breaker zone. Wait for a clean rejection/continuation on 15m before treating it as an entry.'
+      : 'Wait for price to return to the breaker zone. This is a watch/retest zone, not an entry until the retest is confirmed.';
+  const conflict=(bull && bearishDeveloping) || (!bull && /MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED/i.test(String(bear.state||''))===false && false);
+  const conflictText=conflict
+    ? `⚠️ SMC/STRUCTURE CONFLICT — 4H ${bull?'bullish breaker':'bearish breaker'} vs 15m ${bearState.replace(/^.*?—\s*/,'')||'structure'} `
+    : '';
+  const primaryState=correctionConfirmed
+    ? '🔴 CORRECTION CONFIRMED (authoritative)'
+    : bearishDeveloping
+      ? `🟠 ${bearState.replace(/^.*?\s/,'')}`
+      : b.continuation
+        ? `${bull?'🟢':'🔴'} 4H SMC CONTINUATION CONFIRMED`
+        : `${bull?'🟡':'🟠'} 4H SMC SETUP DEVELOPING`;
+  const primaryReason=correctionConfirmed
+    ? 'The separate 15m EMA200 correction layer has priority over setup signals.'
+    : bearishDeveloping
+      ? '15m price structure is weakening/developing; the 4H breaker remains a setup layer, not a standalone trade signal.'
+      : 'No higher-priority conflict is currently detected; the 4H SMC state remains conditional on its required stage.';
   const steps=[
     ['💧','Liquidity',b.liquiditySweep?(bull?'SSL SWEPT':'BSL SWEPT'):'PENDING'],
     ['↗','Shift',b.mss?'MSS / BOS':'PENDING'],
@@ -3838,15 +3868,25 @@ function renderSMCBreakerBlock(r){
     ['▣','Breaker',b.bos?'DEFINED':'PENDING'],
     ['↩','Retest',b.continuation?'CONFIRMED':b.retest?'ACTIVE':'WAIT']
   ];
-  const action=b.continuation?'Continuation confirmed — do not chase outside the zone.':b.retest?'Price is interacting with the breaker zone; wait for rejection/continuation.':'Wait for price to return to the breaker zone before treating it as an entry setup.';
+  const zoneTitle=b.continuation ? (bull?'ENTRY ZONE':'ENTRY / RETEST ZONE') : 'WATCH / RETEST ZONE';
   return `<div class="smcBreakerPanel" style="border-left:4px solid ${accent}">
     <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
     <div class="smcBreakerReason">${mspEscape(b.reason||'')}</div>
+    <div style="margin-top:8px;padding:8px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)">
+      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">STATUS</div>
+      <div style="margin-top:3px;font-size:13px;font-weight:950;color:${b.continuation?'#2dd4bf':b.retest?'#ff9f43':'#ffd966'}">${status}</div>
+    </div>
     <div class="smcBreakerFlow">${steps.map(x=>`<div class="smcBreakerStep"><div class="sbsIcon">${x[0]}</div><div class="sbsLabel">${x[1]}</div><div class="sbsValue" style="color:${accent}">${x[2]}</div></div>`).join('')}</div>
+    ${conflict ? `<div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,159,67,.25);background:rgba(255,159,67,.055);color:#ffd7a3;font-size:11px;line-height:1.45"><strong>${mspEscape(conflictText)}</strong><br>4H SMC is a setup layer; 15m structure is the lower-timeframe confirmation layer.</div>` : ''}
+    <div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(126,220,255,.14);background:rgba(126,220,255,.035)">
+      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">SIGNAL HIERARCHY</div>
+      <div style="margin-top:5px;font-size:11px;line-height:1.5"><strong>Primary state:</strong> ${mspEscape(primaryState)}<br><strong>4H SMC:</strong> ${mspEscape(b.state||'—')}<br><strong>Top risk:</strong> ${topDeveloping?`🟠 ${topLabel||'Developing'} (${topScore}/100)`:'🟢 No major top warning'}<br><strong>Correction:</strong> ${correctionConfirmed?'🔴 CONFIRMED':'⚪ NOT CONFIRMED'}<br><strong>Action:</strong> ${correctionConfirmed?'Respect the authoritative correction state; do not use the 4H breaker alone to override it.':bearishDeveloping?'WAIT — require 15m confirmation before acting on the 4H breaker.':b.continuation?'Conditional setup; manage risk and avoid chasing.':'WAIT — no entry until the required retest/confirmation occurs.'}</div>
+      <div class="small" style="margin-top:4px;color:#8195ad">${mspEscape(primaryReason)}</div>
+    </div>
     <div class="smcBreakerZone ${bull?'':'smcBreakerZoneBear'}" style="border-color:${accent}33">
-      <div class="smcBreakerZoneTitle" style="color:${accent}">${bull?'🟢 BULLISH':'🔴 BEARISH'} BREAKER ZONE</div>
+      <div class="smcBreakerZoneTitle" style="color:${accent}">${bull?'🟢 BULLISH':'🔴 BEARISH'} ${zoneTitle}</div>
       <div class="smcBreakerZoneGrid">
-        <div class="smcBreakerMetric"><span>Entry zone</span><strong>${money(b.entryLow)} — ${money(b.entryHigh)}</strong></div>
+        <div class="smcBreakerMetric"><span>${b.continuation?'Entry zone':'Watch / retest zone'}</span><strong>${money(b.entryLow)} — ${money(b.entryHigh)}</strong></div>
         <div class="smcBreakerMetric"><span>Invalidation</span><strong>${money(b.invalidation)}</strong></div>
         <div class="smcBreakerMetric"><span>TP1</span><strong>${money(b.tp1)}</strong></div>
         <div class="smcBreakerMetric"><span>TP2</span><strong>${money(b.tp2)}</strong></div>
@@ -3854,10 +3894,9 @@ function renderSMCBreakerBlock(r){
       <div class="smcBreakerMeta">Sweep ${money(b.sweepLevel)} • Extreme ${money(b.sweepExtreme)} • Structure break ${money(b.shiftLevel)} • R:R ≈ ${b.rr1==null?'—':b.rr1.toFixed(1)} / ${b.rr2==null?'—':b.rr2.toFixed(1)} • ${Number(b.confidence||0)}% confidence</div>
       <div class="smcBreakerMeta"><strong>Now:</strong> ${mspEscape(action)}</div>
     </div>
-    <div class="smcBreakerAuthority">SMC setup detector only. It does not confirm a significant correction and does not override the scanner's separate 15m EMA200 confirmation layer.</div>
+    <div class="smcBreakerAuthority">SMC setup detector only. 4H SMC does not confirm a significant correction. The separate 15m EMA200 correction layer remains authoritative. A 15m structure confirmation is preferred before acting on a 4H breaker.</div>
   </div>`;
 }
-
 function renderBearishStructureDetector(r){
   r=r||{};
   const b=r.bearishStructure||detectBearishStructure({k15m:r.k15m||[],k4h:r.k4h||[],closeNow:r.closeNow});
@@ -5945,7 +5984,7 @@ function renderCards(results){
             <div style="margin-top:4px;line-height:1.5;font-size:13px">
               <strong>Top Risk:</strong> ${Number(r.topDetection?.score||0)}/100 ${r.topDetection?.label||'—'}
               <span style="opacity:.55"> • </span><strong>Bear Structure:</strong> ${r.bearishStructure?.state||'—'}
-              <span style="opacity:.55"> • </span><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'—'}
+              <span style="opacity:.55"> • </span><strong>SMC:</strong> ${r.smcBreakerBlock?.state ? `4H ${r.smcBreakerBlock.state}` : '4H —'}
               <span style="opacity:.55"> • </span>
               <strong>Correction:</strong> ${confirmed?'CONFIRMED':'NOT CONFIRMED'}
               <span style="opacity:.55"> • </span>
