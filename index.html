@@ -935,6 +935,23 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
         </div>
         <div class="controlItem">
+          <label class="controlLabel">High-Volume Doji (HVD)</label>
+          <select id="hvdFilter">
+            <option value="ALL">All HVD</option>
+            <option value="ANY">🕯️ Any HVD ≥55%</option>
+            <option value="STRONG">🟠 Strong HVD ≥70%</option>
+            <option value="BEARISH">🔴 Bearish Exhaustion HVD ≥80%</option>
+            <option value="1D">📅 1D HVD ≥55%</option>
+            <option value="1W">📅 1W HVD ≥55%</option>
+            <option value="1M">📅 1M HVD ≥55%</option>
+            <option value="LATEST">⚡ Latest completed HVD (any TF)</option>
+            <option value="LATEST_1D">⚡ Latest completed 1D HVD</option>
+            <option value="LATEST_1W">⚡ Latest completed 1W HVD</option>
+            <option value="LATEST_1M">⚡ Latest completed 1M HVD</option>
+          </select>
+          <div class="dashboardHint">Filters the HVD warning layer only. It does not confirm a correction or override the 15m EMA200 rule.</div>
+        </div>
+        <div class="controlItem">
           <label class="controlLabel">Unified Bearish Structure</label>
           <select id="bearishStructureFilter">
             <option value="ALL">All</option>
@@ -1318,7 +1335,8 @@ function detectHighVolumeDojiMultiTF(item){
         nearHigh,
         advancePct,
         timestamp:Number(c[0])||0,
-        candleIndex:i
+        candleIndex:i,
+        isLatestCompleted:i===completed.length-1
       };
       if(!bestTf || signal.score>bestTf.score) bestTf=signal;
     }
@@ -5227,6 +5245,32 @@ function filterResultsForDist(results) {
     });
   }
 
+  // Dedicated High-Volume Doji filter. HVD is an early-warning /
+  // exhaustion-context layer and never confirms a correction.
+  const hvdFilter = el.hvdFilter ? el.hvdFilter.value : 'ALL';
+  if (hvdFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const h = r?.hvd || {};
+      const tf = h.timeframes || {};
+      const score = Number(h.score || 0);
+      const d = Number(tf['1D']?.score || 0);
+      const w = Number(tf['1W']?.score || 0);
+      const m = Number(tf['1M']?.score || 0);
+      const latest = key => Number(tf[key]?.score || 0) >= 55 && !!tf[key]?.isLatestCompleted;
+      if (hvdFilter === 'ANY') return score >= 55 || d >= 55 || w >= 55 || m >= 55;
+      if (hvdFilter === 'STRONG') return score >= 70 || d >= 70 || w >= 70 || m >= 70;
+      if (hvdFilter === 'BEARISH') return score >= 80 || d >= 80 || w >= 80 || m >= 80;
+      if (hvdFilter === '1D') return d >= 55;
+      if (hvdFilter === '1W') return w >= 55;
+      if (hvdFilter === '1M') return m >= 55;
+      if (hvdFilter === 'LATEST') return latest('1D') || latest('1W') || latest('1M');
+      if (hvdFilter === 'LATEST_1D') return latest('1D');
+      if (hvdFilter === 'LATEST_1W') return latest('1W');
+      if (hvdFilter === 'LATEST_1M') return latest('1M');
+      return false;
+    });
+  }
+
   // Dedicated Unified Bearish Structure filter.
   // Threshold semantics: selecting BOS, for example, includes BOS, RETEST,
   // and full BREAKDOWN states. This makes the filter useful for scanning
@@ -5514,6 +5558,9 @@ if (el.accumDoubleTopFilter) {
 }
 if (el.marketExhaustionFilter) {
   el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.hvdFilter) {
+  el.hvdFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.bearishStructureFilter) {
   el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
