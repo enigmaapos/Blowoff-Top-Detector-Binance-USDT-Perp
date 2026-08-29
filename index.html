@@ -442,6 +442,12 @@
    do not invalidate the rest of the page layout/paint. */
 #cardView, #tableView { contain: layout paint; }
 #cardView { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+
+.topDetHvdPanel{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02)}
+.topDetHvdTitle{font-weight:800;margin-bottom:6px}
+.topDetHvdSummary{font-size:.88rem;margin-bottom:6px}
+.topDetHvdBlock{margin-top:3px}
+
 </style>
 <style id="scanner-ui-cleanup">
   #startBtn, #oneShot { display:none !important; }
@@ -1514,17 +1520,10 @@ function renderAccumulationReversal(r){
 
 function renderTopDetectionStack(r){
   // IMPORTANT: do not trust a stale/cached topDetection.level.
-  // The authoritative post-top override is re-evaluated at render time
-  // from the current correctionGuide. This prevents old cached analyzer
-  // results from displaying "TREND HEALTHY" after EMA200 correction
-  // has already been confirmed.
+  // The authoritative post-top override is re-evaluated at render time.
   const t={...(r?.topDetection || calculateTopDetectionStack(r||{}))};
   const c=t.components||{};
-  const renderCorrectionConfirmed =
-    Number(r?.correctionGuide?.ema200Stretch15) < 0;
-
-  // 0–24 + confirmed correction => POST-TOP / CORRECTION PHASE.
-  // This renderer-level guard intentionally overrides stale topDetection.level.
+  const renderCorrectionConfirmed = Number(r?.correctionGuide?.ema200Stretch15) < 0;
   if(renderCorrectionConfirmed && Number(t.score||0) < 25){
     t.level='🔵 POST-TOP / CORRECTION PHASE';
   }
@@ -1534,6 +1533,25 @@ function renderTopDetectionStack(r){
   const postTop=String(t.level||'').includes('POST-TOP');
   const tone=postTop?'info':t.score>=70?'danger':t.score>=45?'warn':t.score>=25?'watch':'good';
   const postTopNote=postTop ? '<div class="topDetPostNote">Correction is already confirmed by the 15m EMA200 layer. Top-detection signals are now context only; this is a post-top/correction state, not a new top call.</div>' : '';
+
+  // HVD is displayed here as a dedicated early-warning layer. It is NOT
+  // part of the correction confirmation engine. Show all three timeframes
+  // plus the strongest detected completed candle and its volume ratio/date.
+  const hvd=r?.hvd || {};
+  const byTf=hvd.byTf || {};
+  const hvdRows=['1D','1W','1M'].map(tf=>{
+    const x=byTf[tf] || {};
+    const score=Number(x.score||0);
+    if(!x.detected) return bar(`🕯️ HVD ${tf}`,0);
+    const latest=x.latest ? ' • LATEST' : '';
+    const vol=Number(x.volumeRatio||0);
+    const body=Number(x.bodyPct);
+    const date=Number.isFinite(Number(x.openTime)) ? new Date(Number(x.openTime)).toLocaleDateString() : '—';
+    return `<div class="topDetHvdBlock"><div class="topDetRow"><span>🕯️ HVD ${tf}${latest}</span><div class="topDetBar"><i style="width:${Math.max(0,Math.min(100,score))}%"></i></div><b>${pct(score)}</b></div><div class="small" style="color:var(--muted);padding:2px 0 6px 0">${date} • Vol ×${vol.toFixed(2)} • Body ${Number.isFinite(body)?body.toFixed(1):'—'}%</div></div>`;
+  }).join('');
+  const best=hvd.best;
+  const hvdSummary=best?.detected ? `<div class="topDetHvdSummary"><strong>🕯️ HVD:</strong> ${mspEscape(best.tf)} ${pct(best.score)} • ${best.latest?'LATEST COMPLETED':'recent completed'} • Vol ×${Number(best.volumeRatio||0).toFixed(2)} • Body ${Number(best.bodyPct||0).toFixed(1)}%</div>` : '<div class="topDetHvdSummary"><strong>🕯️ HVD:</strong> No qualifying completed 1D / 1W / 1M HVD detected in the checked candles.</div>';
+
   return `<div class="topDetPanel">${postTopNote}
     <div class="topDetHeader"><span>🎯 TOP-DETECTION STACK</span><strong class="topDetScore ${tone}">${t.score}/100</strong></div>
     <div class="topDetLevel ${tone}">${mspEscape(t.level)}</div>
@@ -1548,8 +1566,9 @@ function renderTopDetectionStack(r){
       ${bar('🚀 Parabolic Extension',c.parabolicExtension)}
       ${c.accumulationDoubleTop!=null ? bar('📐 Accumulation Double Top',c.accumulationDoubleTop) : ''}
     </div>
-    <div class="topDetReasons"><strong>Evidence:</strong> ${t.reasons.map(x=>mspEscape(x)).join(' • ')}</div>
-    <div class="topDetNote">Top risk is an early-warning/formation detector. It does not confirm a correction and never overrides the scanner's separate 15m EMA200 confirmation layer.</div>
+    <div class="topDetHvdPanel"><div class="topDetHvdTitle">🕯️ HIGH-VOLUME DOJI / INDECISION</div>${hvdSummary}${hvdRows}</div>
+    <div class="topDetReasons"><strong>Evidence:</strong> ${(t.reasons||[]).map(x=>mspEscape(x)).join(' • ') || '—'}</div>
+    <div class="topDetNote">Top risk is an early-warning/formation detector. HVD is also early-warning only; it does not confirm a correction and never overrides the scanner's separate 15m EMA200 confirmation layer.</div>
   </div>`;
 }
 
