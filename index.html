@@ -607,6 +607,20 @@ body.authLocked{overflow:hidden}
 .authForm{display:grid;gap:12px}.authField{display:grid;gap:6px}.authField label{font-size:12px;font-weight:800;color:#cfe8ff}.authField input{width:100%;min-height:42px;padding:10px 11px;border-radius:9px}.authPrimary{width:100%;min-height:44px;border-radius:9px;font-weight:900;background:#1f6feb}.authHint{font-size:11px;color:#8195ad;line-height:1.45}.authError,.authSuccess{display:none;padding:9px 10px;border-radius:9px;font-size:12px}.authError{background:rgba(255,92,92,.09);border:1px solid rgba(255,92,92,.25);color:#ffb3b3}.authSuccess{background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.22);color:#a8f6e6}
 #protectedApp[hidden]{display:none!important}.accountBar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;margin-bottom:12px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.accountIdentity{display:flex;align-items:center;gap:9px;min-width:0}.accountAvatar{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#173548;color:#8ff4e0;font-weight:900}.accountText{min-width:0}.accountText strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.accountText span{display:block;color:#8195ad;font-size:10px}.accountActions{display:flex;gap:6px;flex-wrap:wrap}.accountBtn{padding:7px 9px!important;font-size:11px!important}.accountBadge{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;background:rgba(45,212,191,.08);border:1px solid rgba(45,212,191,.18);color:#9ef4e2;font-size:10px;font-weight:900}.accountBadge i{width:6px;height:6px;border-radius:50%;background:#2dd4bf}.profilePanel{display:none;margin-bottom:12px;padding:13px;border:1px solid #1d2b3d;border-radius:12px;background:#09131f}.profileGrid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.profileItem{padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:9px;background:rgba(255,255,255,.02)}.profileItem small{display:block;color:#8195ad;font-size:10px}.profileItem strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.profileNote{margin-top:9px;font-size:11px;color:#9fb3cc;line-height:1.4}.authPhaseCard{margin-top:12px;padding:12px;border:1px dashed #29445b;border-radius:10px;background:rgba(126,220,255,.035)}.authPhaseCard strong{font-size:12px}.authPhaseCard p{margin:5px 0 0;color:#9fb3cc;font-size:11px;line-height:1.4}@media(max-width:520px){.authCard{padding:18px}.profileGrid{grid-template-columns:1fr}.accountBar{align-items:flex-start}.accountActions{justify-content:flex-end}}
 </style>
+
+<style id="bearish-structure-detector-ui">
+.bearStructPanel{margin-top:10px;padding:12px 13px;border-radius:11px;border:1px solid rgba(255,92,92,.18);border-left:5px solid #ff7b7b;background:rgba(255,92,92,.035)}
+.bearStructTitle{font-size:12px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:#ffd0d0}
+.bearStructState{font-size:18px;font-weight:950;margin-top:3px;line-height:1.25}
+.bearStructReason{margin-top:5px;font-size:12px;line-height:1.45;color:#e6eef8}
+.bearStructSteps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:9px}
+.bearStructStep{padding:7px 6px;border-radius:8px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);min-width:0}
+.bearStructStep .bsLabel{font-size:10px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bearStructStep .bsValue{font-size:11px;font-weight:800;margin-top:3px;line-height:1.25}
+.bearStructMeta{margin-top:8px;font-size:11px;line-height:1.4;color:#cfe8ff}
+.bearStructAuthority{margin-top:8px;padding:8px 9px;border-radius:8px;background:rgba(255,255,255,.025);font-size:11px;font-weight:800;line-height:1.4;color:#ffd966}
+@media(max-width:760px){.bearStructSteps{grid-template-columns:repeat(2,minmax(0,1fr))}.bearStructStep:last-child{grid-column:1/-1}}
+</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -1395,8 +1409,8 @@ function renderTrendExhaustionState(r){
 
 
 function renderAccumulationReversal(r){
-  const d=r?.accumulationReversal || (Array.isArray(r?.k4h) ? detectAccumulationDoubleTopReversal({
-    k4h:r.k4h, closeNow:r.closeNow, accumConfidence:Number(r.accumCombined?.confidence||0)
+  const d=r?.accumulationReversal || (Array.isArray(r?.k15m) ? detectAccumulationDoubleTopReversal({
+    k15m:r.k15m, closeNow:Number(r.k15m.at(-1)?.[4]||r.closeNow), accumConfidence:Number(r.accum15?.confidence||0)
   }) : null);
   if(!d || d.stage==='NONE' || d.state==='NO PATTERN' || d.state==='INSUFFICIENT DATA') return '';
 
@@ -1411,7 +1425,7 @@ function renderAccumulationReversal(r){
     `Accum range ${Number(d.accumulationRangePct||0).toFixed(1)}%`
   ];
   return `<div class="recBox adrPanel" style="margin-top:10px;border-left:4px solid ${tone==='danger'?'#ff5c5c':tone==='warn'?'#ff9f43':'#ffd966'}">
-    <div style="font-weight:900">${d.confirmed?'🔴':'📐'} ACCUMULATION → DOUBLE TOP → NECKLINE → REVERSAL</div>
+    <div style="font-weight:900">${d.confirmed?'🔴':'📐'} ACCUMULATION → DOUBLE TOP → NECKLINE → REVERSAL <span class="small" style="opacity:.8">• 15m STRUCTURE</span></div>
     <div style="margin-top:4px"><strong>${esc(d.state)}</strong> • <strong>${Math.round(Number(d.confidence||0))}%</strong></div>
     <div style="margin-top:5px;line-height:1.45">${esc(d.reason)}</div>
     <div class="small" style="margin-top:6px">${stats.map(esc).join(' • ')}</div>
@@ -2198,9 +2212,12 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const cached = getCachedSymbol(sym);
     if(cached && Number(cached.ema200_15) > 0) {
       cached.correctionGuide = getCorrectionGuide(cached);
-      cached.accumulationReversal = cached.accumulationReversal || (Array.isArray(cached.k4h) ? detectAccumulationDoubleTopReversal({
-        k4h:cached.k4h, closeNow:cached.closeNow, accumConfidence:Number(cached.accumCombined?.confidence||0)
-      }) : null);
+      cached.accumulationReversal = Array.isArray(cached.k15m) ? detectAccumulationDoubleTopReversal({
+        k15m:cached.k15m, closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow), accumConfidence:Number(cached.accum15?.confidence||0)
+      }) : null;
+      cached.bearishStructure = Array.isArray(cached.k15m) ? detectBearishStructure({
+        k15m:cached.k15m, k4h:cached.k4h||[], closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow)
+      }) : null;
       cached.topDetection = calculateTopDetectionStack(cached);
       const cachedAdrStage=cached.accumulationReversal?.stage||'NONE';
       const cachedAdrBoost={DOUBLE_TOP:4,BREAKOUT:10,RETEST:16,REVERSAL_CONFIRMED:20}[cachedAdrStage]||0;
@@ -2357,10 +2374,10 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
 
 
     // ===== MARKET STRUCTURE PSYCHOLOGY ENGINE =====
-    // Uses the fetched 4H structure as the primary higher-timeframe source,
-    // with 15m data for short-term confirmation/trap detection.
+    // Uses 15m candles as the primary source for the accumulation → double-top →
+    // neckline → reversal detector. Other market-structure engines remain independent.
     const accumulationReversal = detectAccumulationDoubleTopReversal({
-      k4h, closeNow: close4, accumConfidence: combinedConfidence
+      k15m: k15, closeNow: Number(k15?.at(-1)?.[4]||close4), accumConfidence: Number(acc15?.confidence||0)
     });
     const structure4h = calculateMarketStructurePsychology({
       k4h,
@@ -2369,6 +2386,11 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       volSpike4,
       fundingRate,
       accumCombined: { confidence: combinedConfidence }
+    });
+    const bearishStructure = detectBearishStructure({
+      k15m: k15,
+      k4h,
+      closeNow: close4
     });
 
     // build the result object (compatible shape)
@@ -2403,6 +2425,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       closeNow: close4,
       k4h, k1h, k15m: k15, k1d,
       marketStructure: structure4h,
+      bearishStructure,
       accumulationReversal,
       higherHighs: structure4h.higherHighs,
       higherLows: structure4h.higherLows,
@@ -2421,6 +2444,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       slope15: structure4h.slope15,
       accumChecks: tfChecks,
       accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
+      accum15: acc15,
       preCrash,
       // annotate detection results:
       phase: detectPhaseForSymbol({
@@ -3426,6 +3450,190 @@ function queueSymbolAnalysis(symbol, results){
 // ===== MARKET STRUCTURE PSYCHOLOGY CALCULATOR =====
 // This is an inference layer over measurable OHLCV structure.
 // Primary structure: 4H. Short-term confirmation/traps: 15m.
+
+// ===== UNIFIED BEARISH STRUCTURE DETECTOR =====
+// Sequence: MSS → CHoCH → BOS → RETEST → BREAKDOWN.
+// This is a structural warning/confirmation engine and NEVER replaces the
+// separate authoritative SIGNIFICANT CORRECTION CONFIRMED layer.
+function detectBearishStructure({k15m=[], k4h=[], closeNow=0} = {}){
+  const empty=(state='NO BEARISH STRUCTURE CONFIRMATION',reason='No complete bearish sequence is currently confirmed.')=>({
+    state,stage:'NONE',stageRank:0,confidence:0,confirmed:false,reason,timeframe:'15m',
+    mss:false,choch:false,bos:false,retest:false,breakdown:false,
+    mssIndex:-1,chochIndex:-1,bosIndex:-1,retestIndex:-1,breakdownIndex:-1,
+    mssLevel:null,chochLevel:null,bosLevel:null,retestLevel:null
+  });
+  try{
+    const raw=Array.isArray(k15m)?k15m:[];
+    if(raw.length<30) return empty('INSUFFICIENT DATA','At least 30 fifteen-minute candles are required for the unified bearish structure detector.');
+
+    const now=Date.now();
+    const candles=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
+    if(candles.length<30) return empty('INSUFFICIENT DATA','Not enough completed fifteen-minute candles are available.');
+
+    const o=candles.map(k=>Number(k[1])), h=candles.map(k=>Number(k[2])), l=candles.map(k=>Number(k[3])), c=candles.map(k=>Number(k[4]));
+    if(![...o,...h,...l,...c].every(Number.isFinite)) return empty('DATA ERROR','Invalid OHLC data prevented structural analysis.');
+    const n=c.length;
+    const price=Number(closeNow)||c[n-1];
+    const tol=Math.max(price*0.0025, 1e-12);
+
+    function pivots(values,look=2){
+      const out=[];
+      for(let i=look;i<values.length-look;i++){
+        let high=true,low=true;
+        for(let j=1;j<=look;j++){
+          if(values[i] < values[i-j] || values[i] < values[i+j]) high=false;
+          if(values[i] > values[i-j] || values[i] > values[i+j]) low=false;
+        }
+        if(high) out.push({index:i,value:values[i],type:'H'});
+        if(low) out.push({index:i,value:values[i],type:'L'});
+      }
+      return out.sort((a,b)=>a.index-b.index);
+    }
+
+    const highs=pivots(h,2).filter(x=>x.type==='H');
+    const lows=pivots(l,2).filter(x=>x.type==='L');
+    if(highs.length<3 || lows.length<3) return empty('INSUFFICIENT SWING STRUCTURE','Not enough confirmed swing highs/lows to establish MSS → CHoCH → BOS.');
+
+    // Find the latest bullish HH/HL structure before a decisive close below HL.
+    let mss=null;
+    for(let li=lows.length-1;li>=1;li--){
+      const hl=lows[li], prevL=lows[li-1];
+      if(hl.value <= prevL.value) continue;
+      const highsBefore=highs.filter(x=>x.index<hl.index);
+      if(highsBefore.length<2) continue;
+      const hh=highsBefore.at(-1), prevH=highsBefore.at(-2);
+      if(hh.value <= prevH.value) continue;
+      const start=hl.index+1;
+      const end=n-1;
+      for(let i=start;i<=end;i++){
+        if(c[i] < hl.value-tol){
+          mss={index:i,level:hl.value,brokenLowIndex:hl.index,priorHigh:hh.value,priorHighIndex:hh.index};
+          break;
+        }
+      }
+      if(mss) break;
+    }
+
+    if(!mss){
+      // A completed bearish BOS can exist even when the preceding bullish MSS
+      // is outside the current lookback. Surface that separately rather than
+      // pretending the full sequence was observed.
+      const lastLow=lows.at(-1), prevLow=lows.at(-2);
+      if(lastLow && prevLow && lastLow.value<prevLow.value){
+        const bosIdx=c.findIndex((v,i)=>i>lastLow.index && v<prevLow.value-tol);
+        if(bosIdx>=0){
+          return { ...empty('🔻 BOS CONFIRMED — MSS OUTSIDE LOOKBACK','Bearish structure has broken a prior swing low, but the preceding MSS is outside the available 15m lookback.'),
+            state:'🔻 BOS CONFIRMED — MSS OUTSIDE LOOKBACK',stage:'BOS',stageRank:3,confidence:72,confirmed:true,bos:true,bosIndex:bosIdx,bosLevel:prevLow.value };
+        }
+      }
+      return empty();
+    }
+
+    // CHoCH: after MSS, price creates a confirmed lower high below the
+    // pre-MSS high. This is behavioral change, not yet continuation.
+    let choch=null;
+    for(const ph of highs){
+      if(ph.index<=mss.index+2) continue;
+      if(ph.value < mss.priorHigh-tol){
+        choch=ph;
+        break;
+      }
+    }
+
+    if(!choch){
+      return { ...empty('🟠 MSS CONFIRMED — CHoCH DEVELOPING','Price has broken the prior higher low. A lower high has not yet been confirmed, so the behavioral shift is developing.'),
+        state:'🟠 MSS CONFIRMED — CHoCH DEVELOPING',stage:'MSS',stageRank:1,confidence:68,mss:true,mssIndex:mss.index,mssLevel:mss.level };
+    }
+
+    // BOS: after CHoCH, define the new structural low formed between MSS
+    // and the lower high, then require a candle CLOSE below that low.
+    // This keeps MSS and BOS as distinct events and rejects wick-only sweeps.
+    const postMssLows=lows.filter(x=>x.index>mss.index && x.index<choch.index);
+    const postMssLow=postMssLows.length
+      ? postMssLows.reduce((a,b)=>b.value<a.value?b:a)
+      : null;
+    const bosReference=postMssLow?.value ?? Math.min(...l.slice(mss.index+1,choch.index+1));
+    let bos=null;
+    for(let i=choch.index+1;i<n;i++){
+      if(c[i] < bosReference-tol){
+        bos={index:i,level:bosReference};
+        break;
+      }
+    }
+    if(!bos){
+      return { ...empty('🟠 CHoCH CONFIRMED — BOS PENDING','A lower high is confirmed after MSS, but price has not yet produced the required candle close below structural support.'),
+        state:'🟠 CHoCH CONFIRMED — BOS PENDING',stage:'CHoCH',stageRank:2,confidence:76,mss:true,choch:true,mssIndex:mss.index,chochIndex:choch.index,mssLevel:mss.level,chochLevel:choch.value };
+    }
+
+    // Retest: after BOS, price must revisit the broken level and reject it.
+    let retest=null;
+    for(let i=bos.index+1;i<n;i++){
+      const touched=h[i]>=bos.level-tol*2 && l[i]<=bos.level+tol*2;
+      const body=Math.abs(c[i]-o[i]);
+      const upperReject=(h[i]-Math.max(o[i],c[i]))>Math.max(body*1.15,tol*0.25);
+      const closedBelow=c[i]<bos.level-tol;
+      if(touched && (upperReject || closedBelow)){
+        retest={index:i,level:bos.level};
+        break;
+      }
+    }
+    if(!retest){
+      return { ...empty('🟠 BOS CONFIRMED — RETEST PENDING','Price has closed below the structural low. Wait for a retest/rejection of the broken support before calling the full bearish sequence confirmed.'),
+        state:'🟠 BOS CONFIRMED — RETEST PENDING',stage:'BOS',stageRank:3,confidence:84,mss:true,choch:true,bos:true,mssIndex:mss.index,chochIndex:choch.index,bosIndex:bos.index,mssLevel:mss.level,chochLevel:choch.value,bosLevel:bos.level };
+    }
+
+    // Breakdown: after a failed retest, require another close below the BOS
+    // level. This is the final continuation confirmation in this detector.
+    let breakdown=null;
+    for(let i=retest.index+1;i<n;i++){
+      if(c[i] < bos.level-tol){
+        breakdown={index:i,level:bos.level};
+        break;
+      }
+    }
+    if(!breakdown){
+      return { ...empty('🟠 RETEST CONFIRMED — BREAKDOWN PENDING','The broken support was retested/rejected, but bearish continuation below the BOS level has not yet been confirmed.'),
+        state:'🟠 RETEST CONFIRMED — BREAKDOWN PENDING',stage:'RETEST',stageRank:4,confidence:90,mss:true,choch:true,bos:true,retest:true,mssIndex:mss.index,chochIndex:choch.index,bosIndex:bos.index,retestIndex:retest.index,mssLevel:mss.level,chochLevel:choch.value,bosLevel:bos.level,retestLevel:retest.level };
+    }
+
+    const age=Math.max(0,n-1-breakdown.index);
+    const confidence=Math.min(98,92+Math.min(6,age));
+    return { ...empty('🔴 BEARISH BREAKDOWN CONFIRMED','Full bearish structure sequence completed: MSS → CHoCH → BOS → failed retest → downside continuation.'),
+      state:'🔴 BEARISH BREAKDOWN CONFIRMED',stage:'BREAKDOWN',stageRank:5,confidence,confirmed:true,mss:true,choch:true,bos:true,retest:true,breakdown:true,
+      mssIndex:mss.index,chochIndex:choch.index,bosIndex:bos.index,retestIndex:retest.index,breakdownIndex:breakdown.index,
+      mssLevel:mss.level,chochLevel:choch.value,bosLevel:bos.level,retestLevel:retest.level,
+      barsSinceBreakdown:age
+    };
+  }catch(err){
+    return empty('DETECTOR ERROR',err.message);
+  }
+}
+
+function renderBearishStructureDetector(r){
+  r=r||{};
+  const b=r.bearishStructure||detectBearishStructure({k15m:r.k15m||[],k4h:r.k4h||[],closeNow:r.closeNow});
+  const labels=[
+    ['MSS',b.mss?'CONFIRMED':'PENDING'],
+    ['CHoCH',b.choch?'CONFIRMED':'PENDING'],
+    ['BOS',b.bos?'CONFIRMED':'PENDING'],
+    ['Retest',b.retest?'CONFIRMED':'PENDING'],
+    ['Breakdown',b.breakdown?'CONFIRMED':'PENDING']
+  ];
+  const color=b.breakdown?'#ff5c5c':b.retest?'#ff9f43':b.bos?'#ff9f43':b.choch?'#ffd966':b.mss?'#ffd966':'#7edcff';
+  const corr=Number(r.correctionGuide?.ema200Stretch15);
+  const correctionConfirmed=Number.isFinite(corr)&&corr<0;
+  return `<div class="bearStructPanel" style="border-left-color:${color}">
+    <div class="bearStructTitle">📉 UNIFIED BEARISH STRUCTURE</div>
+    <div class="bearStructState" style="color:${color}">${mspEscape(b.state)} <span style="font-size:12px;color:#cfe8ff;font-weight:800">(${Number(b.confidence||0)}%)</span></div>
+    <div class="bearStructReason">${mspEscape(b.reason)}</div>
+    <div class="bearStructSteps">${labels.map(x=>`<div class="bearStructStep"><div class="bsLabel">${x[0]}</div><div class="bsValue">${x[1]}</div></div>`).join('')}</div>
+    <div class="bearStructMeta">
+      ${b.mssLevel!=null?`MSS level ${Number(b.mssLevel).toPrecision(8)} • `:''}${b.bosLevel!=null?`BOS ${Number(b.bosLevel).toPrecision(8)} • `:''}${b.retestLevel!=null?`Retest ${Number(b.retestLevel).toPrecision(8)}`:''}
+    </div>
+    <div class="bearStructAuthority">${correctionConfirmed?'🔴 SIGNIFICANT CORRECTION CONFIRMED remains authoritative. Bearish structure is supporting context only.':'Structure detector is an independent bearish price-action layer. It does not confirm a significant correction; only the separate 15m EMA200 correction layer can do that.'}</div>
+  </div>`;
+}
+
 function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpike4=1, fundingRate=0, accumCombined={confidence:0}} = {}){
   const h = Array.isArray(k4h) ? k4h : [];
   const m = Array.isArray(k15m) ? k15m : [];
@@ -3615,28 +3823,28 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
 }
 
 
-// ===== ACCUMULATION → DOUBLE TOP → NECKLINE RETEST → REVERSAL =====
-// Dedicated structural detector for the reference setup.
+// ===== 15m ACCUMULATION → DOUBLE TOP → NECKLINE RETEST → REVERSAL =====
+// Dedicated 15m structural detector for the reference setup.
 //
 // IMPORTANT: this detector is intentionally staged.  It may report a
 // developing double top / defined neckline before a breakdown exists, but it
 // will ONLY report REVERSAL CONFIRMED after a neckline break AND a failed
 // retest followed by bearish continuation.  This keeps formation detection
 // useful without turning an incomplete pattern into a confirmed reversal.
-function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidence=0} = {}){
+function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfidence=0} = {}){
   try{
-    const raw=Array.isArray(k4h)?k4h:[];
+    const raw=Array.isArray(k15m)?k15m:[];
     const empty=(state,reason)=>({
-      state,confidence:0,detected:false,confirmed:false,stage:'NONE',reason,
+      state,confidence:0,detected:false,confirmed:false,stage:'NONE',reason,timeframe:'15m',
       firstTop:null,secondTop:null,neckline:null,breakoutPrice:null,retestPrice:null,
       firstTopIndex:-1,secondTopIndex:-1,breakoutIndex:-1,retestIndex:-1
     });
-    if(raw.length<20) return empty('INSUFFICIENT DATA','At least 20 four-hour candles are required.');
+    if(raw.length<20) return empty('INSUFFICIENT DATA','At least 20 fifteen-minute candles are required.');
 
-    // Only completed 4H candles can create/confirm a structural stage.
+    // Only completed 15m candles can create/confirm a structural stage.
     const now=Date.now();
     const h=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
-    if(h.length<20) return empty('INSUFFICIENT DATA','Not enough completed four-hour candles.');
+    if(h.length<20) return empty('INSUFFICIENT DATA','Not enough completed fifteen-minute candles.');
 
     const highs=h.map(k=>Number(k[2]));
     const lows=h.map(k=>Number(k[3]));
@@ -3758,7 +3966,7 @@ function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidenc
       const state=stage==='FORMING'?'DOUBLE TOP — DEVELOPING':
                   stage==='DOUBLE_TOP'?'DOUBLE TOP — WATCH':'NECKLINE DEFINED — BREAK WATCH';
       return {
-        state,confidence:baseConfidence,detected:true,confirmed:false,stage,
+        state,confidence:baseConfidence,detected:true,confirmed:false,stage,timeframe:'15m',
         reason:stage==='FORMING'
           ? 'Accumulation context + two similar highs are developing; the valley between them defines a provisional neckline. A neckline break is still required.'
           : stage==='DOUBLE_TOP'
@@ -3792,7 +4000,7 @@ function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidenc
       ));
       return {
         state:confirmed?'REVERSAL CONFIRMED':'NECKLINE RETEST — BEARISH',
-        confidence,detected:true,confirmed,stage:confirmed?'REVERSAL_CONFIRMED':'RETEST',
+        confidence,detected:true,confirmed,stage:confirmed?'REVERSAL_CONFIRMED':'RETEST',timeframe:'15m',
         reason:confirmed
           ? 'Accumulation → double top → neckline break → failed retest → bearish continuation confirmed.'
           : 'Neckline broke and price retested/rejected the neckline; bearish reversal is developing. Confirmation requires continued closes below the neckline.',
@@ -3807,7 +4015,7 @@ function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidenc
     return {
       state:'NECKLINE BREAK — RETEST PENDING',
       confidence:Math.round(Math.min(92,60+Math.min(15,Number(accumConfidence)/7)+Math.min(10,depth*100)+Math.min(5,eqQuality*5))),
-      detected:true,confirmed:false,stage:'BREAKOUT',
+      detected:true,confirmed:false,stage:'BREAKOUT',timeframe:'15m',
       reason:'The double-top neckline has broken decisively; wait for a failed retest before treating the reversal as confirmed.',
       firstTop:p1.value,secondTop:p2.value,firstTopIndex:p1.index,secondTopIndex:p2.index,
       neckline,breakoutPrice:closes[breakIndex],retestPrice:null,breakoutIndex:breakIndex,retestIndex:-1,
@@ -5200,6 +5408,7 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
       </div>
     </div>
 
+    ${renderBearishStructureDetector(r)}
     ${renderAccumulationReversal(r)}
 
     ${dist ? `<div class="recBox" style="margin-top:10px;border-left:4px solid ${dist.level==='low'?'#ffd966':dist.level==='moderate'?'#ff9f43':'#ff5c5c'}">
@@ -5402,6 +5611,7 @@ function renderCards(results){
           <div style="flex:1 1 100%;margin-top:2px">${renderTrendExhaustionState(r)}</div>
           <span class="phaseTag" style="margin-left:0;flex:1 1 100%">${phase.phase}</span>
           <div style="flex:1 1 100%;margin-top:6px">${renderTopDetectionStack(r)}</div>
+          <div style="flex:1 1 100%;margin-top:6px">${renderBearishStructureDetector(r)}</div>
           <div style="flex:1 1 100%;margin-top:6px">${renderAccumulationReversal(r)}</div>
           <div style="flex:1 1 100%;margin-top:4px;padding:7px 10px;border:1px solid rgba(255,217,102,.18);border-radius:9px;background:rgba(255,217,102,.035)">
             <strong>📉 1D Volume Participation:</strong> ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% vs prior 3D avg' : 'n/a'} — ${r.volume1dFalling?'DECLINING':r.volume1dWeakening?'WEAKENING':'STABLE / IMPROVING'}
@@ -5410,6 +5620,7 @@ function renderCards(results){
             <div style="font-size:12px;font-weight:900;letter-spacing:.04em;color:#cfe8ff">⚡ LATEST UPDATE</div>
             <div style="margin-top:4px;line-height:1.5;font-size:13px">
               <strong>Top Risk:</strong> ${Number(r.topDetection?.score||0)}/100 ${r.topDetection?.label||'—'}
+              <span style="opacity:.55"> • </span><strong>Bear Structure:</strong> ${r.bearishStructure?.state||'—'}
               <span style="opacity:.55"> • </span>
               <strong>Correction:</strong> ${confirmed?'CONFIRMED':'NOT CONFIRMED'}
               <span style="opacity:.55"> • </span>
@@ -5435,7 +5646,7 @@ function renderCards(results){
           RSI4H: ${rsi4h.toFixed(1)} • Vol×${Number(r.volSpike4||0).toFixed(2)} • Wick: ${wick.toFixed(2)}<br>
           EMA70 Extension: ${ema70.toFixed(2)}% • 15m EMA200 Stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} • Funding: ${Number(r.fundingRate||0).toFixed(6)}<br>
           1D Volume: ${Number(r.volume1d||0).toLocaleString()} • 1D Volume Trend: ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'%' : 'n/a'} ${r.volume1dFalling?'📉 DECLINING':r.volume1dWeakening?'📉 WEAKENING':'↔ STABLE'} • Declining days: ${Number(r.volume1dDecliningDays||0)}<br>
-          <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
+          <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderBearishStructureDetector(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
         </div>
 
         <div class="proRead" style="border-left:4px solid ${state.tone==='red'?'#ff5c5c':state.tone==='orange'?'#ff9f43':state.tone==='yellow'?'#ffd966':state.tone==='green'?'#2dd4bf':'#7edcff'};background:rgba(255,255,255,.025);padding:12px;border-radius:10px;margin-top:0">
