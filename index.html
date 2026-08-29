@@ -887,6 +887,18 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
         </div>
         <div class="controlItem">
+          <label class="controlLabel">Unified Bearish Structure</label>
+          <select id="bearishStructureFilter">
+            <option value="ALL">All</option>
+            <option value="MSS">🟡 MSS Confirmed+</option>
+            <option value="CHOCH">🟠 CHoCH Confirmed+</option>
+            <option value="BOS">🔴 BOS Confirmed+</option>
+            <option value="RETEST">🔴 Failed Retest Confirmed+</option>
+            <option value="BREAKDOWN">🔴 Bearish Breakdown Confirmed</option>
+          </select>
+          <div class="dashboardHint">Filters by the unified MSS → CHoCH → BOS → failed retest → breakdown sequence. It never overrides the authoritative correction status.</div>
+        </div>
+        <div class="controlItem">
           <label class="controlLabel">Scan Status</label>
           <div id="scanStatus" class="dashboardStatusValue">Ready.</div>
         </div>
@@ -967,7 +979,8 @@ const el = {
   correctionFilter: document.getElementById('correctionFilter'),
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
-  marketExhaustionFilter: document.getElementById('marketExhaustionFilter')
+  marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
+  bearishStructureFilter: document.getElementById('bearishStructureFilter')
 };
 
   // ---------------------- Symbol search + single-symbol analyzer ----------------------
@@ -4686,6 +4699,22 @@ function filterResultsForDist(results) {
     });
   }
 
+  // Dedicated Unified Bearish Structure filter.
+  // Threshold semantics: selecting BOS, for example, includes BOS, RETEST,
+  // and full BREAKDOWN states. This makes the filter useful for scanning
+  // structures that have reached at least the selected confirmation stage.
+  // This filter is independent from correction confirmation and can NEVER
+  // override SIGNIFICANT_CORRECTION_CONFIRMED.
+  const bearishStructureFilter = el.bearishStructureFilter ? el.bearishStructureFilter.value : 'ALL';
+  if (bearishStructureFilter !== 'ALL') {
+    const requiredRank = {MSS:1, CHOCH:2, BOS:3, RETEST:4, BREAKDOWN:5}[bearishStructureFilter] || 0;
+    filtered = filtered.filter(r => {
+      const b = r?.bearishStructure || {};
+      const rank = Number(b.stageRank || 0);
+      return !!b.confirmed && rank >= requiredRank;
+    });
+  }
+
   // Dedicated Accumulation → Double Top → Neckline → Reversal filter.
   // This is intentionally independent from the correction filter: a confirmed
   // double-top reversal does NOT imply that the authoritative 15m EMA200
@@ -4935,6 +4964,9 @@ if (el.accumDoubleTopFilter) {
 }
 if (el.marketExhaustionFilter) {
   el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.bearishStructureFilter) {
+  el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
 }
 
 
