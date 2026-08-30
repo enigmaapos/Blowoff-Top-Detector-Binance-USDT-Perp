@@ -1490,8 +1490,8 @@ function renderTrendExhaustionState(r){
 
 
 function renderAccumulationReversal(r){
-  const d=r?.accumulationReversal || (Array.isArray(r?.k15m) ? detectAccumulationDoubleTopReversal({
-    k15m:r.k15m, closeNow:Number(r.k15m.at(-1)?.[4]||r.closeNow), accumConfidence:Number(r.accum15?.confidence||0)
+  const d=r?.accumulationReversal || (Array.isArray(r?.k4h) ? detectAccumulationDoubleTopReversal({
+    k4h:r.k4h, closeNow:Number(r.k4h.at(-1)?.[4]||r.closeNow), accumConfidence:Number(r.accum4h?.confidence||0)
   }) : null);
   if(!d || d.stage==='NONE' || d.state==='NO PATTERN' || d.state==='INSUFFICIENT DATA') return '';
 
@@ -1506,7 +1506,7 @@ function renderAccumulationReversal(r){
     `Accum range ${Number(d.accumulationRangePct||0).toFixed(1)}%`
   ];
   return `<div class="recBox adrPanel" style="margin-top:10px;border-left:4px solid ${tone==='danger'?'#ff5c5c':tone==='warn'?'#ff9f43':'#ffd966'}">
-    <div style="font-weight:900">${d.confirmed?'🔴':'📐'} ACCUMULATION → DOUBLE TOP → NECKLINE → REVERSAL <span class="small" style="opacity:.8">• 15m STRUCTURE</span></div>
+    <div style="font-weight:900">${d.confirmed?'🔴':'📐'} ACCUMULATION → DOUBLE TOP → NECKLINE → REVERSAL <span class="small" style="opacity:.8">• 4H STRUCTURE</span></div>
     <div style="margin-top:4px"><strong>${esc(d.state)}</strong> • <strong>${Math.round(Number(d.confidence||0))}%</strong></div>
     <div style="margin-top:5px;line-height:1.45">${esc(d.reason)}</div>
     <div class="small" style="margin-top:6px">${stats.map(esc).join(' • ')}</div>
@@ -2378,8 +2378,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const cached = getCachedSymbol(sym);
     if(cached && Number(cached.ema200_15) > 0 && cached.hvd && cached.hvd.byTf) {
       cached.correctionGuide = getCorrectionGuide(cached);
-      cached.accumulationReversal = Array.isArray(cached.k15m) ? detectAccumulationDoubleTopReversal({
-        k15m:cached.k15m, closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow), accumConfidence:Number(cached.accum15?.confidence||0)
+      cached.accumulationReversal = Array.isArray(cached.k4h) ? detectAccumulationDoubleTopReversal({
+        k4h:cached.k4h, closeNow:Number(cached.k4h.at(-1)?.[4]||cached.closeNow), accumConfidence:Number(cached.accum4h?.confidence||0)
       }) : null;
       cached.bearishStructure = Array.isArray(cached.k15m) ? detectBearishStructure({
         k15m:cached.k15m, k4h:cached.k4h||[], closeNow:Number(cached.k15m.at(-1)?.[4]||cached.closeNow)
@@ -2546,10 +2546,10 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
 
 
     // ===== MARKET STRUCTURE PSYCHOLOGY ENGINE =====
-    // Uses 15m candles as the primary source for the accumulation → double-top →
+    // Uses 4H candles as the primary source for the accumulation → double-top →
     // neckline → reversal detector. Other market-structure engines remain independent.
     const accumulationReversal = detectAccumulationDoubleTopReversal({
-      k15m: k15, closeNow: Number(k15?.at(-1)?.[4]||close4), accumConfidence: Number(acc15?.confidence||0)
+      k4h: k4h, closeNow: Number(k4h?.at(-1)?.[4]||close4), accumConfidence: Number(acc4h?.confidence||0)
     });
     const structure4h = calculateMarketStructurePsychology({
       k4h,
@@ -4228,17 +4228,17 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
 }
 
 
-// ===== 15m ACCUMULATION → DOUBLE TOP → NECKLINE RETEST → REVERSAL =====
-// Dedicated 15m structural detector for the reference setup.
+// ===== 4H ACCUMULATION → DOUBLE TOP → NECKLINE RETEST → REVERSAL =====
+// Dedicated 4H structural detector for the reference setup.
 //
 // IMPORTANT: this detector is intentionally staged.  It may report a
 // developing double top / defined neckline before a breakdown exists, but it
 // will ONLY report REVERSAL CONFIRMED after a neckline break AND a failed
 // retest followed by bearish continuation.  This keeps formation detection
 // useful without turning an incomplete pattern into a confirmed reversal.
-function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfidence=0} = {}){
+function detectAccumulationDoubleTopReversal({k4h=[], closeNow=0, accumConfidence=0} = {}){
   try{
-    const raw=Array.isArray(k15m)?k15m:[];
+    const raw=Array.isArray(k4h)?k4h:[];
     const empty=(state,reason)=>({
       state,confidence:0,detected:false,confirmed:false,stage:'NONE',reason,timeframe:'4h',
       firstTop:null,secondTop:null,neckline:null,breakoutPrice:null,retestPrice:null,
@@ -4246,10 +4246,10 @@ function detectAccumulationDoubleTopReversal({k15m=[], closeNow=0, accumConfiden
     });
     if(raw.length<20) return empty('INSUFFICIENT DATA','At least 20 four-hour candles are required.');
 
-    // Only completed 15m candles can create/confirm a structural stage.
+    // Only completed 4H candles can create/confirm a structural stage.
     const now=Date.now();
     const h=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
-    if(h.length<20) return empty('INSUFFICIENT DATA','Not enough completed fifteen-minute candles.');
+    if(h.length<20) return empty('INSUFFICIENT DATA','Not enough completed four-hour candles.');
 
     const highs=h.map(k=>Number(k[2]));
     const lows=h.map(k=>Number(k[3]));
