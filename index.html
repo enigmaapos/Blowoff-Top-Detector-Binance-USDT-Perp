@@ -668,6 +668,12 @@ body.authLocked{overflow:hidden}
   #cardView,#tableView,#trendTransitionQueue{contain:layout paint;overflow-anchor:none;}
   #cardView .resultCard,#tableView tr{content-visibility:auto;}
 </style>
+<style id="outer-decision-only-css">
+/* Per-coin outer surface is intentionally minimal: decision first; diagnostics live in Detailed Evidence. */
+.outerDecisionOnly{margin-bottom:2px}
+.outerTraderDecision{box-sizing:border-box}
+.detailedLegacyEvidence{margin-bottom:10px}
+</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -6310,7 +6316,24 @@ function renderCards(results){
           <div><span class="coinScore">${r.score}/8</span> ${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div>
         </div>
 
-        <div class="compactSignals" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+        <div class="compactSignals outerDecisionOnly" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+          ${badge} ${accBadge}
+          ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
+          <div class="proDecision outerTraderDecision" style="flex:1 1 100%;margin-top:8px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
+            <div style="font-weight:900;font-size:17px">🎯 TRADER DECISION</div>
+            <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
+            <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
+            <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
+            <div><strong>Short entry:</strong> ${dist||rsi4h>=80?'⚠️ Wait for rejection / failed bounce':'⏸ Wait for structure'}</div>
+            <div style="margin-top:7px"><strong>Best action now:</strong><br>${action}</div>
+          </div>
+        </div>
+
+        <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
+          <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
+          <div class="coinDetailsBody" style="margin-top:10px">
+        <div class="detailedLegacyEvidence" style="margin-top:0">
+
           ${badge} ${accBadge}
           ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
           <div class="correctionCompact" title="Authoritative correction confirmation layer" style="flex:1 1 100%;margin-top:2px">
@@ -6347,11 +6370,7 @@ function renderCards(results){
           <div style="flex:1 1 100%;margin-top:6px">${renderSMCBreakerBlock(r)}</div>
           <div style="flex:1 1 100%;margin-top:8px">${renderTopDetectionStack(r)}</div>
           <div style="flex:1 1 100%;margin-top:3px">${histCardActionsHtml(r)}</div>
-        </div>
-
-        <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
-          <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
-          <div class="coinDetailsBody" style="margin-top:10px">
+                </div>
 
         <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
           <div class="binanceChartHead">
@@ -6418,15 +6437,6 @@ function renderCards(results){
           Upper wick: <strong>${wick.toFixed(2)}</strong><br>
           4H accumulation: <strong>${a4h}%</strong><br>
           Lower-high evidence: <strong>${lowerHighReasons.join(', ')||'not dominant'}</strong>
-        </div>
-
-        <div class="proDecision" style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
-          <div style="font-weight:900;font-size:17px">🎯 TRADER DECISION</div>
-          <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
-          <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
-          <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
-          <div><strong>Short entry:</strong> ${dist||rsi4h>=80?'⚠️ Wait for rejection / failed bounce':'⏸ Wait for structure'}</div>
-          <div style="margin-top:7px"><strong>Best action now:</strong><br>${action}</div>
         </div>
 
         ${showShort ? `<details open style="margin-top:10px"><summary><strong>🔎 Short-term trade plan</strong></summary>
