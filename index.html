@@ -5954,6 +5954,142 @@ function professionalState(item, rec){
   return {title:rec.state, confidence:rec.confidence, sentence:rec.sentence, tone:'neutral'};
 }
 
+function renderTraderDecisionBlock(r, compact=false){
+  const item=r||{};
+  const rec=getFinalRecommendation(item);
+  const checks=item.accumChecks||[];
+  const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
+  const a15=Number(tf['15m']??0), a1h=Number(tf['1h']??0), a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
+  const accum=Number(item.accumCombined?.confidence??rec.accum??0);
+  const rsi4h=Number(item.rsi4h||0), rsi15=Number(item.rsi15||0);
+  const vol=Number(item.volSpike4||0);
+  const ema70=Number(item.ema70DistPct||0);
+  const cg=item.correctionGuide||{};
+  const ema200=cg.ema200Stretch15;
+  const confirmed=!!(rec.confirmed || (ema200!=null && Number(ema200)<0));
+  const phase=String(item.phase?.phase||item.phase||'Unknown');
+  const phaseLc=phase.toLowerCase();
+  const reasons=(item.phase?.reasons||[]).map(String);
+  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x));
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x));
+  const distribution=/distribution|breakdown/i.test(phaseLc);
+  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!item.returnToNormal?.isReturn;
+  const accumulationPhase=/accumulation|re-accumulation/i.test(phaseLc);
+  const improvingHTF=a4h>=50 && a1d>=50;
+  const strongHTF=a4h>=60 && a1d>=55;
+  const structureBull=hasHigherLow || accumulationPhase || recovery;
+  const structureBear=hasLowerHigh || distribution;
+  const overheated=rsi4h>=80;
+  const exhaustion=Number(item.preCrash?.score||0)>=6 || vol>=2 || ema70>=20 || rsi4h>=75;
+
+  let bias='Neutral', longEntry='⏸ Wait for structure', shortEntry='⏸ Wait for structure';
+  let bestAction='', readiness='🟡 Developing', missing=[], invalid=[];
+  let decisionScore=0;
+
+  if(confirmed){
+    bias=strongHTF && structureBull ? 'Recovery / Re-accumulation Watch' : 'Neutral / Cautious Bearish';
+    longEntry=strongHTF && hasHigherLow ? '🟡 Recovery long — staged only' : '❌ Wait — correction confirmed';
+    shortEntry=structureBear ? '🟠 Conditional — rejection / failed bounce' : '⏸ Wait for rejection / structure';
+    bestAction=strongHTF && hasHigherLow
+      ? 'Recovery structure is improving. Use staged entries only after sustained higher-lows and continued 4H/1D accumulation.'
+      : 'Correction is confirmed. Do not chase the decline; wait for stabilization, a higher-low and improving 4H/1D accumulation.';
+    readiness=strongHTF && hasHigherLow ? '🟡 Recovery developing' : '🔴 Correction active';
+    if(!hasHigherLow) missing.push('confirmed higher-low');
+    if(a4h<55) missing.push('4H accumulation ≥55%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    invalid.push('new lower-low / renewed EMA200 loss');
+  } else if(overheated && (distribution || exhaustion)) {
+    bias='Bearish / Cautious';
+    longEntry='❌ Don’t chase';
+    shortEntry='🟠 Wait for rejection / failed bounce';
+    bestAction='Avoid chasing the move. Wait for cooling plus a confirmed rejection/lower-high for shorts, or a higher-low with stronger higher-timeframe accumulation for longs.';
+    readiness='🟠 High-risk / structurally vulnerable';
+    if(!hasLowerHigh) missing.push('lower-high or failed-bounce confirmation for short');
+    if(!hasHigherLow) missing.push('higher-low for long');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
+    invalid.push('breakdown below support');
+  } else if(strongHTF && hasHigherLow && !distribution && !overheated) {
+    bias='Bullish / Controlled';
+    longEntry='🟢 Confirmed structure — staged';
+    shortEntry='⏸ Wait / low priority';
+    bestAction='Higher-low and higher-timeframe accumulation are aligned. Favor a controlled pullback/retest rather than chasing extension.';
+    readiness='🟢 Long setup developing';
+    decisionScore=90;
+    if(vol<1) missing.push('sustained participation / green volume');
+    invalid.push('loss of higher-low or deterioration in 4H/1D accumulation');
+  } else if((accum>=60 || a4h>=50) && (structureBull || recovery) && !distribution) {
+    bias='Mild Bullish / Developing';
+    longEntry='⚠️ Staged / conditional';
+    shortEntry='⏸ Wait for structure';
+    bestAction='Support is developing, but the bottom/continuation is not fully confirmed. Wait for a higher-low and improving 4H/1D accumulation before scaling.';
+    readiness='🟡 Re-accumulation attempt';
+    if(!hasHigherLow) missing.push('higher-low confirmation');
+    if(a4h<55) missing.push('4H accumulation strengthening');
+    if(a1d<50) missing.push('1D accumulation strengthening');
+    if(vol<1) missing.push('sustained green-volume participation');
+    invalid.push('lower-low or distribution/breakdown confirmation');
+  } else if(distribution || structureBear) {
+    bias='Bearish Risk / Neutral';
+    longEntry='❌ Wait — structure weak';
+    shortEntry='⚠️ Conditional — rejection first';
+    bestAction='Structure is weakening, but do not chase the first breakdown. Wait for a failed bounce/lower-high for shorts or a higher-low plus accumulation recovery for longs.';
+    readiness='🟠 Structure unresolved';
+    if(!hasLowerHigh) missing.push('defined lower-high / failed bounce');
+    if(a4h<50) missing.push('4H accumulation recovery');
+    if(a1d<50) missing.push('1D accumulation recovery');
+    invalid.push('breakdown confirmation / support failure');
+  } else if(recovery) {
+    bias=accum>=60 ? 'Neutral / Recovery Watch' : 'Neutral';
+    longEntry='⚠️ Staged / conditional';
+    shortEntry='⏸ Wait for structure';
+    bestAction='Wait for a stable base, higher-low and improving 4H/1D accumulation. Do not mistake a weak bounce for confirmed re-accumulation.';
+    readiness='🟡 Bottoming process';
+    if(!hasHigherLow) missing.push('stable higher-low');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
+    invalid.push('new lower-low / renewed distribution');
+  } else {
+    bias=rec.tradeBias||'Neutral';
+    longEntry='⚠️ Staged / conditional';
+    shortEntry='⏸ Wait for structure';
+    bestAction='Wait for clearer structure and alignment between accumulation, momentum and higher-timeframe direction rather than forcing a trade.';
+    readiness='⚪ No clear edge';
+    if(!hasHigherLow) missing.push('higher-low / stable base');
+    if(a4h<50) missing.push('4H accumulation ≥50%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    invalid.push('breakdown or deterioration in higher-timeframe support');
+  }
+
+  if(!decisionScore) {
+    decisionScore=45;
+    decisionScore += Math.min(20, Math.max(0, a4h-50)*0.4);
+    decisionScore += Math.min(15, Math.max(0, a1d-50)*0.3);
+    decisionScore += hasHigherLow ? 12 : 0;
+    decisionScore -= distribution ? 12 : 0;
+    decisionScore -= confirmed ? 5 : 0;
+    decisionScore=Math.max(20,Math.min(96,Math.round(decisionScore)));
+  }
+  const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':'#ffd966';
+  const compactStyle=compact?'font-size:12px;':'';
+  const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
+  const invalidHtml=invalid.map(x=>`<li>${x}</li>`).join('');
+  return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
+    <div style="margin-top:7px"><strong>Bias:</strong> ${bias}</div>
+    <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}${cg.label?` • ${cg.label}`:''}</div>
+    <div><strong>Long entry:</strong> ${longEntry}</div>
+    <div><strong>Short entry:</strong> ${shortEntry}</div>
+    <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
+    <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
+    <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
+      <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
+    </div>
+    <div class="small" style="margin-top:7px;color:var(--muted)">Decision confidence ${decisionScore}% • Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}</div>
+  </div>`;
+}
+
 function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const phase=String(r.phase?.phase||r.phase||'Unknown');
   const phasePct=Number(r.phase?.confidence||0);
@@ -6021,15 +6157,7 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
       Lower-high evidence: <strong>${(r.phase?.reasons||[]).filter(x=>/lower high/i.test(x)).join(', ') || 'not dominant'}</strong>
     </div>
 
-    <div class="proDecision" style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
-      <div style="font-weight:900;font-size:16px">🎯 TRADER DECISION</div>
-      <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
-      <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
-      <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
-      <div><strong>Short entry:</strong> ${dist||rsi4h>=80?'⚠️ Wait for rejection / failed bounce':'⏸ Wait for structure'}</div>
-      <div style="margin-top:7px"><strong>Best action now:</strong><br>${action}</div>
-      <div class="small" style="margin-top:6px;color:var(--muted)">${readWhy} Confidence ${rec.confidence}%.</div>
-    </div>
+    ${renderTraderDecisionBlock(r, false)}
 
     <div style="margin-top:10px"><strong>Nearby downside structure</strong>
       <div class="recBox">${shortTargets.length?shortTargets.join(' → '):support.join(' → ')||'—'}</div>
@@ -6355,14 +6483,7 @@ function renderCards(results){
         <div class="compactSignals decisionOnly" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
           ${badge} ${accBadge}
           ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
-          <div class="proDecision" style="flex:1 1 100%;margin-top:6px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
-            <div style="font-weight:900;font-size:17px">🎯 TRADER DECISION</div>
-            <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
-            <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
-            <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
-            <div><strong>Short entry:</strong> ${dist||rsi4h>=80?'⚠️ Wait for rejection / failed bounce':'⏸ Wait for structure'}</div>
-            <div style="margin-top:7px"><strong>Best action now:</strong><br>${action}</div>
-          </div>
+          <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
         </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
