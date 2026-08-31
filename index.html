@@ -5115,13 +5115,37 @@ function getDisplayTraderBias(r){
 
 function traderBiasMatches(r, code){
   if(code === 'ALL') return true;
-  const b = getDisplayTraderBias(r).toLowerCase();
-  if(code === 'BULLISH') return /^(bullish)(?!\s*\/)/.test(b) || b === 'bullish / controlled';
-  if(code === 'MILD_BULLISH') return b === 'mild bullish';
-  if(code === 'RECOVERY') return /recovery watch/.test(b);
-  if(code === 'NEUTRAL') return b === 'neutral';
-  if(code === 'BEARISH_RISK') return /bearish risk/.test(b);
-  if(code === 'BEARISH_CAUTIOUS') return /bearish \/ cautious|neutral \/ cautious bearish/.test(b);
+
+  // Normalize the FINAL displayed Trader Decision into the same buckets
+  // exposed by the bias filter. Do not use exact-string matching here: the
+  // decision engine intentionally produces qualified labels such as
+  // "Bullish / Controlled", "Neutral / Contextual", "Neutral / Cautious",
+  // "Neutral / Recovery Watch" and "Bearish Risk / Wait".
+  const b = String(getDisplayTraderBias(r) || 'Neutral').trim().toLowerCase();
+
+  // Order matters: qualified bearish states must not fall through to the
+  // generic Neutral bucket.
+  if(code === 'BEARISH_CAUTIOUS') {
+    return /bearish\s*\/\s*cautious|neutral\s*\/\s*cautious\s+bearish/.test(b);
+  }
+  if(code === 'BEARISH_RISK') {
+    return /bearish\s+risk/.test(b);
+  }
+  if(code === 'RECOVERY') {
+    return /recovery\s+watch|recovery/.test(b);
+  }
+  if(code === 'BULLISH') {
+    return /^bullish(?:\s*\/\s*controlled)?$/.test(b);
+  }
+  if(code === 'MILD_BULLISH') {
+    return /^mild\s+bullish(?:\s*\/.*)?$/.test(b);
+  }
+  if(code === 'NEUTRAL') {
+    // Neutral means genuinely neutral, including qualified neutral/context
+    // states, but excludes bearish-cautious and recovery states.
+    if(/bearish|recovery/.test(b)) return false;
+    return /^neutral(?:\s*\/.*)?$/.test(b);
+  }
   return true;
 }
 
