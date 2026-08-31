@@ -642,6 +642,11 @@ body.authLocked{overflow:hidden}
 .bearStructAuthority{margin-top:8px;padding:8px 9px;border-radius:8px;background:rgba(255,255,255,.025);font-size:11px;font-weight:800;line-height:1.4;color:#ffd966}
 @media(max-width:760px){.bearStructSteps{grid-template-columns:repeat(2,minmax(0,1fr))}.bearStructStep:last-child{grid-column:1/-1}}
 </style>
+
+<style id="trend-transition-priority-ui">
+.ttPriorityPanel{margin:9px 0 2px;padding:12px;border-radius:12px;border:1px solid rgba(126,220,255,.18);background:linear-gradient(180deg,rgba(126,220,255,.055),rgba(255,255,255,.018));box-shadow:0 8px 22px rgba(0,0,0,.12)}
+.ttPriorityHeader{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.ttPriorityTitle{font-size:12px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#cfe8ff}.ttPriorityScore{font-size:22px;font-weight:950;line-height:1}.ttPriorityState{margin-top:3px;font-size:15px;font-weight:950}.ttPriorityReason{margin-top:6px;font-size:11px;line-height:1.45;color:#dbe8f5}.ttPriorityGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:9px}.ttMini{padding:7px 8px;border:1px solid rgba(255,255,255,.07);border-radius:8px;background:rgba(255,255,255,.025)}.ttMini b{display:block;font-size:10px;color:#9fb3cc;text-transform:uppercase;letter-spacing:.04em}.ttMini span{display:block;margin-top:3px;font-size:12px;font-weight:900}.ttTrigger{margin-top:8px;padding:8px 9px;border-radius:8px;border:1px solid rgba(255,217,102,.18);background:rgba(255,217,102,.035);font-size:11px;line-height:1.4}.ttQueue{margin:10px 0;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.018)}.ttQueueTitle{font-size:12px;font-weight:950;letter-spacing:.06em;text-transform:uppercase;color:#cfe8ff}.ttQueueRow{display:grid;grid-template-columns:28px 1fr 62px 110px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.055)}.ttQueueRow:last-child{border-bottom:0}.ttQueueRank{font-weight:950;color:#9fb3cc}.ttQueueSym{font-weight:950}.ttQueueState{font-size:10px;font-weight:900}.ttQueueScore{text-align:right;font-weight:950}.ttQueueHint{font-size:10px;color:#8195ad;margin-top:2px}.ttLegend{margin-top:8px;font-size:10px;color:#8195ad;line-height:1.4}@media(max-width:760px){.ttPriorityGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ttQueueRow{grid-template-columns:24px 1fr 58px}.ttQueueState{display:none}}
+</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -815,7 +820,8 @@ body.authLocked{overflow:hidden}
         <div class="controlItem">
           <label class="controlLabel">Sort Results</label>
           <select id="sortBy">
-            <option value="score" selected>Blowoff Score</option>
+            <option value="trendTransition" selected>⭐ Trend Transition Priority</option>
+            <option value="score">Blowoff Score</option>
             <option value="topScore">Top-Detection Score</option>
             <option value="similarity">Cycle similarity</option>
             <option value="accum">Accum confidence</option>
@@ -861,6 +867,17 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
       <div class="controlGrid three">
+        <div class="controlItem">
+          <label class="controlLabel">⭐ Trend Transition Priority</label>
+          <select id="trendTransitionFilter">
+            <option value="ALL">All</option>
+            <option value="WATCH">🟡 Watch ≥45</option>
+            <option value="PRE_BREAKDOWN">🟠 Pre-Breakdown ≥60</option>
+            <option value="HIGH">🔴 High Priority ≥75</option>
+            <option value="CONFIRMED">🔴 Breakdown Confirmed</option>
+          </select>
+          <div class="dashboardHint">Start here. Filters the scanner by trend-transition priority, not a price-fall probability.</div>
+        </div>
         <div class="controlItem">
           <label class="controlLabel">Funding Direction</label>
           <select id="fundingFilter">
@@ -5405,8 +5422,8 @@ if (showDistBtn) {
   });
 }
 
-// Keep the old sorting default: Score, Desc.
-if (el.sortBy) el.sortBy.value = 'score';
+// Default to the decision-first workflow: Trend Transition Priority, Desc.
+if (el.sortBy) el.sortBy.value = 'trendTransition';
 
 // Instant local UI controls: sorting/filtering never require a network request.
 if (el.sortBy) {
@@ -7333,6 +7350,195 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 </script>
 
 </div><!-- /protectedApp -->
+
+<script id="trend-transition-engine">
+(function(){
+  if(window.__trendTransitionEngineInstalled) return;
+  window.__trendTransitionEngineInstalled=true;
+
+  const clamp=(n,a=0,b=100)=>Math.max(a,Math.min(b,Number.isFinite(Number(n))?Number(n):0));
+  const esc=v=>{const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML;};
+  const num=(v,f=0)=>{const n=Number(v);return Number.isFinite(n)?n:f};
+  const pct=(v)=>`${num(v).toFixed(0)}%`;
+
+  function genericTFWeakness(k){
+    if(!Array.isArray(k)||k.length<12) return 0;
+    const h=k.map(x=>num(x?.[2],NaN)).filter(Number.isFinite), c=k.map(x=>num(x?.[4],NaN)).filter(Number.isFinite);
+    if(h.length<8||c.length<8) return 0;
+    const rh=h.slice(-8); let lh=0; for(let i=1;i<rh.length;i++) if(rh[i]<rh[i-1]) lh++;
+    const ret=(c[c.length-1]-c[Math.max(0,c.length-6)])/Math.max(Math.abs(c[Math.max(0,c.length-6)]),1e-12);
+    const slopeWeak=ret<0?35:ret<0.02?18:0;
+    return clamp(lh*10+slopeWeak);
+  }
+
+  function calculateTrendTransitionPriority(r){
+    r=r||{};
+    try{
+      const top=r.topDetection || (typeof calculateTopDetectionStack==='function'?calculateTopDetectionStack(r):{});
+      const tc=top.components||{};
+      const tm=top.meta||{};
+      const ex=typeof calculateTrendExhaustionState==='function'?calculateTrendExhaustionState(r):{};
+      const bear=r.bearishStructure||{};
+      const smc=r.smcBreakerBlock||{};
+      const adr=r.accumulationReversal||{};
+      const cg=r.correctionGuide||{};
+      const phase=String(r.phase?.phase||r.phase?.phaseName||r.phase||'').toLowerCase();
+      const rsi=num(r.rsi4h||tm.rsiNow);
+      const ema70=Math.abs(num(r.ema70DistPct||tm.emaStretch));
+      const ema20=Math.abs(num(tm.ema20Stretch));
+      const vol=num(r.volSpike4);
+      const volTrend=num(r.volume1dTrendPct);
+      const lowerHigh=!!tm.lowerHighSignal || num(r.lowerHighs)>=1 || !!r.lowerHigh || /lower.?high|choch|mss|bos/i.test(String(bear.state||''));
+      const failedBreakout=!!tm.failedBreakout || num(tc.failedBreakout)>=55;
+      const divergence=num(tc.rsiDivergence)>=55;
+      const momentum=!!tm.momentumDecel || num(tc.momentumExhaustion)>=55;
+      const volumeExhaust=num(tc.volumeExhaustion)>=55 || (num(r.volume1dFalling)?true:false);
+      const distribution=/distribution|breakdown/i.test(phase) || num(tc.distribution)>=45;
+      const parabolic=num(tc.parabolicExtension)>=55 || ema70>=25 || ema20>=12;
+      const blowoff=num(tc.blowoff)>=50 || num(r.score)>=6;
+      const bearishRank=num(bear.stageRank);
+      const confirmed=!!bear.confirmed && bearishRank>=5;
+      const correctionConfirmed=num(cg.ema200Stretch15)<0 || String(cg.code||'')==='SIGNIFICANT_CORRECTION_CONFIRMED';
+
+      // Component scores: structure is deliberately dominant over raw oscillator extremes.
+      const structure=clamp(
+        (lowerHigh?24:0)+(failedBreakout?20:0)+(distribution?14:0)+
+        Math.min(32,bearishRank*8)+
+        (String(adr.stage||'').toUpperCase()==='REVERSAL_CONFIRMED'?10:0)+
+        (smc.direction==='BEARISH'&&num(smc.stageRank)>=4?6:0)
+      );
+      const exhaustion=clamp(
+        (parabolic?22:0)+(momentum?18:0)+(volumeExhaust?14:0)+
+        (divergence?18:0)+(blowoff?12:0)+(rsi>=80?12:rsi>=70?6:0)
+      );
+      const deterioration=clamp(
+        (failedBreakout?25:0)+(lowerHigh?25:0)+(divergence?15:0)+
+        (momentum?15:0)+(volTrend<0?10:0)+(distribution?10:0)
+      );
+      const extension=clamp((ema70>=50?100:ema70>=30?80:ema70>=20?60:ema70>=12?35:0));
+      const tf4=clamp((parabolic?35:0)+(exhaustion>=40?25:0)+(distribution?20:0)+(rsi>=70?20:0));
+      const tf1=clamp(genericTFWeakness(r.k1h||r.k1H||r.k1hCandles)+((lowerHigh||failedBreakout)?25:0));
+      const tf15=clamp(genericTFWeakness(r.k15m||r.k15MCandles)+Math.min(60,bearishRank*15));
+      const activeTF=[tf4,tf1,tf15].filter(v=>v>=35).length;
+      const alignment=clamp((activeTF*20)+((tf4>=55&&tf1>=45)?15:0)+((tf1>=45&&tf15>=45)?15:0)+((bearishRank>=3)?10:0));
+
+      let score=Math.round(
+        structure*0.35 + exhaustion*0.23 + deterioration*0.15 +
+        extension*0.07 + alignment*0.20
+      );
+      if(structure>=55&&exhaustion>=50) score+=7;
+      if(lowerHigh&&(failedBreakout||momentum||divergence)) score+=5;
+      if(activeTF>=2) score+=5;
+      if(confirmed) score+=8;
+      score=clamp(score);
+
+      let state='🟢 TREND HEALTHY', code='HEALTHY';
+      if(correctionConfirmed && confirmed){state='🔴 BREAKDOWN CONFIRMED';code='CONFIRMED';}
+      else if(confirmed || (bearishRank>=4 && score>=70)){state='🔴 BREAKDOWN DEVELOPING';code='BREAKDOWN';}
+      else if(score>=75){state='🔴 HIGH PRIORITY TRANSITION';code='HIGH';}
+      else if(score>=60){state='🟠 PRE-BREAKDOWN';code='PRE_BREAKDOWN';}
+      else if(score>=45){state='🟡 VULNERABILITY INCREASING';code='WATCH';}
+      else if(extension>=35 || rsi>=70){state='🟡 TREND EXTENDED';code='EXTENDED';}
+
+      const reasons=[];
+      if(parabolic) reasons.push(`Parabolic/EMA extension ${ema70.toFixed(1)}%`);
+      if(divergence) reasons.push('Bearish RSI divergence');
+      if(momentum) reasons.push('Momentum deceleration');
+      if(volumeExhaust) reasons.push('Volume participation weakening');
+      if(failedBreakout) reasons.push('Failed breakout / high attack');
+      if(lowerHigh) reasons.push('Lower-high / CHoCH structure');
+      if(distribution) reasons.push('Distribution / breakdown phase');
+      if(bearishRank>=3) reasons.push(`Bearish structure ${bear.state||'BOS+'}`);
+      if(adr.stage && String(adr.stage)!=='NONE') reasons.push(`Accumulation double-top: ${adr.stage}`);
+      const topReasons=reasons.slice(0,5);
+
+      let trigger='Wait for structural confirmation';
+      const levels=[];
+      if(num(bear.bosLevel)>0){trigger=`4H/structure close below ${num(bear.bosLevel).toPrecision(8)}`;levels.push(num(bear.bosLevel));}
+      else if(num(cg.ema200Stretch15)>0 && num(r.closeNow)>0){trigger='15m EMA200 loss + failed retest';}
+      else if(num(adr.neckline)>0){trigger=`Neckline break below ${num(adr.neckline).toPrecision(8)}`;levels.push(num(adr.neckline));}
+      else if(num(r.closeNow)>0){trigger='Nearest structural support break + failed retest';}
+
+      return {score,state,code,structure,exhaustion,deterioration,extension,alignment,tf4,tf1,tf15,activeTF,
+        confirmed,correctionConfirmed,reasons:topReasons,trigger,levels,meta:{rsi,ema70,vol,volTrend,bearishRank,smcStage:num(smc.stageRank),adrStage:String(adr.stage||'NONE')}};
+    }catch(e){return {score:0,state:'⚪ TRANSITION UNAVAILABLE',code:'ERROR',structure:0,exhaustion:0,deterioration:0,extension:0,alignment:0,reasons:['Engine error: '+e.message],trigger:'No trigger available',meta:{}};}
+  }
+  window.calculateTrendTransitionPriority=calculateTrendTransitionPriority;
+
+  function priorityColor(score){return score>=75?'#ff5c5c':score>=60?'#ff9f43':score>=45?'#ffd966':'#2dd4bf'}
+  function priorityPanel(r,compact=false){
+    const t=calculateTrendTransitionPriority(r), c=priorityColor(t.score);
+    const reason=t.reasons.length?t.reasons.join(' • '):'No major transition evidence';
+    const trigger=t.trigger||'Wait for structural confirmation';
+    return `<div class="ttPriorityPanel" style="border-left:4px solid ${c}">
+      <div class="ttPriorityHeader"><div><div class="ttPriorityTitle">⭐ SCANNER PRIORITY • WHAT TO CHECK FIRST</div><div class="ttPriorityState" style="color:${c}">${esc(t.state)}</div></div><div class="ttPriorityScore" style="color:${c}">${t.score}/100</div></div>
+      <div class="ttPriorityReason"><strong>Why:</strong> ${esc(reason)}</div>
+      ${compact?'':`<div class="ttPriorityGrid">
+        <div class="ttMini"><b>Structure</b><span>${Math.round(t.structure)}/100</span></div>
+        <div class="ttMini"><b>Exhaustion</b><span>${Math.round(t.exhaustion)}/100</span></div>
+        <div class="ttMini"><b>Multi-TF</b><span>${Math.round(t.alignment)}/100</span></div>
+        <div class="ttMini"><b>Extension</b><span>${Math.round(t.extension)}/100</span></div>
+      </div><div class="ttTrigger"><strong>🎯 NEXT THING TO CHECK:</strong> ${esc(trigger)}<br><span style="color:#8195ad">Do not treat the score as a probability; confirmation still requires the structural trigger.</span></div>`}
+    </div>`;
+  }
+  window.renderTrendTransitionPriority=priorityPanel;
+
+  function queueHTML(results){
+    const arr=(Array.isArray(results)?results:[]).map(r=>({r,t:calculateTrendTransitionPriority(r)})).sort((a,b)=>b.t.score-a.t.score);
+    const top=arr.filter(x=>x.t.score>=45).slice(0,8);
+    if(!top.length) return `<div class="ttQueue"><div class="ttQueueTitle">⭐ PRIORITY QUEUE</div><div class="ttLegend">No coins currently reach the watch threshold (45/100).</div></div>`;
+    return `<div class="ttQueue"><div class="ttQueueTitle">⭐ PRIORITY QUEUE • CHECK TOP TO BOTTOM</div>${top.map((x,i)=>{const c=priorityColor(x.t.score);return `<div class="ttQueueRow"><div class="ttQueueRank">${i+1}</div><div><div class="ttQueueSym">${esc(x.r.symbol||'—')}</div><div class="ttQueueHint">${esc(x.t.reasons.slice(0,2).join(' • ')||'Transition watch')}</div></div><div class="ttQueueState" style="color:${c}">${esc(x.t.state.replace(/^\S+\s*/,''))}</div><div class="ttQueueScore" style="color:${c}">${x.t.score}/100</div></div>`}).join('')}<div class="ttLegend">Workflow: <strong>Scan → Rank → Investigate → Confirm → Trade Setup.</strong> Ignore low-priority names unless you have a specific reason to inspect them.</div></div>`;
+  }
+
+  // Add the new sort key without disturbing legacy sort keys.
+  if(typeof window.getValueForKey==='function'){
+    const oldGetValueForKey=window.getValueForKey;
+    window.getValueForKey=function(r,key){if(key==='trendTransition')return calculateTrendTransitionPriority(r).score;return oldGetValueForKey(r,key);};
+  }
+
+  // The functions are global declarations in the original page, so replace the global
+  // binding used by renderActiveView while retaining the original behavior.
+  if(typeof window.filterResultsForDist==='function'){
+    const oldFilter=window.filterResultsForDist;
+    window.filterResultsForDist=function(results){
+      let out=oldFilter(results);
+      const f=document.getElementById('trendTransitionFilter');
+      const v=f?f.value:'ALL';
+      if(v!=='ALL') out=out.filter(r=>{const t=calculateTrendTransitionPriority(r);if(v==='WATCH')return t.score>=45;if(v==='PRE_BREAKDOWN')return t.score>=60;if(v==='HIGH')return t.score>=75;if(v==='CONFIRMED')return t.code==='CONFIRMED';return true;});
+      return out;
+    };
+  }
+
+  function decorateQueue(){
+    try{
+      const card=document.getElementById('cardView'), table=document.getElementById('tableView');
+      if(!card && !table) return;
+      const base=Array.isArray(window.results)?window.results:[];
+      const host=card&&card.style.display!=='none'?card:table;
+      if(!host) return;
+      const existing=document.getElementById('trendTransitionQueue'); if(existing) existing.remove();
+      host.insertAdjacentHTML('beforebegin',`<div id="trendTransitionQueue">${queueHTML(base)}</div>`);
+      if(card){card.querySelectorAll('.resultCard[data-symbol]').forEach(node=>{if(node.querySelector('.ttPriorityPanel'))return;const sym=String(node.dataset.symbol||'').toUpperCase();const r=base.find(x=>String(x?.symbol||'').toUpperCase()===sym);if(r){const anchor=node.querySelector('.compactSignals');if(anchor)anchor.insertAdjacentHTML('afterbegin',priorityPanel(r,false));}})}
+    }catch(e){console.warn('trend transition decoration error',e)}
+  }
+
+  // Wrap renderers so the priority layer is refreshed after normal and fast renders.
+  if(typeof window.renderResponsiveResults==='function'){
+    const oldRenderResponsive=window.renderResponsiveResults;
+    window.renderResponsiveResults=function(results,allowFast=false){const out=oldRenderResponsive(results,allowFast);setTimeout(decorateQueue,0);return out;};
+  }
+  if(typeof window.fastPatchResultDOM==='function'){
+    const oldFast=window.fastPatchResultDOM;
+    window.fastPatchResultDOM=function(results,isMobile){const ok=oldFast(results,isMobile);if(ok)setTimeout(decorateQueue,0);return ok;};
+  }
+
+  // If renderer wrapping above is bypassed by initialization order, listen for the result panes changing.
+  document.addEventListener('change',e=>{if(e.target?.id==='trendTransitionFilter')typeof renderActiveView==='function'&&renderActiveView(true);});
+  document.addEventListener('DOMContentLoaded',()=>{setTimeout(()=>{try{if(typeof renderActiveView==='function')renderActiveView(true)}catch(e){}},80)});
+  setTimeout(()=>{try{if(typeof renderActiveView==='function')renderActiveView(true)}catch(e){}},120);
+})();
+</script>
+
 <script id="auth-shell-js">
 (function(){
  const KEY="magmaLoginPrototype",SESSION="magmaLoginSession",$=id=>document.getElementById(id),screen=$("authScreen"),app=$("protectedApp");
