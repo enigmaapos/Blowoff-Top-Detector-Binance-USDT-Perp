@@ -663,6 +663,11 @@ body.authLocked{overflow:hidden}
 .ttPriorityPanel{margin:9px 0 2px;padding:12px;border-radius:12px;border:1px solid rgba(126,220,255,.18);background:linear-gradient(180deg,rgba(126,220,255,.055),rgba(255,255,255,.018));box-shadow:0 8px 22px rgba(0,0,0,.12)}
 .ttPriorityHeader{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.ttPriorityTitle{font-size:12px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#cfe8ff}.ttPriorityScore{font-size:22px;font-weight:950;line-height:1}.ttPriorityState{margin-top:3px;font-size:15px;font-weight:950}.ttPriorityReason{margin-top:6px;font-size:11px;line-height:1.45;color:#dbe8f5}.ttPriorityGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:9px}.ttMini{padding:7px 8px;border:1px solid rgba(255,255,255,.07);border-radius:8px;background:rgba(255,255,255,.025)}.ttMini b{display:block;font-size:10px;color:#9fb3cc;text-transform:uppercase;letter-spacing:.04em}.ttMini span{display:block;margin-top:3px;font-size:12px;font-weight:900}.ttTrigger{margin-top:8px;padding:8px 9px;border-radius:8px;border:1px solid rgba(255,217,102,.18);background:rgba(255,217,102,.035);font-size:11px;line-height:1.4}.ttQueue{margin:10px 0;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.018)}.ttQueueTitle{font-size:12px;font-weight:950;letter-spacing:.06em;text-transform:uppercase;color:#cfe8ff}.ttQueueRow{display:grid;grid-template-columns:28px 1fr 62px 110px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.055)}.ttQueueRow:last-child{border-bottom:0}.ttQueueRank{font-weight:950;color:#9fb3cc}.ttQueueSym{font-weight:950}.ttQueueState{font-size:10px;font-weight:900}.ttQueueScore{text-align:right;font-weight:950}.ttQueueHint{font-size:10px;color:#8195ad;margin-top:2px}.ttLegend{margin-top:8px;font-size:10px;color:#8195ad;line-height:1.4}@media(max-width:760px){.ttPriorityGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ttQueueRow{grid-template-columns:24px 1fr 58px}.ttQueueState{display:none}}
 </style>
+
+<style id="anti-flicker-hardening">
+  #cardView,#tableView,#trendTransitionQueue{contain:layout paint;overflow-anchor:none;}
+  #cardView .resultCard,#tableView tr{content-visibility:auto;}
+</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -6089,7 +6094,7 @@ function renderTable(results){
     let status=r.score>=threshold?'<span class="blowBadge">🔥 Blowoff</span>':r.score===threshold-1?'<span class="potBadge">⚠ Potential</span>':'<span class="small">normal</span>';
     const tf=(r.accumChecks||[]).map(t=>`${t.tf}:${t.result.confidence}%${t.result.isAccum?'✓':''}`).join(' | ');
     const pro=renderProfessionalAnalysis(r,rec,srec,lt);
-    return `<tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><td class="coinCell"><div class="coinName">${String(r.symbol||'').replace(/USDT$/i,'')}</div><div class="coinTicker">${r.symbol}</div><div style="margin-top:7px">${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div><div style="margin-top:7px">${histGet(histSymbol(r)) ? histCardActionsHtml(r) : `<button type="button" class="alt histSaveBtn" data-symbol="${histSymbol(r)}">📌 Save observation</button>`}</div><div style="margin-top:7px">${status} <span class="accBadge">Accum ${accum.confidence}%</span> <span class="phaseTag">${phase.phase}</span></div><div style="margin-top:7px">${renderTrendExhaustionState(r)}</div></td><td>${r.closeNow}</td><td>${Number(r.rsi4h||0).toFixed(1)}</td><td class="small">Vol×${r.volSpike4} • Wick ${Number(r.wickRatio4||0).toFixed(2)} • EMA70 ${r.ema70DistPct}%<br>EMA200 ${cg.ema200Stretch15==null?'n/a':Number(cg.ema200Stretch15).toFixed(2)+'%'}</td><td class="small"><span class="phasePill">${cyclePhase}</span><br><strong>Similarity:</strong> <span class="metricPill">${simPct}%</span> • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>${tf}<br><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'No setup'}</td></tr><tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ><td colspan="5" style="padding:10px 12px"><div class="small" style="color:var(--muted)">${expl.label} • reversal estimate ${expl.prob}%</div><details class="coinDetails"><summary><strong>＋ Detailed evidence</strong></summary><div class="coinDetailsBody" style="margin-top:10px">${pro}</div></details></td></tr>`;
+    return `<tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><td class="coinCell"><div class="coinName">${String(r.symbol||'').replace(/USDT$/i,'')}</div><div class="coinTicker">${r.symbol}</div><div style="margin-top:7px">${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div><div style="margin-top:7px">${histGet(histSymbol(r)) ? histCardActionsHtml(r) : `<button type="button" class="alt histSaveBtn" data-symbol="${histSymbol(r)}">📌 Save observation</button>`}</div><div style="margin-top:7px">${status} <span class="accBadge">Accum ${accum.confidence}%</span> <span class="phaseTag">${phase.phase}</span></div><div style="margin-top:7px">${renderTrendExhaustionState(r)}</div></td><td>${r.closeNow}</td><td>${Number(r.rsi4h||0).toFixed(1)}</td><td class="small">Vol×${r.volSpike4} • Wick ${Number(r.wickRatio4||0).toFixed(2)} • EMA70 ${r.ema70DistPct}%<br>EMA200 ${cg.ema200Stretch15==null?'n/a':Number(cg.ema200Stretch15).toFixed(2)+'%'}</td><td class="small"><span class="phasePill">${cyclePhase}</span><br><strong>Similarity:</strong> <span class="metricPill">${simPct}%</span> • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>${tf}<br><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'No setup'}</td></tr><tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ><td colspan="5" style="padding:10px 12px"><div class="small" style="color:var(--muted)">${expl.label} • reversal estimate ${expl.prob}%</div><details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><summary><strong>＋ Detailed evidence</strong></summary><div class="coinDetailsBody" style="margin-top:10px">${pro}</div></details></td></tr>`;
   }).join('');
   el.tableView.innerHTML=`<div class="card-panel"><div class="tableScroll"><table><thead><tr><th>Symbol / Status</th><th>Last</th><th>RSI4H</th><th>Signals</th><th>Context / Accumulation</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
@@ -6559,41 +6564,129 @@ function renderResponsiveResults(results, allowFast=false){
 }
 
 function fastPatchResultDOM(results, isMobile){
+  /*
+   * Keyed, in-place renderer.
+   * Build the next card/table tree OFF-DOM, then replace only the affected
+   * keyed nodes. The visible results container is never emptied, so there is
+   * no blank frame during an automatic refresh.
+   */
   try{
-    const symbols = new Set(results.map(r => String(r?.symbol || '').toUpperCase()));
+    const safe=Array.isArray(results)?results.filter(Boolean):[];
+    const symbols=safe.map(r=>String(r?.symbol||'').toUpperCase()).filter(Boolean);
+    const wanted=new Set(symbols);
+    const host=isMobile?el.cardView:el.tableView;
+    if(!host) return false;
+
+    // If there is no mounted result surface yet, let the normal renderer do
+    // the first paint. Subsequent refreshes use the keyed path below.
+    if(isMobile && !host.querySelector('.resultCard[data-symbol]')) return false;
+    if(!isMobile && !host.querySelector('tbody')) return false;
+
+    const oldScrollY=window.scrollY||window.pageYOffset||0;
+    const oldScrollX=window.scrollX||0;
+    preserveExpandedDetailState();
+
+    const oldNodes=new Map();
     if(isMobile){
-      const cards = Array.from(el.cardView.querySelectorAll('.resultCard[data-symbol]'));
-      if(cards.length < symbols.size) return false;
-      const by = new Map(cards.map(c => [String(c.dataset.symbol||'').toUpperCase(), c]));
-      for(const sym of symbols) if(!by.has(sym)) return false;
-      const frag=document.createDocumentFragment();
-      results.forEach(r=>{ const c=by.get(String(r.symbol).toUpperCase()); c.hidden=false; frag.appendChild(c); });
-      cards.forEach(c=>{ if(!symbols.has(String(c.dataset.symbol||'').toUpperCase())) c.hidden=true; });
-      el.cardView.appendChild(frag);
-      return true;
+      host.querySelectorAll('.resultCard[data-symbol]').forEach(n=>oldNodes.set(String(n.dataset.symbol||'').toUpperCase(),n));
+      // A changed result shape is still handled without a full-container wipe.
+      for(const sym of symbols) if(!oldNodes.has(sym)) return false;
+    }else{
+      host.querySelectorAll('tbody tr[data-symbol]').forEach(n=>{
+        const sym=String(n.dataset.symbol||'').toUpperCase();
+        if(!oldNodes.has(sym)) oldNodes.set(sym,[]);
+        oldNodes.get(sym).push(n);
+      });
+      // The table renderer uses two rows per symbol.
+      for(const sym of symbols) if(!oldNodes.has(sym) || oldNodes.get(sym).length<2) return false;
     }
 
-    const tbody=el.tableView.querySelector('tbody');
-    if(!tbody) return false;
-    const rows=Array.from(tbody.querySelectorAll('tr[data-symbol]'));
-    const by=new Map();
-    rows.forEach(row=>{
-      const sym=String(row.dataset.symbol||'').toUpperCase();
-      if(!by.has(sym)) by.set(sym, []);
-      by.get(sym).push(row);
+    // Render the next version into a detached host. el.cardView/tableView are
+    // temporarily redirected only while rendering; no browser paint occurs.
+    const detached=document.createElement('div');
+    const original=isMobile?el.cardView:el.tableView;
+    if(isMobile) el.cardView=detached; else el.tableView=detached;
+    try{
+      if(isMobile) renderCards(safe); else renderTable(safe);
+    }finally{
+      if(isMobile) el.cardView=original; else el.tableView=original;
+    }
+
+    if(isMobile){
+      const fresh=new Map();
+      detached.querySelectorAll('.resultCard[data-symbol]').forEach(n=>fresh.set(String(n.dataset.symbol||'').toUpperCase(),n));
+      for(const sym of symbols) if(!fresh.has(sym)) return false;
+
+      // Preserve expanded evidence state and live chart canvases.
+      for(const sym of symbols){
+        const oldNode=oldNodes.get(sym), newNode=fresh.get(sym);
+        const oldDetails=oldNode.querySelector('details.coinDetails[data-symbol]');
+        const newDetails=newNode.querySelector('details.coinDetails[data-symbol]');
+        if(newDetails) newDetails.open=!!(oldDetails?.open || expandedDetailSymbols.has(sym));
+
+        const oldChart=oldNode.querySelector('.binanceChartPanel[data-symbol]');
+        const newChart=newNode.querySelector('.binanceChartPanel[data-symbol]');
+        if(oldChart && newChart){
+          const oldCanvas=oldChart.querySelector('canvas');
+          const newCanvas=newChart.querySelector('canvas');
+          if(oldCanvas && newCanvas){
+            newCanvas.replaceWith(oldCanvas);
+            // Keep the user's selected timeframe and redraw only the chart.
+            newChart.dataset.tf=oldChart.dataset.tf||newChart.dataset.tf||'4h';
+          }
+        }
+      }
+
+      const frag=document.createDocumentFragment();
+      symbols.forEach(sym=>frag.appendChild(fresh.get(sym)));
+      // Remove stale nodes only after the replacement fragment is ready.
+      host.querySelectorAll('.resultCard[data-symbol]').forEach(n=>{if(!wanted.has(String(n.dataset.symbol||'').toUpperCase())) n.remove();});
+      host.appendChild(frag);
+      // Re-order using the already-built nodes without clearing the container.
+      symbols.forEach(sym=>{const n=host.querySelector(`.resultCard[data-symbol="${CSS.escape(sym)}"]`);if(n)host.appendChild(n);});
+    }else{
+      const freshRows=new Map();
+      detached.querySelectorAll('tbody tr[data-symbol]').forEach(n=>{
+        const sym=String(n.dataset.symbol||'').toUpperCase();
+        if(!freshRows.has(sym)) freshRows.set(sym,[]);
+        freshRows.get(sym).push(n);
+      });
+      for(const sym of symbols) if(!freshRows.has(sym) || freshRows.get(sym).length<2) return false;
+      const tbody=host.querySelector('tbody');
+      for(const sym of symbols){
+        const oldPair=oldNodes.get(sym), newPair=freshRows.get(sym);
+        const oldDetail=oldPair.map(n=>n.querySelector('details.coinDetails[data-symbol]')).find(Boolean);
+        const newDetail=newPair.map(n=>n.querySelector('details.coinDetails[data-symbol]')).find(Boolean);
+        if(newDetail){
+          newDetail.open=!!(oldDetail?.open || expandedDetailSymbols.has(sym));
+          const oldChart=oldDetail?.querySelector('.binanceChartPanel[data-symbol]');
+          const newChart=newDetail.querySelector('.binanceChartPanel[data-symbol]');
+          if(oldChart && newChart){
+            const oldCanvas=oldChart.querySelector('canvas'), newCanvas=newChart.querySelector('canvas');
+            if(oldCanvas && newCanvas){ newCanvas.replaceWith(oldCanvas); newChart.dataset.tf=oldChart.dataset.tf||newChart.dataset.tf||'4h'; }
+          }
+        }
+        oldPair.forEach((n,i)=>n.replaceWith(newPair[i]||n));
+      }
+      tbody.querySelectorAll('tr[data-symbol]').forEach(n=>{if(!wanted.has(String(n.dataset.symbol||'').toUpperCase())) n.remove();});
+      const finalRows=[]; symbols.forEach(sym=>{const pair=Array.from(tbody.querySelectorAll(`tr[data-symbol="${CSS.escape(sym)}"]`));pair.forEach(n=>finalRows.push(n));});
+      finalRows.forEach(n=>tbody.appendChild(n));
+    }
+
+    // The renderer may have registered chart controls on the detached tree;
+    // bind the visible chart controls once and refresh only open charts.
+    try{ bindBinanceCharts(); }catch(e){ console.warn('chart bind after keyed refresh',e); }
+    host.querySelectorAll('details.coinDetails[data-symbol]').forEach(d=>{
+      const sym=String(d.dataset.symbol||'').toUpperCase();
+      if(expandedDetailSymbols.has(sym)) d.open=true;
+      const summary=d.querySelector('summary strong');
+      if(summary) summary.textContent=d.open?'− Detailed evidence':'＋ Detailed evidence';
     });
-    if(by.size !== rows.length/2 || by.size < symbols.size) return false;
-    for(const sym of symbols) if(!by.has(sym) || by.get(sym).length < 2) return false;
-    const frag=document.createDocumentFragment();
-    results.forEach(r=>{
-      const pair=by.get(String(r.symbol).toUpperCase());
-      pair.forEach(row=>{ row.hidden=false; frag.appendChild(row); });
-    });
-    rows.forEach(row=>{ if(!symbols.has(String(row.dataset.symbol||'').toUpperCase())) row.hidden=true; });
-    tbody.appendChild(frag);
+    try{ restoreHistoricalCompareStates(); }catch(e){}
+    requestAnimationFrame(()=>{ try{window.scrollTo(oldScrollX,oldScrollY);}catch(e){} });
     return true;
   }catch(e){
-    console.warn('Fast result DOM patch failed; falling back to full render:',e);
+    console.warn('Keyed result DOM patch failed; falling back to full render:',e);
     return false;
   }
 }
@@ -7736,8 +7829,14 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
       const base=Array.isArray(window.results)?window.results:[];
       const host=card&&card.style.display!=='none'?card:table;
       if(!host) return;
-      const existing=document.getElementById('trendTransitionQueue'); if(existing) existing.remove();
-      host.insertAdjacentHTML('beforebegin',`<div id="trendTransitionQueue">${queueHTML(base)}</div>`);
+      let existing=document.getElementById('trendTransitionQueue');
+      if(!existing){
+        existing=document.createElement('div');
+        existing.id='trendTransitionQueue';
+        host.parentNode.insertBefore(existing,host);
+      }
+      const nextQueue=queueHTML(base);
+      if(existing.innerHTML!==nextQueue) existing.innerHTML=nextQueue;
       if(card){card.querySelectorAll('.resultCard[data-symbol]').forEach(node=>{if(node.querySelector('.ttPriorityPanel'))return;const sym=String(node.dataset.symbol||'').toUpperCase();const r=base.find(x=>String(x?.symbol||'').toUpperCase()===sym);if(r){const anchor=node.querySelector('.compactSignals');if(anchor)anchor.insertAdjacentHTML('afterbegin',priorityPanel(r,false));}})}
     }catch(e){console.warn('trend transition decoration error',e)}
   }
@@ -7753,7 +7852,6 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
   }
 
   // If renderer wrapping above is bypassed by initialization order, listen for the result panes changing.
-  document.addEventListener('change',e=>{if(e.target?.id==='trendTransitionFilter')typeof renderActiveView==='function'&&renderActiveView(true);});
   // Initial render is owned by the main application lifecycle; do not schedule duplicate renders.
 
 })();
