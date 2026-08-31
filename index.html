@@ -599,6 +599,22 @@ table{min-width:0!important;width:100%}.tableScroll{width:100%;overflow-x:auto;-
 .coinDetails > summary::-webkit-details-marker { display:none; }
 .coinDetails[open] > summary { background:rgba(255,255,255,.06); }
 .coinDetailsBody { overflow:hidden; }
+/* ---------- Binance chart inside coin details ---------- */
+.binanceChartPanel{margin:0 0 12px;padding:10px;border:1px solid rgba(126,220,255,.18);border-radius:12px;background:linear-gradient(180deg,rgba(126,220,255,.055),rgba(255,255,255,.018));box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.binanceChartHead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.binanceChartTitle{font-size:14px;font-weight:900;letter-spacing:.02em}
+.binanceChartSub{font-size:10px;color:var(--muted,#9fb3cc);margin-top:2px}
+.binanceChartControls{display:flex;gap:5px;flex-wrap:wrap}
+.binanceTfBtn,.binanceChartAction{border:1px solid rgba(159,179,204,.24);background:rgba(255,255,255,.045);color:var(--text,#fff);border-radius:7px;padding:5px 8px;font-size:11px;font-weight:800;cursor:pointer}
+.binanceTfBtn.active{background:rgba(126,220,255,.16);border-color:rgba(126,220,255,.55);color:#dff7ff}
+.binanceChartCanvasWrap{position:relative;width:100%;height:360px;border-radius:9px;overflow:hidden;background:#171e28;border:1px solid rgba(255,255,255,.06)}
+.binanceChartCanvas{display:block;width:100%;height:100%;touch-action:none}
+.binanceChartLegend{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px;font-size:10px;color:var(--muted,#9fb3cc)}
+.binanceChartLegend span{padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.035)}
+.binanceChartStatus{margin-top:6px;font-size:10px;color:var(--muted,#9fb3cc);min-height:14px}
+.binanceChartEmpty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted,#9fb3cc);font-size:12px;padding:20px;text-align:center}
+@media(max-width:760px){.binanceChartCanvasWrap{height:320px}.binanceChartPanel{padding:8px}.binanceChartTitle{font-size:13px}}
+
 </style>
 <!-- v16 FIX: favorites are state + view filter; full market results are preserved -->
 <!-- v3 ACTIVE-MODE FIX:
@@ -6078,6 +6094,164 @@ function renderTable(results){
   el.tableView.innerHTML=`<div class="card-panel"><div class="tableScroll"><table><thead><tr><th>Symbol / Status</th><th>Last</th><th>RSI4H</th><th>Signals</th><th>Context / Accumulation</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 
+
+/* ---------- Binance Futures chart engine ----------
+   Uses the same Binance Futures klines already fetched by the scanner result.
+   No extra request is made until a user selects a different timeframe. */
+const BINANCE_CHART_CFG = {
+  '15m': { key:'k15m', label:'15m', candles:96 },
+  '1h':  { key:'k1h',  label:'1H',  candles:96 },
+  '4h':  { key:'k4h',  label:'4H',  candles:96 },
+  '1d':  { key:'k1d',  label:'1D',  candles:80 }
+};
+
+function chartEsc(v){ return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function chartNum(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
+function chartKlinesFor(r, tf){
+  const cfg=BINANCE_CHART_CFG[tf]||BINANCE_CHART_CFG['4h'];
+  const arr=Array.isArray(r?.[cfg.key])?r[cfg.key].slice():[];
+  return arr.filter(k=>Array.isArray(k)&&k.length>=6).slice(-cfg.candles);
+}
+function chartEma(vals, period){
+  if(!vals.length) return [];
+  const p=Math.max(1,period), out=[];
+  const alpha=2/(p+1); let prev=vals[0]; out.push(prev);
+  for(let i=1;i<vals.length;i++){ prev=(vals[i]-prev)*alpha+prev; out.push(prev); }
+  return out;
+}
+function chartFormatPrice(v){
+  const n=Number(v); if(!Number.isFinite(n)) return '—';
+  if(Math.abs(n)>=1000) return n.toLocaleString(undefined,{maximumFractionDigits:2});
+  if(Math.abs(n)>=1) return n.toFixed(4).replace(/0+$/,'').replace(/\.$/,'');
+  return n.toPrecision(5);
+}
+function chartFormatVol(v){
+  const n=Number(v); if(!Number.isFinite(n)) return '—';
+  if(n>=1e9) return (n/1e9).toFixed(1)+'B';
+  if(n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if(n>=1e3) return (n/1e3).toFixed(1)+'K';
+  return n.toFixed(0);
+}
+function chartLevelCandidates(r){
+  const levels=[];
+  const add=(name,value,type)=>{const n=chartNum(value); if(n&&n>0) levels.push({name,value:n,type});};
+  add('Support',r?.supportLevel,'support');
+  add('Resistance',r?.resistanceLevel,'resistance');
+  // Nearby downside/upside structure from the same target engine used in the card.
+  try{
+    const lt=getLongTermTargets(r)||{};
+    add('S1',lt.s1,'support'); add('S2',lt.s2,'support');
+    add('R1',lt.t1,'resistance'); add('R2',lt.t2,'resistance');
+  }catch(e){}
+  // The most useful transition trigger is the primary structural support.
+  return levels;
+}
+function chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP,minT,maxT){
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,.055)'; ctx.lineWidth=1;
+  for(let i=0;i<=5;i++){
+    const y=plotTop+(plotBottom-plotTop)*i/5;
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();
+    const p=maxP-(maxP-minP)*i/5;
+    ctx.fillStyle='rgba(207,232,255,.55)';ctx.font='10px sans-serif';ctx.textAlign='right';
+    ctx.fillText(chartFormatPrice(p),w-5,y+3);
+  }
+  for(let i=0;i<=5;i++){
+    const x=pad.left+(w-pad.left-pad.right)*i/5;
+    ctx.beginPath();ctx.moveTo(x,plotTop);ctx.lineTo(x,plotBottom);ctx.stroke();
+  }
+  ctx.restore();
+}
+function chartDrawLine(ctx, values, xFor, yFor, lineWidth, dash){
+  let started=false; ctx.save(); ctx.lineWidth=lineWidth||1.2; ctx.setLineDash(dash||[]); ctx.beginPath();
+  values.forEach((v,i)=>{ if(v==null||!Number.isFinite(Number(v))) return; const x=xFor(i),y=yFor(Number(v)); if(!started){ctx.moveTo(x,y);started=true}else ctx.lineTo(x,y); });
+  if(started) ctx.stroke(); ctx.restore();
+}
+function chartRender(symbol, tf){
+  const host=document.querySelector(`.binanceChartPanel[data-symbol="${CSS.escape(symbol)}"]`);
+  if(!host) return;
+  const r=(Array.isArray(window.results)?window.results:[]).find(x=>String(x?.symbol||'').toUpperCase()===String(symbol).toUpperCase());
+  if(!r) return;
+  const canvas=host.querySelector('.binanceChartCanvas');
+  const wrap=host.querySelector('.binanceChartCanvasWrap');
+  const status=host.querySelector('.binanceChartStatus');
+  if(!canvas||!wrap) return;
+  const candles=chartKlinesFor(r,tf);
+  host.dataset.tf=tf;
+  host.querySelectorAll('.binanceTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
+  if(!candles.length){ canvas.style.display='none'; wrap.innerHTML='<div class="binanceChartEmpty">No Binance candle data is available for this timeframe yet.</div>'; return; }
+  // Restore canvas if a prior empty state replaced it.
+  if(!wrap.querySelector('canvas')){ wrap.innerHTML='<canvas class="binanceChartCanvas"></canvas>'; }
+  const c=wrap.querySelector('canvas');
+  const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+  const rect=wrap.getBoundingClientRect(); const w=Math.max(300,rect.width), h=Math.max(240,rect.height);
+  c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); c.style.width=w+'px'; c.style.height=h+'px';
+  const ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='#171e28';ctx.fillRect(0,0,w,h);
+  const pad={left:8,right:62,top:12,bottom:54}, volH=Math.min(72,h*.20), plotTop=pad.top, plotBottom=h-pad.bottom-volH;
+  const opens=candles.map(k=>Number(k[1])), highs=candles.map(k=>Number(k[2])), lows=candles.map(k=>Number(k[3])), closes=candles.map(k=>Number(k[4])), vols=candles.map(k=>Number(k[5]));
+  let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r);
+  levels.forEach(l=>{if(l.value>=minP*.985&&l.value<=maxP*1.015){minP=Math.min(minP,l.value);maxP=Math.max(maxP,l.value);}});
+  const range=Math.max(maxP-minP,maxP*.0001); minP-=range*.05; maxP+=range*.05;
+  const xFor=i=>pad.left+(w-pad.left-pad.right)*(i+.5)/candles.length;
+  const yFor=p=>plotTop+(maxP-p)/(maxP-minP)*(plotBottom-plotTop);
+  const maxV=Math.max(...vols,1);
+  const volY=v=>plotBottom+4+(maxV-v)/maxV*volH;
+  chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP);
+  // Volume
+  ctx.save(); ctx.globalAlpha=.72;
+  const cw=Math.max(2,(w-pad.left-pad.right)/candles.length*.68);
+  candles.forEach((k,i)=>{const x=xFor(i)-cw/2, y=volY(vols[i]); const up=closes[i]>=opens[i]; ctx.fillStyle=up?'#2dd4bf':'#ff5c6c';ctx.fillRect(x,y,cw,plotBottom+volH-y);}); ctx.restore();
+  // Candles
+  candles.forEach((k,i)=>{
+    const x=xFor(i), o=opens[i], hi=highs[i], lo=lows[i], cl=closes[i], up=cl>=o;
+    ctx.strokeStyle=up?'#2dd4bf':'#ff5c6c'; ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(x,yFor(hi));ctx.lineTo(x,yFor(lo));ctx.stroke();
+    const top=yFor(Math.max(o,cl)), bot=yFor(Math.min(o,cl)); ctx.fillStyle=up?'#2dd4bf':'#ff5c6c'; ctx.fillRect(x-cw/2,top,Math.max(1,cw),Math.max(1,bot-top));
+  });
+  // EMA overlays: 14 / 21 / 50 / 200 when enough candles exist.
+  const emas=[[14,'rgba(255,217,102,.95)'],[21,'rgba(126,220,255,.95)'],[50,'rgba(215,120,255,.9)'],[200,'rgba(159,179,204,.85)']];
+  emas.forEach(([p,col])=>{if(closes.length>=p){ctx.strokeStyle=col;chartDrawLine(ctx,chartEma(closes,p),xFor,yFor,1.15,[]);}});
+  // Scanner structural levels
+  levels.forEach(l=>{
+    if(l.value<minP||l.value>maxP) return;
+    const y=yFor(l.value); ctx.save(); ctx.setLineDash(l.type==='support'?[5,4]:[3,5]); ctx.lineWidth=1.1; ctx.strokeStyle=l.type==='support'?'rgba(45,212,191,.72)':'rgba(255,159,67,.72)';ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=l.type==='support'?'#9ff4dc':'#ffd0a1';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(l.name+' '+chartFormatPrice(l.value),w-pad.right+5,y-3);ctx.restore();
+  });
+  // Current price
+  const last=closes[closes.length-1], ly=yFor(last);ctx.save();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.left,ly);ctx.lineTo(w-pad.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(chartFormatPrice(last),w-pad.right+5,ly+11);ctx.restore();
+  // Date labels
+  ctx.fillStyle='rgba(207,232,255,.48)';ctx.font='9px sans-serif';ctx.textAlign='center';
+  [0,Math.floor(candles.length/2),candles.length-1].forEach(i=>{const d=new Date(Number(candles[i][0]));ctx.fillText(d.toLocaleString(undefined,{month:'short',day:'numeric',hour:tf==='1d'?undefined:'2-digit',minute:tf==='1d'?undefined:'2-digit'}),xFor(i),h-16);});
+  // Volume label
+  ctx.textAlign='left';ctx.fillText('VOL',pad.left,plotBottom+13);
+  const cfg=BINANCE_CHART_CFG[tf];
+  const lastTime=new Date(Number(candles[candles.length-1][6]||candles[candles.length-1][0]));
+  status.textContent=`Binance Futures • ${cfg.label} • ${candles.length} candles • Last ${chartFormatPrice(last)} • Updated ${lastTime.toLocaleTimeString()}`;
+}
+function bindBinanceCharts(){
+  document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
+    if(!host.dataset.bound){
+      host.dataset.bound='1';
+      host.addEventListener('click',ev=>{
+        const btn=ev.target.closest('.binanceTfBtn');
+        if(btn){ ev.preventDefault(); chartRender(host.dataset.symbol,btn.dataset.tf); }
+        const fit=ev.target.closest('.binanceChartAction[data-action="fit"]');
+        if(fit){ ev.preventDefault(); chartRender(host.dataset.symbol,host.dataset.tf||'4h'); }
+      });
+    }
+    const d=host.closest('details.coinDetails');
+    if(d?.open) chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+  });
+}
+window.addEventListener('resize',()=>{
+  document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
+    const d=host.closest('details.coinDetails'); if(d?.open) chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+  });
+});
+document.addEventListener('toggle',ev=>{
+  const d=ev.target.closest?.('details.coinDetails'); if(!d||!d.open) return;
+  const host=d.querySelector('.binanceChartPanel[data-symbol]'); if(host) setTimeout(()=>chartRender(host.dataset.symbol,host.dataset.tf||'4h'),30);
+},true);
+
 function renderCards(results){
   // PROFESSIONAL MOBILE CARD: Data → State → Evidence → Decision → Levels → Details
   const showShort = el.showShort.checked;
@@ -6172,6 +6346,22 @@ function renderCards(results){
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
           <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
           <div class="coinDetailsBody" style="margin-top:10px">
+
+        <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
+          <div class="binanceChartHead">
+            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • scanner levels and EMA structure overlaid</div></div>
+            <div class="binanceChartControls">
+              <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
+              <button type="button" class="binanceTfBtn" data-tf="1h">1H</button>
+              <button type="button" class="binanceTfBtn active" data-tf="4h">4H</button>
+              <button type="button" class="binanceTfBtn" data-tf="1d">1D</button>
+              <button type="button" class="binanceChartAction" data-action="fit">↻</button>
+            </div>
+          </div>
+          <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
+          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>— Current price</span></div>
+          <div class="binanceChartStatus">Loading Binance candle data…</div>
+        </div>
 
         <div class="sigList" style="margin-top:0">
           Last: ${r.closeNow}<br>
@@ -6273,6 +6463,7 @@ function renderCards(results){
       </div>`;
   });
   el.cardView.innerHTML=html;
+  bindBinanceCharts();
   // Re-apply saved open state after every render so live updates/sorting do not collapse details.
   el.cardView.querySelectorAll('details.coinDetails[data-symbol]').forEach(d=>{
     const sym=d.dataset.symbol;
