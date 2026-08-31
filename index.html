@@ -895,6 +895,19 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Start here. Filters the scanner by trend-transition priority, not a price-fall probability.</div>
         </div>
         <div class="controlItem">
+          <label class="controlLabel">🎯 Trader Bias</label>
+          <select id="biasFilter">
+            <option value="ALL">All Biases</option>
+            <option value="BULLISH">🟢 Bullish</option>
+            <option value="MILD_BULLISH">🟢 Mild Bullish</option>
+            <option value="RECOVERY">🟣 Recovery Watch</option>
+            <option value="NEUTRAL">⚪ Neutral</option>
+            <option value="BEARISH_RISK">🟠 Bearish Risk</option>
+            <option value="BEARISH_CAUTIOUS">🔴 Bearish / Cautious</option>
+          </select>
+          <div class="dashboardHint">Filter by the final Trader Decision bias shown on each coin card.</div>
+        </div>
+        <div class="controlItem">
           <label class="controlLabel">Funding Direction</label>
           <select id="fundingFilter">
             <option value="ALL">All Funding</option>
@@ -1075,6 +1088,7 @@ const el = {
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir'),
   correctionFilter: document.getElementById('correctionFilter'),
+  biasFilter: document.getElementById('biasFilter'),
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
@@ -5086,6 +5100,31 @@ function sortResults(results) {
 let showOnlyDist = false;
 const distKeywords = ['distribution', 'breakdown'];
 
+function getDisplayTraderBias(r){
+  // Keep filtering identical to the bias actually displayed by the Trader Decision.
+  const rec = getFinalRecommendation(r || {});
+  const rsi4h = Number(r?.rsi4h || 0);
+  const phase = String(r?.phase?.phase || r?.phase || '').toLowerCase();
+  const confirmed = isSignificantCorrectionConfirmed(r || {});
+  const dist = /distribution|breakdown/.test(phase);
+  let bias = rec?.tradeBias || 'Neutral';
+  if(confirmed) bias = 'Neutral / Cautious Bearish';
+  else if(dist || rsi4h >= 80) bias = 'Bearish / Cautious';
+  return String(bias).trim();
+}
+
+function traderBiasMatches(r, code){
+  if(code === 'ALL') return true;
+  const b = getDisplayTraderBias(r).toLowerCase();
+  if(code === 'BULLISH') return /^(bullish)(?!\s*\/)/.test(b) || b === 'bullish / controlled';
+  if(code === 'MILD_BULLISH') return b === 'mild bullish';
+  if(code === 'RECOVERY') return /recovery watch/.test(b);
+  if(code === 'NEUTRAL') return b === 'neutral';
+  if(code === 'BEARISH_RISK') return /bearish risk/.test(b);
+  if(code === 'BEARISH_CAUTIOUS') return /bearish \/ cautious|neutral \/ cautious bearish/.test(b);
+  return true;
+}
+
 function filterResultsForDist(results) {
   // When Favorites mode is active, include the persistent favorite snapshots
   // in addition to the current scan. This makes favorites discoverable even
@@ -5111,6 +5150,11 @@ function filterResultsForDist(results) {
   if (correctionCode !== 'ALL') {
     filtered = filtered.filter(r => String(r?.correctionGuide?.code || '').toUpperCase() === correctionCode);
   }
+  const biasFilter = el.biasFilter ? el.biasFilter.value : 'ALL';
+  if (biasFilter !== 'ALL') {
+    filtered = filtered.filter(r => traderBiasMatches(r, biasFilter));
+  }
+
   const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
   if (fundingFilter !== 'ALL') {
     filtered = filtered.filter(r => {
@@ -5447,6 +5491,9 @@ if (el.sortBy) {
 }
 if (el.correctionFilter) {
   el.correctionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.biasFilter) {
+  el.biasFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.fundingFilter) {
   el.fundingFilter.addEventListener('change', () => renderActiveView(true));
@@ -5974,7 +6021,8 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
       Lower-high evidence: <strong>${(r.phase?.reasons||[]).filter(x=>/lower high/i.test(x)).join(', ') || 'not dominant'}</strong>
     </div>
 
-    ${buildTraderDecisionEngine(r,{bias,confirmed,dist,rsi4h,a4h,ema70,action,recConfidence:rec?.confidence})}
+    <div class="proDecision" style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
+      <div style="font-weight:900;font-size:16px">🎯 TRADER DECISION</div>
       <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
       <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
       <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
@@ -6010,51 +6058,6 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
       </div>
     </details>
   `;
-}
-
-
-function buildTraderDecisionEngine(r, opts={}){
-  const {bias='Neutral', confirmed=false, dist=false, rsi4h=0, a4h=0, ema70=0, action='Wait for confirmation.', recConfidence=0}=opts;
-  const st = calculateTrendExhaustionState(r||{});
-  const structure = r?.structure || {};
-  const reasons = Array.isArray(r?.phase?.reasons) ? r.phase.reasons : [];
-  const lowerHigh = reasons.some(x=>/lower high|choch|mss|structure weakening/i.test(String(x))) || /bearish|breakdown|distribution/i.test(String(bias));
-  let marketState='🟡 MIXED / WAIT';
-  if(confirmed) marketState='🔴 POST-TOP / CORRECTION';
-  else if(dist && lowerHigh) marketState='🟠 DISTRIBUTION / PRE-BREAKDOWN';
-  else if(lowerHigh) marketState='🟠 STRUCTURE WEAKENING';
-  else if(Number(a4h)>=70 && Number(rsi4h)<75) marketState='🟢 HEALTHY / ACCUMULATION';
-  else if(Number(rsi4h)>=78 || Number(ema70)>=20) marketState='🟡 EXTENDED / CAUTION';
-
-  let next='🟢 4H higher-low + improving 4H/1D accumulation';
-  let longEntry='⚠️ Staged / conditional';
-  let shortEntry='⏸ Wait for structure';
-  if(confirmed){
-    next='🔴 Failed bounce / lower-high → bearish continuation';
-    longEntry='❌ Avoid chasing';
-    shortEntry='⚠️ Wait for rejection / failed bounce';
-  } else if(dist || lowerHigh){
-    next='🟠 CHoCH → BOS → retest failure before treating the move as confirmed bearish';
-    longEntry='⏸ Wait for higher-low / reclaim';
-    shortEntry='⚠️ Wait for bearish structure confirmation';
-  } else if(Number(rsi4h)>=78 || Number(ema70)>=20){
-    next='🟡 Hold support and confirm a higher-low; avoid chasing extension';
-  }
-  const changed = confirmed ? 'Correction confirmation is active; priority has shifted to support/recovery structure.' : (dist||lowerHigh ? 'Structure is weakening; the scanner is waiting for confirmation before calling a breakdown.' : 'No decisive structural change is confirmed; the setup remains conditional.');
-  const confidence = Math.max(0, Math.min(100, Math.round(Number(recConfidence||st.score||50))));
-  return `<div class="proDecision traderDecisionEngine" style="margin-top:10px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
-    <div style="font-weight:900;font-size:17px">🎯 TRADER DECISION</div>
-    <div class="decisionGrid" style="margin-top:7px;display:grid;grid-template-columns:1fr 1fr;gap:6px 14px">
-      <div><strong>Bias:</strong> ${bias} <span class="small" style="color:var(--muted)">(${confidence}% context)</span></div>
-      <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
-      <div><strong>Market state:</strong> ${marketState}</div>
-      <div><strong>Long:</strong> ${longEntry}</div>
-      <div><strong>Short:</strong> ${shortEntry}</div>
-    </div>
-    <div style="margin-top:8px"><strong>What changed:</strong> ${changed}</div>
-    <div style="margin-top:7px"><strong>NEXT CONFIRMATION:</strong> ${next}</div>
-    <div style="margin-top:8px"><strong>Best action now:</strong><br>${action}</div>
-  </div>`;
 }
 
 /* ---------- RESULT ACTION HELPERS ---------- */
@@ -6349,42 +6352,17 @@ function renderCards(results){
           <div><span class="coinScore">${r.score}/8</span> ${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div>
         </div>
 
-        <div class="compactSignals" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+        <div class="compactSignals decisionOnly" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
           ${badge} ${accBadge}
           ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
-          <div class="correctionCompact" title="Authoritative correction confirmation layer" style="flex:1 1 100%;margin-top:2px">
-            <div class="correctionCompactTitle">🔴 Correction Status — authoritative confirmation layer</div>
-            <div class="correctionCompactStatus" style="color:${cgColor}">${cg.label||'🟢 NOT CONFIRMED / PRE-CORRECTION'} <span style="font-size:12px;color:#cfe8ff;font-weight:800">(${Number(cg.confidence||0)}%)</span></div>
+          <div class="proDecision" style="flex:1 1 100%;margin-top:6px;padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.10)">
+            <div style="font-weight:900;font-size:17px">🎯 TRADER DECISION</div>
+            <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
+            <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
+            <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
+            <div><strong>Short entry:</strong> ${dist||rsi4h>=80?'⚠️ Wait for rejection / failed bounce':'⏸ Wait for structure'}</div>
+            <div style="margin-top:7px"><strong>Best action now:</strong><br>${action}</div>
           </div>
-          <div style="flex:1 1 100%;margin-top:2px">${renderTrendExhaustionState(r)}</div>
-          <span class="phaseTag" style="margin-left:0;flex:1 1 100%">${phase.phase}</span>
-          <div style="flex:1 1 100%;margin-top:6px">${renderBearishStructureDetector(r)}</div>
-          <div style="flex:1 1 100%;margin-top:6px">${renderAccumulationReversal(r)}</div>
-          <div style="flex:1 1 100%;margin-top:4px;padding:7px 10px;border:1px solid rgba(255,217,102,.18);border-radius:9px;background:rgba(255,217,102,.035)">
-            <strong>📉 1D Volume Participation:</strong> ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% vs prior 3D avg' : 'n/a'} — ${r.volume1dFalling?'DECLINING':r.volume1dWeakening?'WEAKENING':'STABLE / IMPROVING'}
-          </div>
-          <div class="latestUpdateCompact" style="flex:1 1 100%;margin-top:4px;padding:9px 10px;border:1px solid rgba(126,220,255,.22);border-radius:10px;background:rgba(126,220,255,.045)">
-            <div style="font-size:12px;font-weight:900;letter-spacing:.04em;color:#cfe8ff">⚡ LATEST UPDATE</div>
-            <div style="margin-top:4px;line-height:1.5;font-size:13px">
-              <strong>Top Risk:</strong> ${Number(r.topDetection?.score||0)}/100 ${r.topDetection?.label||'—'}
-              <span style="opacity:.55"> • </span><strong>Bear Structure:</strong> ${r.bearishStructure?.state||'—'}
-              <span style="opacity:.55"> • </span><strong>SMC:</strong> ${r.smcBreakerBlock?.state ? `4H ${r.smcBreakerBlock.state}` : '4H —'}
-              <span style="opacity:.55"> • </span>
-              <strong>Correction:</strong> ${confirmed?'CONFIRMED':'NOT CONFIRMED'}
-              <span style="opacity:.55"> • </span>
-              <strong>RSI4H:</strong> ${rsi4h.toFixed(1)}
-              <span style="opacity:.55"> • </span>
-              <strong>EMA70:</strong> ${ema70.toFixed(1)}%
-              <span style="opacity:.55"> • </span>
-              <strong>EMA200:</strong> ${ema200==null?'n/a':Number(ema200).toFixed(1)+'%'}
-              <span style="opacity:.55"> • </span><strong>1D Vol:</strong> ${Number.isFinite(Number(r.volume1dTrendPct))?(Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'% '+(r.volume1dFalling?'📉':'↔'): 'n/a'}
-              ${Number.isFinite(Number(r.dropFromPeak))?`<span style="opacity:.55"> • </span><strong>Peak DD:</strong> -${Math.abs(Number(r.dropFromPeak)).toFixed(1)}%`:''}
-            </div>
-            <div class="small" style="margin-top:3px;color:#9fb3cc">${lowerHighReasons.length?lowerHighReasons[0]:(dist?'Distribution / Breakdown risk developing':'No major structural top warning')}</div>
-          </div>
-          <div style="flex:1 1 100%;margin-top:6px">${renderSMCBreakerBlock(r)}</div>
-          <div style="flex:1 1 100%;margin-top:8px">${renderTopDetectionStack(r)}</div>
-          <div style="flex:1 1 100%;margin-top:3px">${histCardActionsHtml(r)}</div>
         </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
@@ -6458,13 +6436,7 @@ function renderCards(results){
           Lower-high evidence: <strong>${lowerHighReasons.join(', ')||'not dominant'}</strong>
         </div>
 
-        ${buildTraderDecisionEngine(r,{bias,confirmed,dist,rsi4h,a4h,ema70,action,recConfidence:rec?.confidence})}
-          <div style="margin-top:6px"><strong>Bias:</strong> ${bias}</div>
-          <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}</div>
-          <div><strong>Long entry:</strong> ${confirmed||rsi4h>=80||dist?'❌ Don’t chase':'⚠️ Staged / conditional'}</div>
-          <div><strong>Short entry:</strong> ${dist||rsi4h>=80?'⚠️ Wait for rejection / failed bounce':'⏸ Wait for structure'}</div>
-          <div style="margin-top:7px"><strong>Best action now:</strong><br>${action}</div>
-        </div>
+        
 
         ${showShort ? `<details open style="margin-top:10px"><summary><strong>🔎 Short-term trade plan</strong></summary>
           <div class="recBox" style="margin-top:8px">
@@ -7773,19 +7745,8 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
   }
 
   function decorateQueue(){
-    try{
-      const card=document.getElementById('cardView'), table=document.getElementById('tableView');
-      if(!card && !table) return;
-      const base=Array.isArray(window.results)?window.results:[];
-      const host=card&&card.style.display!=='none'?card:table;
-      if(!host) return;
-      const existing=document.getElementById('trendTransitionQueue'); if(existing) existing.remove();
-      host.insertAdjacentHTML('beforebegin',`<div id="trendTransitionQueue">${queueHTML(base)}</div>`);
-      if(card){card.querySelectorAll('.resultCard[data-symbol]').forEach(node=>{if(node.querySelector('.ttPriorityPanel'))return;const sym=String(node.dataset.symbol||'').toUpperCase();const r=base.find(x=>String(x?.symbol||'').toUpperCase()===sym);if(r){const anchor=node.querySelector('.compactSignals');if(anchor)anchor.insertAdjacentHTML('afterbegin',priorityPanel(r,false));}})}
-    }catch(e){console.warn('trend transition decoration error',e)}
-  }
-
-  // Wrap renderers so the priority layer is refreshed after normal and fast renders.
+    // No-op: priority/decision UI is rendered once by the primary card renderer.
+  }  // Wrap renderers so the priority layer is refreshed after normal and fast renders.
   if(typeof window.renderResponsiveResults==='function'){
     const oldRenderResponsive=window.renderResponsiveResults;
     window.renderResponsiveResults=function(results,allowFast=false){const out=oldRenderResponsive(results,allowFast);decorateQueue();return out;};
