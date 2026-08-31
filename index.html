@@ -7021,9 +7021,22 @@ function commitMarketScanResults(nextResults){
 
   clearQuickTradingInterpretation();
   window.__magmaSoftRefresh = true;
-  renderResponsiveResults(displayResults, false);
 
-  // Restore the user's page position after the single atomic DOM replacement.
+  // Anti-flicker refresh: when the same symbols are already mounted, move/show/hide
+  // existing nodes instead of rebuilding the entire result surface. This preserves
+  // open evidence panels, chart canvases, chart timeframe, and scroll position.
+  const isMobile = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+  const patched = typeof fastPatchResultDOM === 'function' && fastPatchResultDOM(displayResults, isMobile);
+  if(!patched){
+    // A full render is only needed when the result shape changes (new/removed coins
+    // or a view-mode switch). renderResponsiveResults performs a single DOM commit.
+    renderResponsiveResults(displayResults, false);
+  }else{
+    try{ restoreHistoricalCompareStates(); }catch(e){}
+    try{ decorateQueue && decorateQueue(); }catch(e){}
+    window.__magmaSoftRefresh = false;
+  }
+
   requestAnimationFrame(() => {
     try { window.scrollTo(0, scrollY); } catch (_) {}
   });
@@ -7453,7 +7466,23 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 </script>
 
 <footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term AI recommendation + short-term trade guidance. Long-term targets (upside) + safety levels included. Run from a local server to avoid CORS.</footer>
-<script>window.addEventListener("resize",()=>{clearTimeout(window.__rt);window.__rt=setTimeout(()=>{if(!running)renderActiveView()},150)});</script><style>
+<script id="anti-flicker-resize-fix">
+(function(){
+  // Resize only live charts. Never rebuild the result DOM on a viewport resize.
+  let timer=0;
+  window.addEventListener('resize',()=>{
+    clearTimeout(timer);
+    timer=setTimeout(()=>{
+      try{
+        document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
+          const d=host.closest('details.coinDetails');
+          if(d?.open && typeof chartRender==='function') chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+        });
+      }catch(e){}
+    },120);
+  },{passive:true});
+})();
+</script><style>
 .professional-read{border:1px solid rgba(127,127,127,.28);border-radius:12px;padding:14px;margin:12px 0;line-height:1.45}
 .professional-read .state{font-weight:800;font-size:1.08em;margin-bottom:6px}
 .professional-read .label{font-weight:700}
@@ -7716,17 +7745,17 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
   // Wrap renderers so the priority layer is refreshed after normal and fast renders.
   if(typeof window.renderResponsiveResults==='function'){
     const oldRenderResponsive=window.renderResponsiveResults;
-    window.renderResponsiveResults=function(results,allowFast=false){const out=oldRenderResponsive(results,allowFast);setTimeout(decorateQueue,0);return out;};
+    window.renderResponsiveResults=function(results,allowFast=false){const out=oldRenderResponsive(results,allowFast);decorateQueue();return out;};
   }
   if(typeof window.fastPatchResultDOM==='function'){
     const oldFast=window.fastPatchResultDOM;
-    window.fastPatchResultDOM=function(results,isMobile){const ok=oldFast(results,isMobile);if(ok)setTimeout(decorateQueue,0);return ok;};
+    window.fastPatchResultDOM=function(results,isMobile){const ok=oldFast(results,isMobile);if(ok)decorateQueue();return ok;};
   }
 
   // If renderer wrapping above is bypassed by initialization order, listen for the result panes changing.
   document.addEventListener('change',e=>{if(e.target?.id==='trendTransitionFilter')typeof renderActiveView==='function'&&renderActiveView(true);});
-  document.addEventListener('DOMContentLoaded',()=>{setTimeout(()=>{try{if(typeof renderActiveView==='function')renderActiveView(true)}catch(e){}},80)});
-  setTimeout(()=>{try{if(typeof renderActiveView==='function')renderActiveView(true)}catch(e){}},120);
+  // Initial render is owned by the main application lifecycle; do not schedule duplicate renders.
+
 })();
 </script>
 
@@ -7746,6 +7775,35 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
  loginForm.addEventListener("submit",async e=>{e.preventDefault();err("loginError","");const a=account(),email=norm($("loginEmail").value),hash=await digest($("loginPassword").value);if(!a||a.email!==email){err("loginError","No local prototype account was found for this email. Create an account first.");return}if(hash!==a.passwordHash){err("loginError","Incorrect password.");return}open(a)});
  registerForm.addEventListener("submit",async e=>{e.preventDefault();err("registerError","");$("registerSuccess").style.display="none";const n=$("registerName").value.trim(),email=norm($("registerEmail").value),p=$("registerPassword").value,p2=$("registerPassword2").value;if(p.length<8){err("registerError","Password must be at least 8 characters.");return}if(p!==p2){err("registerError","Passwords do not match.");return}const a=account();if(a&&a.email===email){err("registerError","An account with this email already exists in this browser.");return}localStorage.setItem(KEY,JSON.stringify({name:n,email,passwordHash:await digest(p),createdAt:new Date().toISOString()}));$("registerSuccess").textContent="Account created. You can now log in.";$("registerSuccess").style.display="block";$("loginEmail").value=email;$("loginPassword").value="";tab("login")});
  const a=account();if(a&&localStorage.getItem(SESSION)==="1")open(a);else{close();tab("login")}
+})();
+</script>
+<script id="anti-flicker-final-patch">
+(function(){
+  // Keep the scanner surface stable during background updates. The existing
+  // detector logic is untouched; this layer only controls rendering behavior.
+  window.__magmaAntiFlicker = true;
+  window.__magmaRenderLock = window.__magmaRenderLock || false;
+
+  // Avoid repeated synchronous priority-queue insertion when several render
+  // wrappers fire in the same turn.
+  const originalDecorate = window.decorateQueue;
+  if(typeof originalDecorate === 'function' && !window.__magmaDecorateWrapped){
+    let lastKey='';
+    window.decorateQueue=function(){
+      try{
+        const base=Array.isArray(window.results)?window.results:[];
+        const key=base.map(r=>String(r?.symbol||'').toUpperCase()).join('|');
+        const active=document.querySelector('#trendTransitionQueue');
+        const mode=document.getElementById('cardView')?.style.display!=='none'?'card':'table';
+        const stamp=key+'|'+mode;
+        // Still call on first render; on unchanged data, keep the existing queue.
+        if(active && stamp===lastKey) return;
+        lastKey=stamp;
+      }catch(e){}
+      try{return originalDecorate();}catch(e){console.warn('priority decoration:',e)}
+    };
+    window.__magmaDecorateWrapped=true;
+  }
 })();
 </script>
 </body>
