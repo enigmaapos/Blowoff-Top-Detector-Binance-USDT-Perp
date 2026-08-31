@@ -6318,6 +6318,7 @@ function renderCards(results){
             <div class="correctionCompactStatus" style="color:${cgColor}">${cg.label||'🟢 NOT CONFIRMED / PRE-CORRECTION'} <span style="font-size:12px;color:#cfe8ff;font-weight:800">(${Number(cg.confidence||0)}%)</span></div>
           </div>
           <div style="flex:1 1 100%;margin-top:2px">${renderTrendExhaustionState(r)}</div>
+          ${typeof window.renderTrendTransitionPriority==='function' ? window.renderTrendTransitionPriority(r,true) : ''}
           <span class="phaseTag" style="margin-left:0;flex:1 1 100%">${phase.phase}</span>
           <div style="flex:1 1 100%;margin-top:6px">${renderBearishStructureDetector(r)}</div>
           <div style="flex:1 1 100%;margin-top:6px">${renderAccumulationReversal(r)}</div>
@@ -6529,9 +6530,8 @@ function renderResponsiveResults(results, allowFast=false){
   const key = safe.map(r => String(r?.symbol || '').toUpperCase()).join('|');
   const prevKey = window.__renderShapeKey || '';
 
-  // Fast path: when the same analyzed coins are already mounted, only reorder/show/hide
-  // existing DOM nodes. No HTML generation, no indicator recomputation, no DOM teardown.
-  if(allowFast && fastPatchResultDOM(safe, isMobile)){
+  // Stable path: once a result surface exists, refresh it without blanking the UI.
+  if(fastPatchResultDOM(safe, isMobile)){
     try{ restoreHistoricalCompareStates(); }catch(e){}
     if(softRefresh){
       requestAnimationFrame(()=>{ window.scrollTo(savedScrollX, savedScrollY); window.__magmaSoftRefresh=false; });
@@ -6564,12 +6564,9 @@ function renderResponsiveResults(results, allowFast=false){
 }
 
 function fastPatchResultDOM(results, isMobile){
-  /*
-   * Keyed, in-place renderer.
-   * Build the next card/table tree OFF-DOM, then replace only the affected
-   * keyed nodes. The visible results container is never emptied, so there is
-   * no blank frame during an automatic refresh.
-   */
+  // Stable renderer: never blank the visible surface. Existing keyed cards/rows
+  // are reused when possible; if the symbol set changes, a complete next surface
+  // is built off-DOM and committed in one DOM operation.
   try{
     const safe=Array.isArray(results)?results.filter(Boolean):[];
     const symbols=safe.map(r=>String(r?.symbol||'').toUpperCase()).filter(Boolean);
@@ -6577,10 +6574,10 @@ function fastPatchResultDOM(results, isMobile){
     const host=isMobile?el.cardView:el.tableView;
     if(!host) return false;
 
-    // If there is no mounted result surface yet, let the normal renderer do
-    // the first paint. Subsequent refreshes use the keyed path below.
-    if(isMobile && !host.querySelector('.resultCard[data-symbol]')) return false;
-    if(!isMobile && !host.querySelector('tbody')) return false;
+    const hasExisting = isMobile
+      ? !!host.querySelector('.resultCard[data-symbol]')
+      : !!host.querySelector('tbody');
+    if(!hasExisting) return false;
 
     const oldScrollY=window.scrollY||window.pageYOffset||0;
     const oldScrollX=window.scrollX||0;
@@ -6589,20 +6586,20 @@ function fastPatchResultDOM(results, isMobile){
     const oldNodes=new Map();
     if(isMobile){
       host.querySelectorAll('.resultCard[data-symbol]').forEach(n=>oldNodes.set(String(n.dataset.symbol||'').toUpperCase(),n));
-      // A changed result shape is still handled without a full-container wipe.
-      for(const sym of symbols) if(!oldNodes.has(sym)) return false;
     }else{
       host.querySelectorAll('tbody tr[data-symbol]').forEach(n=>{
         const sym=String(n.dataset.symbol||'').toUpperCase();
         if(!oldNodes.has(sym)) oldNodes.set(sym,[]);
         oldNodes.get(sym).push(n);
       });
-      // The table renderer uses two rows per symbol.
-      for(const sym of symbols) if(!oldNodes.has(sym) || oldNodes.get(sym).length<2) return false;
     }
 
-    // Render the next version into a detached host. el.cardView/tableView are
-    // temporarily redirected only while rendering; no browser paint occurs.
+    const oldSymbols=new Set(oldNodes.keys());
+    const sameShape=symbols.length===oldSymbols.size && symbols.every(sym=>oldSymbols.has(sym));
+
+    // Build the next visual tree completely off-screen. renderCards/renderTable
+    // can safely write into this detached element, so the browser never paints
+    // an intermediate empty state.
     const detached=document.createElement('div');
     const original=isMobile?el.cardView:el.tableView;
     if(isMobile) el.cardView=detached; else el.tableView=detached;
@@ -6617,33 +6614,30 @@ function fastPatchResultDOM(results, isMobile){
       detached.querySelectorAll('.resultCard[data-symbol]').forEach(n=>fresh.set(String(n.dataset.symbol||'').toUpperCase(),n));
       for(const sym of symbols) if(!fresh.has(sym)) return false;
 
-      // Preserve expanded evidence state and live chart canvases.
+      // Transfer live chart canvases and open state from matching cards.
       for(const sym of symbols){
         const oldNode=oldNodes.get(sym), newNode=fresh.get(sym);
-        const oldDetails=oldNode.querySelector('details.coinDetails[data-symbol]');
-        const newDetails=newNode.querySelector('details.coinDetails[data-symbol]');
-        if(newDetails) newDetails.open=!!(oldDetails?.open || expandedDetailSymbols.has(sym));
+        if(oldNode){
+          const oldDetails=oldNode.querySelector('details.coinDetails[data-symbol]');
+          const newDetails=newNode.querySelector('details.coinDetails[data-symbol]');
+          if(newDetails) newDetails.open=!!(oldDetails?.open || expandedDetailSymbols.has(sym));
 
-        const oldChart=oldNode.querySelector('.binanceChartPanel[data-symbol]');
-        const newChart=newNode.querySelector('.binanceChartPanel[data-symbol]');
-        if(oldChart && newChart){
-          const oldCanvas=oldChart.querySelector('canvas');
-          const newCanvas=newChart.querySelector('canvas');
-          if(oldCanvas && newCanvas){
-            newCanvas.replaceWith(oldCanvas);
-            // Keep the user's selected timeframe and redraw only the chart.
-            newChart.dataset.tf=oldChart.dataset.tf||newChart.dataset.tf||'4h';
+          const oldChart=oldNode.querySelector('.binanceChartPanel[data-symbol]');
+          const newChart=newNode.querySelector('.binanceChartPanel[data-symbol]');
+          if(oldChart && newChart){
+            const oldCanvas=oldChart.querySelector('canvas'), newCanvas=newChart.querySelector('canvas');
+            if(oldCanvas && newCanvas){
+              newCanvas.replaceWith(oldCanvas);
+              newChart.dataset.tf=oldChart.dataset.tf||newChart.dataset.tf||'4h';
+            }
           }
         }
       }
 
+      // One atomic child replacement. No intermediate innerHTML=''.
       const frag=document.createDocumentFragment();
       symbols.forEach(sym=>frag.appendChild(fresh.get(sym)));
-      // Remove stale nodes only after the replacement fragment is ready.
-      host.querySelectorAll('.resultCard[data-symbol]').forEach(n=>{if(!wanted.has(String(n.dataset.symbol||'').toUpperCase())) n.remove();});
-      host.appendChild(frag);
-      // Re-order using the already-built nodes without clearing the container.
-      symbols.forEach(sym=>{const n=host.querySelector(`.resultCard[data-symbol="${CSS.escape(sym)}"]`);if(n)host.appendChild(n);});
+      host.replaceChildren(frag);
     }else{
       const freshRows=new Map();
       detached.querySelectorAll('tbody tr[data-symbol]').forEach(n=>{
@@ -6651,42 +6645,47 @@ function fastPatchResultDOM(results, isMobile){
         if(!freshRows.has(sym)) freshRows.set(sym,[]);
         freshRows.get(sym).push(n);
       });
-      for(const sym of symbols) if(!freshRows.has(sym) || freshRows.get(sym).length<2) return false;
+      for(const sym of symbols) if(!freshRows.has(sym)) return false;
+
       const tbody=host.querySelector('tbody');
+      if(!tbody) return false;
+      const frag=document.createDocumentFragment();
       for(const sym of symbols){
-        const oldPair=oldNodes.get(sym), newPair=freshRows.get(sym);
+        const pair=freshRows.get(sym)||[];
+        const oldPair=oldNodes.get(sym)||[];
         const oldDetail=oldPair.map(n=>n.querySelector('details.coinDetails[data-symbol]')).find(Boolean);
-        const newDetail=newPair.map(n=>n.querySelector('details.coinDetails[data-symbol]')).find(Boolean);
-        if(newDetail){
-          newDetail.open=!!(oldDetail?.open || expandedDetailSymbols.has(sym));
-          const oldChart=oldDetail?.querySelector('.binanceChartPanel[data-symbol]');
+        const newDetail=pair.map(n=>n.querySelector('details.coinDetails[data-symbol]')).find(Boolean);
+        if(newDetail) newDetail.open=!!(oldDetail?.open || expandedDetailSymbols.has(sym));
+        if(oldDetail && newDetail){
+          const oldChart=oldDetail.querySelector('.binanceChartPanel[data-symbol]');
           const newChart=newDetail.querySelector('.binanceChartPanel[data-symbol]');
           if(oldChart && newChart){
             const oldCanvas=oldChart.querySelector('canvas'), newCanvas=newChart.querySelector('canvas');
-            if(oldCanvas && newCanvas){ newCanvas.replaceWith(oldCanvas); newChart.dataset.tf=oldChart.dataset.tf||newChart.dataset.tf||'4h'; }
+            if(oldCanvas && newCanvas){
+              newCanvas.replaceWith(oldCanvas);
+              newChart.dataset.tf=oldChart.dataset.tf||newChart.dataset.tf||'4h';
+            }
           }
         }
-        oldPair.forEach((n,i)=>n.replaceWith(newPair[i]||n));
+        pair.forEach(n=>frag.appendChild(n));
       }
-      tbody.querySelectorAll('tr[data-symbol]').forEach(n=>{if(!wanted.has(String(n.dataset.symbol||'').toUpperCase())) n.remove();});
-      const finalRows=[]; symbols.forEach(sym=>{const pair=Array.from(tbody.querySelectorAll(`tr[data-symbol="${CSS.escape(sym)}"]`));pair.forEach(n=>finalRows.push(n));});
-      finalRows.forEach(n=>tbody.appendChild(n));
+      // Replace only the tbody's children, keeping the outer table panel stable.
+      tbody.replaceChildren(frag);
     }
 
-    // The renderer may have registered chart controls on the detached tree;
-    // bind the visible chart controls once and refresh only open charts.
-    try{ bindBinanceCharts(); }catch(e){ console.warn('chart bind after keyed refresh',e); }
+    window.__renderShapeKey=symbols.join('|');
+    try{ restoreHistoricalCompareStates(); }catch(e){}
+    try{ bindBinanceCharts(); }catch(e){ console.warn('chart bind after stable refresh',e); }
     host.querySelectorAll('details.coinDetails[data-symbol]').forEach(d=>{
       const sym=String(d.dataset.symbol||'').toUpperCase();
       if(expandedDetailSymbols.has(sym)) d.open=true;
       const summary=d.querySelector('summary strong');
       if(summary) summary.textContent=d.open?'− Detailed evidence':'＋ Detailed evidence';
     });
-    try{ restoreHistoricalCompareStates(); }catch(e){}
     requestAnimationFrame(()=>{ try{window.scrollTo(oldScrollX,oldScrollY);}catch(e){} });
     return true;
   }catch(e){
-    console.warn('Keyed result DOM patch failed; falling back to full render:',e);
+    console.warn('Stable result DOM patch failed:',e);
     return false;
   }
 }
@@ -7126,7 +7125,6 @@ function commitMarketScanResults(nextResults){
     renderResponsiveResults(displayResults, false);
   }else{
     try{ restoreHistoricalCompareStates(); }catch(e){}
-    try{ decorateQueue && decorateQueue(); }catch(e){}
     window.__magmaSoftRefresh = false;
   }
 
@@ -7873,35 +7871,6 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
  loginForm.addEventListener("submit",async e=>{e.preventDefault();err("loginError","");const a=account(),email=norm($("loginEmail").value),hash=await digest($("loginPassword").value);if(!a||a.email!==email){err("loginError","No local prototype account was found for this email. Create an account first.");return}if(hash!==a.passwordHash){err("loginError","Incorrect password.");return}open(a)});
  registerForm.addEventListener("submit",async e=>{e.preventDefault();err("registerError","");$("registerSuccess").style.display="none";const n=$("registerName").value.trim(),email=norm($("registerEmail").value),p=$("registerPassword").value,p2=$("registerPassword2").value;if(p.length<8){err("registerError","Password must be at least 8 characters.");return}if(p!==p2){err("registerError","Passwords do not match.");return}const a=account();if(a&&a.email===email){err("registerError","An account with this email already exists in this browser.");return}localStorage.setItem(KEY,JSON.stringify({name:n,email,passwordHash:await digest(p),createdAt:new Date().toISOString()}));$("registerSuccess").textContent="Account created. You can now log in.";$("registerSuccess").style.display="block";$("loginEmail").value=email;$("loginPassword").value="";tab("login")});
  const a=account();if(a&&localStorage.getItem(SESSION)==="1")open(a);else{close();tab("login")}
-})();
-</script>
-<script id="anti-flicker-final-patch">
-(function(){
-  // Keep the scanner surface stable during background updates. The existing
-  // detector logic is untouched; this layer only controls rendering behavior.
-  window.__magmaAntiFlicker = true;
-  window.__magmaRenderLock = window.__magmaRenderLock || false;
-
-  // Avoid repeated synchronous priority-queue insertion when several render
-  // wrappers fire in the same turn.
-  const originalDecorate = window.decorateQueue;
-  if(typeof originalDecorate === 'function' && !window.__magmaDecorateWrapped){
-    let lastKey='';
-    window.decorateQueue=function(){
-      try{
-        const base=Array.isArray(window.results)?window.results:[];
-        const key=base.map(r=>String(r?.symbol||'').toUpperCase()).join('|');
-        const active=document.querySelector('#trendTransitionQueue');
-        const mode=document.getElementById('cardView')?.style.display!=='none'?'card':'table';
-        const stamp=key+'|'+mode;
-        // Still call on first render; on unchanged data, keep the existing queue.
-        if(active && stamp===lastKey) return;
-        lastKey=stamp;
-      }catch(e){}
-      try{return originalDecorate();}catch(e){console.warn('priority decoration:',e)}
-    };
-    window.__magmaDecorateWrapped=true;
-  }
 })();
 </script>
 </body>
