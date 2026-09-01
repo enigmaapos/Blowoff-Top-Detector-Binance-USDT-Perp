@@ -6530,6 +6530,11 @@ function renderCards(results){
           <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
 
+        <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
+             The detector/render function already exists; this call keeps it visible
+             inside the per-coin expandable evidence section. -->
+        ${renderTopDetectionStack(r)}
+
         <div class="sigList" style="margin-top:0">
           Last: ${r.closeNow}<br>
           RSI4H: ${rsi4h.toFixed(1)} • Vol×${Number(r.volSpike4||0).toFixed(2)} • Wick: ${wick.toFixed(2)}<br>
