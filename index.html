@@ -5990,39 +5990,100 @@ function renderTraderDecisionBlock(r, compact=false){
   const ema70=Number(item.ema70DistPct||0);
   const cg=item.correctionGuide||{};
   const ema200=cg.ema200Stretch15;
-  const confirmed=!!(rec.confirmed || (ema200!=null && Number(ema200)<0));
   const phase=String(item.phase?.phase||item.phase||'Unknown');
   const phaseLc=phase.toLowerCase();
   const reasons=(item.phase?.reasons||[]).map(String);
-  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x));
-  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x));
+  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
   const distribution=/distribution|breakdown/i.test(phaseLc);
-  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!item.returnToNormal?.isReturn;
+  const returnObj=item.returnToNormal||{};
+  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!returnObj.isReturn;
   const accumulationPhase=/accumulation|re-accumulation/i.test(phaseLc);
-  const improvingHTF=a4h>=50 && a1d>=50;
   const strongHTF=a4h>=60 && a1d>=55;
-  const structureBull=hasHigherLow || accumulationPhase || recovery;
+  const improvingHTF=a4h>=55 && a1d>=40;
+  const structureBull=hasHigherLow || accumulationPhase;
   const structureBear=hasLowerHigh || distribution;
   const overheated=rsi4h>=80;
-  const exhaustion=Number(item.preCrash?.score||0)>=6 || vol>=2 || ema70>=20 || rsi4h>=75;
+  const ema200Lost=ema200!=null && Number(ema200)<0;
+  const drop=Math.abs(Number(item.dropPctFromPeak||0));
+  const rtnScore=Number(returnObj.score||0);
+  const correctionConfirmed=!!(rec.confirmed || ema200Lost || /significant correction|correction confirmed/i.test(String(cg.label||'')));
+  const correctionEvidence=Math.max(
+    correctionConfirmed?45:0,
+    Math.min(35, drop>=15 ? 35 : drop*2.33),
+    rtnScore*8,
+    ema200Lost?30:0
+  );
+
+  /*
+   * State model: separate "correction happened" from "what happens next".
+   * A normalized RSI / Return-to-Normal phase after a large drawdown means
+   * the correction may already be mature or completed; it should not keep
+   * printing "Correction active" merely because the correctionGuide remains red.
+   */
+  const postCorrection = correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const recoveryScore=Math.max(0,Math.min(100,Math.round(
+    (hasHigherLow?28:0) +
+    (a4h>=55?18:a4h>=50?10:0) +
+    (a1d>=50?20:a1d>=40?10:0) +
+    (rsi4h>=40 && rsi4h<=70?12:0) +
+    (recovery?12:0) +
+    (vol>=1.2?5:0) +
+    (!hasLowerHigh?5:0)
+  )));
+  const downsideScore=Math.max(0,Math.min(100,Math.round(
+    (hasLowerHigh?25:0) +
+    (distribution?20:0) +
+    (ema200Lost?20:0) +
+    (a4h<50?12:0) +
+    (a1d<40?8:0) +
+    (rsi4h<45?5:0) +
+    (drop>=15 && !recovery?10:0)
+  )));
+  const correctionCompletion=Math.max(0,Math.min(100,Math.round(
+    correctionEvidence +
+    (postCorrection?25:0) +
+    (recovery?15:0) +
+    (rsi4h>=40 && rsi4h<=65?10:0)
+  )));
 
   let bias='Neutral', longEntry='⏸ Wait for structure', shortEntry='⏸ Wait for structure';
   let bestAction='', readiness='🟡 Developing', missing=[], invalid=[];
-  let decisionScore=0;
+  let decisionScore=0, currentState='';
 
-  if(confirmed){
+  if(postCorrection){
+    currentState = recoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 RECOVERY DEVELOPING' : '🟣 POST-CORRECTION / RETURN-TO-NORMAL';
+    bias = recoveryScore>=70 && strongHTF ? 'Neutral / Recovery Improving' : 'Neutral / Cautious Bearish';
+    longEntry = recoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
+    shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high rejection' : '⏸ Wait for downside structure';
+    readiness = recoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
+    bestAction = recoveryScore>=70 && strongHTF && hasHigherLow
+      ? 'The major correction has already occurred and recovery structure is developing. Favor staged entries on higher-lows; add only while 4H/1D accumulation and volume continue to improve.'
+      : 'The major correction has already occurred. Do not chase the decline and do not wait for another correction. The market is now in a post-correction stabilization/recovery phase; wait for a higher-low and improving 4H/1D accumulation before treating it as a confirmed recovery entry.';
+    if(!hasHigherLow) missing.push('confirmed higher-low');
+    if(a4h<55) missing.push('4H accumulation ≥55%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    if(vol<1.2) missing.push('sustained volume participation');
+    invalid.push('new lower-low');
+    invalid.push('renewed EMA200 loss / support failure');
+    if(hasLowerHigh) invalid.push('failed bounce followed by lower-high');
+    decisionScore=Math.round(Math.max(35,Math.min(96,45 + recoveryScore*0.35 - downsideScore*0.15 + (postCorrection?10:0))));
+  } else if(correctionConfirmed){
+    currentState='🔴 CORRECTION ACTIVE';
     bias=strongHTF && structureBull ? 'Recovery / Re-accumulation Watch' : 'Neutral / Cautious Bearish';
-    longEntry=strongHTF && hasHigherLow ? '🟡 Recovery long — staged only' : '❌ Wait — correction confirmed';
+    longEntry=strongHTF && hasHigherLow ? '🟡 Recovery long — staged only' : '❌ Wait — correction still active';
     shortEntry=structureBear ? '🟠 Conditional — rejection / failed bounce' : '⏸ Wait for rejection / structure';
     bestAction=strongHTF && hasHigherLow
-      ? 'Recovery structure is improving. Use staged entries only after sustained higher-lows and continued 4H/1D accumulation.'
-      : 'Correction is confirmed. Do not chase the decline; wait for stabilization, a higher-low and improving 4H/1D accumulation.';
+      ? 'Correction pressure is still present, but recovery structure is beginning to improve. Use staged entries only after sustained higher-lows and continued 4H/1D accumulation.'
+      : 'Correction is still active. Do not chase the decline; wait for stabilization, a higher-low and improving 4H/1D accumulation.';
     readiness=strongHTF && hasHigherLow ? '🟡 Recovery developing' : '🔴 Correction active';
     if(!hasHigherLow) missing.push('confirmed higher-low');
     if(a4h<55) missing.push('4H accumulation ≥55%');
     if(a1d<50) missing.push('1D accumulation ≥50%');
     invalid.push('new lower-low / renewed EMA200 loss');
-  } else if(overheated && (distribution || exhaustion)) {
+    decisionScore=Math.round(Math.max(25,Math.min(92,48 + recoveryScore*0.25 - downsideScore*0.2)));
+  } else if(overheated && (distribution || Number(item.preCrash?.score||0)>=6)) {
+    currentState='🟠 HIGH-RISK / TOPPING VULNERABLE';
     bias='Bearish / Cautious';
     longEntry='❌ Don’t chase';
     shortEntry='🟠 Wait for rejection / failed bounce';
@@ -6033,27 +6094,30 @@ function renderTraderDecisionBlock(r, compact=false){
     if(a4h<55) missing.push('4H accumulation improvement');
     if(a1d<50) missing.push('1D accumulation improvement');
     invalid.push('breakdown below support');
+    decisionScore=62;
   } else if(strongHTF && hasHigherLow && !distribution && !overheated) {
+    currentState='🟢 CONTROLLED RECOVERY / CONTINUATION';
     bias='Bullish / Controlled';
     longEntry='🟢 Confirmed structure — staged';
     shortEntry='⏸ Wait / low priority';
     bestAction='Higher-low and higher-timeframe accumulation are aligned. Favor a controlled pullback/retest rather than chasing extension.';
     readiness='🟢 Long setup developing';
     decisionScore=90;
-    if(vol<1) missing.push('sustained participation / green volume');
+    if(vol<1.2) missing.push('sustained participation / green volume');
     invalid.push('loss of higher-low or deterioration in 4H/1D accumulation');
-  } else if((accum>=60 || a4h>=50) && (structureBull || recovery) && !distribution) {
-    bias='Mild Bullish / Developing';
+  } else if(recovery) {
+    currentState='🟣 RETURN-TO-NORMAL / RECOVERY WATCH';
+    bias=accum>=60 ? 'Neutral / Recovery Watch' : 'Neutral';
     longEntry='⚠️ Staged / conditional';
-    shortEntry='⏸ Wait for structure';
-    bestAction='Support is developing, but the bottom/continuation is not fully confirmed. Wait for a higher-low and improving 4H/1D accumulation before scaling.';
-    readiness='🟡 Re-accumulation attempt';
-    if(!hasHigherLow) missing.push('higher-low confirmation');
-    if(a4h<55) missing.push('4H accumulation strengthening');
-    if(a1d<50) missing.push('1D accumulation strengthening');
-    if(vol<1) missing.push('sustained green-volume participation');
-    invalid.push('lower-low or distribution/breakdown confirmation');
+    shortEntry=hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait for structure';
+    bestAction='The market is normalizing after a move. Treat this as a recovery process, not an automatic bottom. Wait for a higher-low and improving 4H/1D accumulation before scaling into recovery.';
+    readiness='🟡 Recovery watch';
+    if(!hasHigherLow) missing.push('stable higher-low');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
+    invalid.push('new lower-low / renewed distribution');
   } else if(distribution || structureBear) {
+    currentState='🟠 STRUCTURE WEAKENING';
     bias='Bearish Risk / Neutral';
     longEntry='❌ Wait — structure weak';
     shortEntry='⚠️ Conditional — rejection first';
@@ -6063,17 +6127,8 @@ function renderTraderDecisionBlock(r, compact=false){
     if(a4h<50) missing.push('4H accumulation recovery');
     if(a1d<50) missing.push('1D accumulation recovery');
     invalid.push('breakdown confirmation / support failure');
-  } else if(recovery) {
-    bias=accum>=60 ? 'Neutral / Recovery Watch' : 'Neutral';
-    longEntry='⚠️ Staged / conditional';
-    shortEntry='⏸ Wait for structure';
-    bestAction='Wait for a stable base, higher-low and improving 4H/1D accumulation. Do not mistake a weak bounce for confirmed re-accumulation.';
-    readiness='🟡 Bottoming process';
-    if(!hasHigherLow) missing.push('stable higher-low');
-    if(a4h<55) missing.push('4H accumulation improvement');
-    if(a1d<50) missing.push('1D accumulation improvement');
-    invalid.push('new lower-low / renewed distribution');
   } else {
+    currentState=rec.state||'⚪ NO CLEAR EDGE';
     bias=rec.tradeBias||'Neutral';
     longEntry='⚠️ Staged / conditional';
     shortEntry='⏸ Wait for structure';
@@ -6085,23 +6140,21 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('breakdown or deterioration in higher-timeframe support');
   }
 
-  if(!decisionScore) {
-    decisionScore=45;
-    decisionScore += Math.min(20, Math.max(0, a4h-50)*0.4);
-    decisionScore += Math.min(15, Math.max(0, a1d-50)*0.3);
-    decisionScore += hasHigherLow ? 12 : 0;
-    decisionScore -= distribution ? 12 : 0;
-    decisionScore -= confirmed ? 5 : 0;
-    decisionScore=Math.max(20,Math.min(96,Math.round(decisionScore)));
-  }
-  const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':'#ffd966';
+  const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
   const compactStyle=compact?'font-size:12px;':'';
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
-  const invalidHtml=invalid.map(x=>`<li>${x}</li>`).join('');
+  const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
+  const correctionText = postCorrection
+    ? `🟣 Confirmed — correction already occurred`
+    : correctionConfirmed
+      ? `🔴 Confirmed — correction still active`
+      : `🟢 Not confirmed`;
+
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
-    <div style="margin-top:7px"><strong>Bias:</strong> ${bias}</div>
-    <div><strong>Correction:</strong> ${confirmed?'🔴 Confirmed':'🟢 Not confirmed'}${cg.label?` • ${cg.label}`:''}</div>
+    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
+    <div><strong>Bias:</strong> ${bias}</div>
+    <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
@@ -6110,7 +6163,10 @@ function renderTraderDecisionBlock(r, compact=false){
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
     </div>
-    <div class="small" style="margin-top:7px;color:var(--muted)">Decision confidence ${decisionScore}% • Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}</div>
+    <div class="small" style="margin-top:7px;color:var(--muted)">
+      Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${recoveryScore}% • Downside continuation ${downsideScore}%<br>
+      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}
+    </div>
   </div>`;
 }
 
