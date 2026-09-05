@@ -843,6 +843,8 @@ body.authLocked{overflow:hidden}
             <option value="accum">Accum confidence</option>
             <option value="preCrash">Exhaustion Warning</option>
             <option value="rsi4h">RSI (4H)</option>
+            <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (8AM–8AM)</option>
+            <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (8AM–8AM)</option>
             <option value="ema70DistPct">EMA70 stretch %</option>
             <option value="ema200Stretch15">15m EMA200 stretch %</option>
             <option value="last">Last price</option>
@@ -971,6 +973,26 @@ body.authLocked{overflow:hidden}
             <option value="BLOWOFF">🔥 Blowoff / Climax</option>
           </select>
           <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">📉 15m RSI &lt;50 • 8AM–8AM</label>
+          <select id="rsi15SessionFilter">
+            <option value="ALL">All</option>
+            <option value="ANY">🔎 RSI &lt;50 Any</option>
+            <option value="P25">🟡 ≥25% of candles</option>
+            <option value="P50">🟠 ≥50% of candles</option>
+            <option value="P75">🔴 ≥75% of candles</option>
+          </select>
+          <div class="dashboardHint">Counts completed 15m candle closes with RSI &lt;50 in the current 8AM–8AM session. Max 96 candles.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">📊 RSI &lt;50 Session Sort</label>
+          <select id="rsi15SessionSort">
+            <option value="NONE">No dedicated sort</option>
+            <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
+            <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
+          </select>
+          <div class="dashboardHint">Overrides the normal sort while selected and ranks the current 8AM–8AM RSI weakness.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">🕯️ High-Volume Doji (HVD)</label>
@@ -1104,6 +1126,8 @@ const el = {
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
+  rsi15SessionFilter: document.getElementById('rsi15SessionFilter'),
+  rsi15SessionSort: document.getElementById('rsi15SessionSort'),
   hvdFilter: document.getElementById('hvdFilter'),
   liquidityFilter: document.getElementById('liquidityFilter'),
   bearishStructureFilter: document.getElementById('bearishStructureFilter'),
@@ -2689,6 +2713,51 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const fundingRate = (f && f.length) ? Number(f[0].fundingRate) : 0;
     const rsi1h = rsiFromCloses(closes1h, 14);
     const rsi15 = rsiFromCloses(closes15, 14);
+
+    // ===== 15m RSI <50 SESSION STAT =====
+    // Session is 08:00 local browser time -> 08:00 next day. Only completed
+    // 15m candles are counted. RSI is calculated across the full available
+    // history first, so the session's first candles retain proper RSI seeding.
+    function get15mRsiSessionStats(klines, period=14){
+      const arr = Array.isArray(klines) ? klines : [];
+      if(arr.length < period + 1) return {countBelow50:0,total:0,pct:0,start:null,end:null,max:96};
+      const closes = arr.map(k=>Number(k?.[4]));
+      const valid = closes.every(Number.isFinite);
+      if(!valid) return {countBelow50:0,total:0,pct:0,start:null,end:null,max:96};
+      const rsis = [];
+      let gains=0, losses=0;
+      for(let i=1;i<=period;i++){ const d=closes[i]-closes[i-1]; if(d>=0) gains+=d; else losses-=d; }
+      let r = losses===0 ? 100 : 100-(100/(1+(gains/losses)));
+      rsis[period]=r;
+      for(let i=period+1;i<closes.length;i++){
+        const d=closes[i]-closes[i-1];
+        const g=Math.max(0,d), l=Math.max(0,-d);
+        gains=(gains*(period-1)+g)/period;
+        losses=(losses*(period-1)+l)/period;
+        r=losses===0?100:100-(100/(1+(gains/losses)));
+        rsis[i]=r;
+      }
+      const now=Date.now();
+      const d=new Date(now);
+      d.setHours(8,0,0,0);
+      let start=d.getTime();
+      if(now < start) start-=24*60*60*1000;
+      const end=start+24*60*60*1000;
+      let total=0,count=0;
+      for(let i=0;i<arr.length;i++){
+        const open=Number(arr[i]?.[0]);
+        if(!Number.isFinite(open) || open<start || open>=end) continue;
+        const closeTime=open+15*60*1000;
+        if(closeTime>now) continue;
+        if(!Number.isFinite(rsis[i])) continue;
+        total++;
+        if(rsis[i] < 50) count++;
+      }
+      const pct=total?Number(((count/total)*100).toFixed(2)):0;
+      return {countBelow50:count,total,pct,start,end,max:96,timezone:'local'};
+    }
+    const rsi15Session = get15mRsiSessionStats(k15,14);
+
     const ema14_15 = closes15.length >= 14 ? ema(closes15, 14) : null;
     const ema21_15 = closes15.length >= 21 ? ema(closes15, 21) : null;
     const ema200_15 = closes15.length >= 200 ? ema(closes15, 200) : null;
@@ -2763,6 +2832,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       score: 0, // we'll compute below
       signals: {},
       rsi1d, rsi4h, rsi1h, rsi15,
+      rsi15Session,
       volSpike4, volSpike15,
       // NEW: raw volumes included for sorting/display
       volume1d: lastVol1d,
@@ -5136,6 +5206,8 @@ function getValueForKey(r, key) {
       );
     }
     case 'rsi4h': return getNumeric(r.rsi4h, 0);
+    case 'rsi15SessionCount': return getNumeric(r.rsi15Session?.countBelow50, 0);
+    case 'rsi15SessionPct': return getNumeric(r.rsi15Session?.pct, 0);
     case 'ema70DistPct': return Math.abs(getNumeric(r.ema70DistPct, 0));
     // Signed 15m EMA200 stretch: negative = price below EMA200 (confirmed correction),
     // positive = price above EMA200. Do NOT use Math.abs() here because direction matters.
@@ -5420,6 +5492,24 @@ function filterResultsForDist(results) {
       if (hvdFilter === 'LATEST_1W') return lW;
       if (hvdFilter === 'LATEST_1M') return lM;
       return false;
+    });
+  }
+
+  // Dedicated 15m RSI <50 session filter.
+  // Uses the exact stored session statistic from the current result; no network request.
+  const rsi15SessionFilter = el.rsi15SessionFilter ? el.rsi15SessionFilter.value : 'ALL';
+  if (rsi15SessionFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const st = r?.rsi15Session || {};
+      const count = Number(st.countBelow50 || 0);
+      const total = Number(st.total || 0);
+      const pct = Number(st.pct || 0);
+      if (!total) return false;
+      if (rsi15SessionFilter === 'ANY') return count > 0;
+      if (rsi15SessionFilter === 'P25') return pct >= 25;
+      if (rsi15SessionFilter === 'P50') return pct >= 50;
+      if (rsi15SessionFilter === 'P75') return pct >= 75;
+      return true;
     });
   }
 
@@ -5750,6 +5840,17 @@ if (el.accumDoubleTopFilter) {
 }
 if (el.marketExhaustionFilter) {
   el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi15SessionFilter) {
+  el.rsi15SessionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi15SessionSort) {
+  el.rsi15SessionSort.addEventListener('change', () => {
+    const v = el.rsi15SessionSort.value;
+    if (v === 'COUNT_DESC') { el.sortBy.value='rsi15SessionCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    else if (v === 'PCT_DESC') { el.sortBy.value='rsi15SessionPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
 }
 if (el.hvdFilter) {
   el.hvdFilter.addEventListener('change', () => renderActiveView(true));
