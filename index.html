@@ -6568,13 +6568,14 @@ function renderTraderDecisionBlock(r, compact=false){
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
+    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • Session 8AM–8AM</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
     </div>
     <div class="small" style="margin-top:7px;color:var(--muted)">
       Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
-      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}
+      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}${rsi15SessionText}
     </div>
   </div>`;
 }
@@ -6584,6 +6585,13 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const phasePct=Number(r.phase?.confidence||0);
   const dist=distributionRiskLabel(phase, phasePct);
   const accum=Number(r.accumCombined?.confidence||0);
+  const rsi15Session = r?.rsi15Session || {};
+  const rsi15Below50 = Number(rsi15Session.countBelow50 || 0);
+  const rsi15SessionTotal = Number(rsi15Session.total || 0);
+  const rsi15Below50Pct = Number(rsi15Session.pct || 0);
+  const rsi15SessionText = rsi15SessionTotal
+    ? ` • 15m RSI <50 (8AM–8AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
+    : ' • 15m RSI <50 (8AM–8AM): no completed session data';
   const a15=Number((r.accumChecks||[]).find(t=>t.tf==='15m')?.result?.confidence??0);
   const a1h=Number((r.accumChecks||[]).find(t=>t.tf==='1h')?.result?.confidence??0);
   const a4h=Number((r.accumChecks||[]).find(t=>t.tf==='4h')?.result?.confidence??0);
@@ -7106,7 +7114,7 @@ function renderCards(results){
 
         <div class="recBox" style="margin-top:8px">
           15m accumulation ${a15}% • 1h ${a1h}% • 4h ${a4h}%<br>
-          4H volume ×${Number(r.volSpike4||0).toFixed(2)} • 15m RSI ${Math.round(r.rsi15||0)} • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>
+          4H volume ×${Number(r.volSpike4||0).toFixed(2)} • 15m RSI ${Math.round(r.rsi15||0)}${rsi15SessionTotal?` • RSI<50 ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`:''} • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>
           Correction Status: <strong>${cg.label||'🟢 NOT CONFIRMED / PRE-CORRECTION'}</strong> (${cg.confidence||0}%)<br>
           15m EMA200 stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'}<br>
           Funding: ${Number(r.fundingRate||0).toFixed(6)} • Peak drawdown: ${Number(r.dropPctFromPeak||0).toFixed(1)}%<br>
