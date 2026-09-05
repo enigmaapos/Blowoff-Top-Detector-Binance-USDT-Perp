@@ -449,6 +449,22 @@
 .topDetHvdBlock{margin-top:3px}
 
 </style>
+<style id="live-scan-activity-ui">
+  .liveScanActivity{
+    margin-top:10px;padding:11px 12px;border:1px solid rgba(45,212,191,.20);
+    border-radius:11px;background:linear-gradient(180deg,rgba(45,212,191,.055),rgba(126,220,255,.018));
+  }
+  .liveScanActivityHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .liveScanActivityTitle{font-size:11px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#c9fff4}
+  .liveScanDot{width:8px;height:8px;border-radius:50%;background:#2dd4bf;box-shadow:0 0 10px rgba(45,212,191,.8);display:inline-block}
+  .liveScanActivity.active .liveScanDot{animation:liveScanPulse 1s ease-in-out infinite}
+  .liveScanActivity.idle .liveScanDot{background:#718096;box-shadow:none}
+  @keyframes liveScanPulse{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
+  .liveScanCurrent{margin-top:7px;font-size:13px;font-weight:900;color:#eaf8ff;min-height:18px}
+  .liveScanMeta{margin-top:4px;font-size:10px;color:#9fb3cc;line-height:1.4}
+  .liveScanBar{height:7px;margin-top:8px;border-radius:999px;overflow:hidden;background:#06111b}
+  .liveScanBar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#2dd4bf,#60a5fa);transition:width .18s ease}
+</style>
 <style id="scanner-ui-cleanup">
   #startBtn, #oneShot { display:none !important; }
 </style>
@@ -830,6 +846,16 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
 
+    <div id="liveScanActivity" class="liveScanActivity idle">
+      <div class="liveScanActivityHead">
+        <div class="liveScanActivityTitle"><span class="liveScanDot"></span> Live Scanner Activity</div>
+        <div id="liveScanElapsed" class="small">Idle</div>
+      </div>
+      <div id="liveScanCurrent" class="liveScanCurrent">Ready — press Scan to begin.</div>
+      <div id="liveScanMeta" class="liveScanMeta">No scanner is currently running.</div>
+      <div class="liveScanBar"><i id="liveScanBar"></i></div>
+    </div>
+
     <div class="controlSection controlZone filtersZone" id="decisionControls">
       <div class="controlSectionTitle"><span>🎯</span> 5 · FINAL TRADER DECISION — Filter & Sort</div>
       <div class="dashboardHint" style="margin-top:6px">Single source of truth: filters and sorting read the exact final Trader Decision shown on each coin. Liquidity, structure, correction, accumulation, momentum and volume are evidence — Trader Decision is the final output.</div>
@@ -941,7 +967,12 @@ const el = {
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir'),
   tradeDecisionFilter: document.getElementById('tradeDecisionFilter'),
-  decisionFilterStatus: document.getElementById('decisionFilterStatus')
+  decisionFilterStatus: document.getElementById('decisionFilterStatus'),
+  liveScanActivity: document.getElementById('liveScanActivity'),
+  liveScanCurrent: document.getElementById('liveScanCurrent'),
+  liveScanMeta: document.getElementById('liveScanMeta'),
+  liveScanBar: document.getElementById('liveScanBar'),
+  liveScanElapsed: document.getElementById('liveScanElapsed')
 };
 
   // ---------------------- Symbol search + single-symbol analyzer ----------------------
@@ -2209,6 +2240,10 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
   const session = opts.session ?? modeSession;
   const batchSize = Math.max(1, Math.min(SCAN_BATCH_SIZE, Number(opts.batchSize) || SCAN_BATCH_SIZE));
   const results = [];
+  totalTasks = symbols.length;
+  doneTasks = 0;
+  updateProgress();
+  updateLiveScanActivity(`Preparing ${symbols.length} symbols…`, `Controlled batches of ${batchSize} • Final Trader Decision analysis`, 0);
 
   const analyzeOne = async (item) => {
     const sym = (item.symbol || item).toUpperCase();
@@ -2243,6 +2278,8 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
     const batch=symbols.slice(start,start+batchSize);
     const batchResults=(await Promise.all(batch.map(analyzeOne))).filter(Boolean);
     results.push(...batchResults);
+    doneTasks = Math.min(symbols.length, start + batch.length);
+    updateProgress();
     if(typeof opts.onBatch==='function'){
       try{opts.onBatch(batchResults,results.slice(),Math.min(start+batch.length,symbols.length),symbols.length);}
       catch(e){console.warn('onBatch error',e);}
@@ -2254,14 +2291,14 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
 // top-level orchestrator: fetch tickers, pick top30 gainers or losers, analyze and render matches
 async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
   try{
-    el.scanStatus.innerText = 'Fetching 24h tickers...';
+    el.scanStatus.innerText = 'Fetching 24h tickers...'; updateLiveScanActivity('Fetching 24h market data…','Loading Binance Futures 24h universe.',0);
     const tickers = await fetch24hTickers();
     if(!tickers || !tickers.length){
       el.scanStatus.innerText = 'Failed to fetch 24h tickers.';
       return;
     }
     const top = getTopNByChange(tickers, 30, positive);
-    el.scanStatus.innerText = `Found ${top.length} symbols — analyzing final Trader Decisions...`;
+    el.scanStatus.innerText = `Found ${top.length} symbols — analyzing final Trader Decisions...`; updateLiveScanActivity(`Analyzing ${top.length} ${positive?'gainers':'losers'}…`,`Final Trader Decision is the output; partial results stay hidden until the scan completes.`,0);
     // Build minimal list: we can pass array of objects with symbol property
     const session = modeSession;
     const matches = await analyzeSymbolBatch(top, {
@@ -7022,8 +7059,39 @@ function updateTradingInterpretation(results){
   el.tradeInterpret.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;"><h2 style="margin:0;font-size:1.05rem;">Quick Trading Interpretations</h2><span class="small" style="color:var(--muted)">${sorted.length} coin${sorted.length===1?'':'s'}</span></div>${panels}`;
 }
 
+/* ---------- Visible live scanner activity ---------- */
+let liveScanStartedAt = 0;
+function updateLiveScanActivity(current, meta = '', pct = null){
+  if(!el.liveScanActivity) return;
+  const active = !!running;
+  el.liveScanActivity.classList.toggle('active', active);
+  el.liveScanActivity.classList.toggle('idle', !active);
+  if(current != null) el.liveScanCurrent.innerText = String(current);
+  if(meta != null) el.liveScanMeta.innerText = String(meta);
+  if(pct != null && el.liveScanBar){
+    const n = Math.max(0, Math.min(100, Number(pct) || 0));
+    el.liveScanBar.style.width = n + '%';
+  }
+  if(el.liveScanElapsed){
+    if(active && liveScanStartedAt){
+      const sec = Math.max(0, Math.floor((Date.now()-liveScanStartedAt)/1000));
+      el.liveScanElapsed.innerText = `Running ${sec}s`;
+    }else if(liveScanStartedAt){
+      const sec = Math.max(0, Math.floor((Date.now()-liveScanStartedAt)/1000));
+      el.liveScanElapsed.innerText = `Last run ${sec}s`;
+    }else{
+      el.liveScanElapsed.innerText = 'Idle';
+    }
+  }
+}
+if(!window.__liveScanActivityHeartbeat){
+  window.__liveScanActivityHeartbeat = setInterval(()=>{
+    try{ updateLiveScanActivity(null, null, null); }catch(e){}
+  },500);
+}
+
 /* ---------- Progress & countdown ---------- */
-function updateProgress(){ const pct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0; el.bar.style.width = pct + '%'; el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`; el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`; }
+function updateProgress(){ const pct = totalTasks ? Math.round((doneTasks/totalTasks)*100) : 0; el.bar.style.width = pct + '%'; el.message.innerText = `Scanning ${doneTasks}/${totalTasks} (${pct}%) — delay ${el.delay.value}ms`; el.safetyStatus.innerText = `Req/min: ${requestsThisWindow}`; updateLiveScanActivity(`Scanning ${doneTasks}/${totalTasks} (${pct}%)`, `Binance requests: ${requestsThisWindow} • Batch processing active`, pct); }
 function startCountdown(sec){
   if(countdownTimer) clearInterval(countdownTimer);
   const end = Date.now() + Math.max(0, sec * 1000);
@@ -7609,7 +7677,9 @@ el.unifiedScanBtn.addEventListener('click', async () => {
   try{
     clearQuickTradingInterpretation();
     running = true;
+    liveScanStartedAt = Date.now();
     totalTasks = 0; doneTasks = 0;
+    updateLiveScanActivity(`Starting ${getActiveScannerLabel()}…`, 'Initializing scanner and Binance data pipeline.', 0);
     if(el.countdown) el.countdown.innerText = `Scanning ${getActiveScannerLabel()}…`;
     if (mode === 'topGreen') {
       el.scanStatus.innerText = 'Running Top30 Gainers (green) scan...';
@@ -7650,6 +7720,13 @@ el.unifiedScanBtn.addEventListener('click', async () => {
     if(session === modeSession){
       running = false;
       el.unifiedScanBtn.disabled = false;
+      if(el.liveScanActivity){
+        updateLiveScanActivity(
+          el.scanStatus?.innerText || `Finished ${getActiveScannerLabel()}`,
+          'Scan finished. Waiting for the next scheduled scan.',
+          100
+        );
+      }
       updateUnifiedScanCountdown();
     }
   }
