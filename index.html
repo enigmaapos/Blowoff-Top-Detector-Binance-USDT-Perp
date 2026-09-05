@@ -1941,6 +1941,8 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
 
   const lowAccum = [];     // accumCombined.confidence < THRESH
   const lowPreCrash = [];  // preCrash.confidence < THRESH
+  const decisionResults = []; // full analyzed result objects; Trader Decision is rendered from these
+  const decisionSeen = new Set();
   const errors = [];
 
 
@@ -1975,6 +1977,10 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
         const cycle=getCycleDisplay(res);
         lowPreCrash.push({symbol:sym,preCrashConfidence:preCrashConf,simPhase:cycle.cyclePhase,similarity:cycle.similarityPct,phase:res.phase||null});
       }
+      if((accumConf!==null&&accumConf<THRESH) || (preCrashConf!==null&&preCrashConf<THRESH)){
+        const key=String(res.symbol||sym).toUpperCase();
+        if(!decisionSeen.has(key)){ decisionSeen.add(key); decisionResults.push(res); }
+      }
     }
     el.scanStatus&&(el.scanStatus.innerText=`Below-50: ${completed}/${symbols.length} analyzed • lowAccum ${lowAccum.length} • lowPreCrash ${lowPreCrash.length}`);
     await delay(0);
@@ -1991,7 +1997,7 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
   console.log('=== lowPreCrash (<50) ===', lowPreCrash);
   if(el.debug) el.debug.innerText = `lowAccum:${lowAccum.length} lowPreCrash:${lowPreCrash.length} errors:${errors.length}`;
 
-  return { lowAccum, lowPreCrash, errors };
+  return { lowAccum, lowPreCrash, decisionResults, errors };
 }
 
 // USAGE example: attach to a button or call from console
@@ -2139,11 +2145,15 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
       const res = await scanAllPerpsForBelow50({ minDelay: FULL_SCAN_MIN_DELAY_MS, batchSize: FULL_SCAN_BATCH_SIZE });
       if(session !== modeSession || activeViewMode !== 'scan') return;
 
-      // ATOMIC REFRESH: the previous Below-50 tables stay visible throughout
-      // the entire scan. Publish the new Below-50 tables only after completion.
-      commitScannerSurface('below50');
+      // Below-50 is also a universe selector. Publish the FULL analyzed result
+      // objects through the same Market Analysis / Trader Decision surface so all
+      // scanner modes share one final-truth UI. The old summary tables remain
+      // available only as secondary diagnostics.
+      const decisionRows = Array.isArray(res.decisionResults) ? res.decisionResults : [];
+      commitScannerSurface('main');
+      commitMarketScanResults(decisionRows);
       await renderResults(res);
-      el.scanStatus && (el.scanStatus.innerText = `Scan finished. lowAccum:${res.lowAccum.length} lowPreCrash:${res.lowPreCrash.length} errors:${res.errors.length}`);
+      el.scanStatus && (el.scanStatus.innerText = `Below-50 finished • ${decisionRows.length} Trader Decisions • lowAccum:${res.lowAccum.length} • lowPreCrash:${res.lowPreCrash.length} • errors:${res.errors.length}`);
     } catch(err) {
       console.error('Below-50 scan error', err);
       el.scanStatus && (el.scanStatus.innerText = `Scan failed: ${err.message || err}`);
@@ -2216,19 +2226,15 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
         }
         return String(val).toLowerCase();
       };
-      const resistanceKeywords=['blowoff','climax','distribution','mania','bull','top','blowoff forming','takeoff/early pump','climax candle','blowoff / mania','distribution / breakdown'];
-      const bearishKeywords=['breakdown','capitulation','post-crash','flatline','despair','selloff','distribution','breakdown / crash','capitulation / despair'];
-      const phaseStr=normalizePhaseField(res.phase), simStr=normalizePhaseField(res.simPhase||res.sim);
-      const anyMatch=(str,keywords)=>str&&keywords.some(k=>str.includes(k));
-      let keep=false,keepReason='no-match';
-      if(opts.mode==='resistance'){
-        if(anyMatch(phaseStr,resistanceKeywords)){keep=true;keepReason='phase-match';}
-        else if(anyMatch(simStr,resistanceKeywords)){keep=true;keepReason='simPhase-match';}
-      }else if(opts.mode==='bearish'){
-        if(anyMatch(phaseStr,bearishKeywords)){keep=true;keepReason='phase-match';}
-        else if(anyMatch(simStr,bearishKeywords)){keep=true;keepReason='simPhase-match';}
-      }else{keep=true;keepReason='mode-all';}
-      if(keep){res._scanMode=opts.mode;res._matchedBy=keepReason;return res;}
+      // Top Gainers / Top Losers are universe selectors, NOT secondary signal filters.
+      // Every selected symbol is analyzed and then the FINAL TRADER DECISION controls
+      // the visible ranking/filtering. This prevents the old phase keyword gate from
+      // silently returning zero results even when Trader Decision has useful output.
+      const keep=true;
+      const keepReason = opts.mode==='resistance' ? 'top-gainer-universe' : opts.mode==='bearish' ? 'top-loser-universe' : 'mode-all';
+      res._scanMode=opts.mode;
+      res._matchedBy=keepReason;
+      return res;
     }catch(err){console.warn('batch analyze error',sym,err.message);}
     return null;
   };
@@ -2255,7 +2261,7 @@ async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
       return;
     }
     const top = getTopNByChange(tickers, 30, positive);
-    el.scanStatus.innerText = `Found ${top.length} symbols — starting analysis...`;
+    el.scanStatus.innerText = `Found ${top.length} symbols — analyzing final Trader Decisions...`;
     // Build minimal list: we can pass array of objects with symbol property
     const session = modeSession;
     const matches = await analyzeSymbolBatch(top, {
@@ -2265,7 +2271,7 @@ async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
 
         // ATOMIC REFRESH: never replace the current result pane with partial
         // Top30 Gainer/Loser matches. Update scanner progress only.
-        el.scanStatus.innerText=`Analyzed ${done}/${total} symbols • ${allMatches.length} matches`;
+        el.scanStatus.innerText=`Analyzed ${done}/${total} symbols • ${allMatches.length} final decisions`;
       }
     });
     if(session !== modeSession || activeViewMode !== 'scan') return;
@@ -2281,7 +2287,7 @@ async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
         commitMarketScanResults([]);
         const adrLabel = el.accumDoubleTopFilter?.value !== 'ALL' ? ` • Double Top: ${el.accumDoubleTopFilter.options[el.accumDoubleTopFilter.selectedIndex]?.text || el.accumDoubleTopFilter.value}` : '';
         const exLabel = el.marketExhaustionFilter?.value !== 'ALL' ? ` • Exhaustion: ${el.marketExhaustionFilter.options[el.marketExhaustionFilter.selectedIndex]?.text || el.marketExhaustionFilter.value}` : '';
-        el.scanStatus.innerText = `No matches found for filters.${adrLabel}${exLabel}`;
+        el.scanStatus.innerText = `No Trader Decision results returned from this scanner universe.`;
       }
     }
   } catch(e){
@@ -7075,15 +7081,28 @@ function getActiveScannerLabel(){
 
 function updateUnifiedScanCountdown(){
   if(!el.countdown || activeViewMode !== 'scan') return;
-  if(running) return;
+  if(running){
+    el.countdown.innerText = `Scanning ${getActiveScannerLabel()}…`;
+    return;
+  }
   if(!marketAutoEnabled){
     el.countdown.innerText = `${getActiveScannerLabel()} auto-refresh paused`;
     return;
   }
-  if(autoTimer && marketNextScanAt){
+  if(marketNextScanAt){
     const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
     el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+  }else{
+    el.countdown.innerText = `Next ${getActiveScannerLabel()} in: —`;
   }
+}
+
+// Countdown heartbeat: keeps the visible timer alive even while scanner-specific
+// work is updating progress/status. It never starts a network request by itself.
+if(!window.__decisionCountdownHeartbeat){
+  window.__decisionCountdownHeartbeat = setInterval(()=>{
+    try{ updateUnifiedScanCountdown(); }catch(e){}
+  },250);
 }
 
 function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
@@ -7198,10 +7217,11 @@ function commitScannerSurface(surface){
       el.tradeInterpret.style.display = 'none';
       el.tradeInterpret.innerHTML = '';
     }
-  }else{
-    const below = document.getElementById('below50Results');
-    if(below) below.innerHTML = '';
   }
+  // Any switch to the normal Trader Decision surface clears the legacy
+  // Below-50 diagnostic tables so they can never look like the primary output.
+  const below = document.getElementById('below50Results');
+  if(below && surface !== 'below50') below.innerHTML = '';
   requestAnimationFrame(() => {
     try { window.scrollTo(0, scrollY); } catch (_) {}
   });
@@ -7588,11 +7608,14 @@ el.unifiedScanBtn.addEventListener('click', async () => {
   el.unifiedScanBtn.disabled = true;
   try{
     clearQuickTradingInterpretation();
+    running = true;
+    totalTasks = 0; doneTasks = 0;
     if(el.countdown) el.countdown.innerText = `Scanning ${getActiveScannerLabel()}…`;
     if (mode === 'topGreen') {
       el.scanStatus.innerText = 'Running Top30 Gainers (green) scan...';
       await runTop30Scan({ positive:true, mode:'resistance', session });
       if(session === modeSession && activeViewMode === 'scan'){
+        running = false;
         marketAutoEnabled = true;
         const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
@@ -7601,6 +7624,7 @@ el.unifiedScanBtn.addEventListener('click', async () => {
       el.scanStatus.innerText = 'Running Top30 Losers (red) scan...';
       await runTop30Scan({ positive:false, mode:'bearish', session });
       if(session === modeSession && activeViewMode === 'scan'){
+        running = false;
         marketAutoEnabled = true;
         const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
@@ -7612,6 +7636,7 @@ el.unifiedScanBtn.addEventListener('click', async () => {
       else if(typeof runBelow50 === 'function') await runBelow50({session});
       else throw new Error('Below-50 scanner function was not found.');
       if(session === modeSession && activeViewMode === 'scan'){
+        running = false;
         marketAutoEnabled = true;
         const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
@@ -7623,7 +7648,9 @@ el.unifiedScanBtn.addEventListener('click', async () => {
     }
   }finally{
     if(session === modeSession){
+      running = false;
       el.unifiedScanBtn.disabled = false;
+      updateUnifiedScanCountdown();
     }
   }
 });
