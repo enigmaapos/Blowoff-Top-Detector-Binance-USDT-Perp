@@ -6982,6 +6982,10 @@ function renderCards(results){
     const a15=Number((r.accumChecks||[]).find(t=>t.tf==='15m')?.result?.confidence??0);
     const a1h=Number((r.accumChecks||[]).find(t=>t.tf==='1h')?.result?.confidence??0);
     const rsi4h=Number(r.rsi4h||0), wick=Number(r.wickRatio4||0), ema70=Number(r.ema70DistPct||0);
+    const rsi15Session=r.rsi15Session||{};
+    const rsi15Below50=Number(rsi15Session.countBelow50||0);
+    const rsi15SessionTotal=Number(rsi15Session.total||0);
+    const rsi15Below50Pct=Number(rsi15Session.pct||0);
     const shortTargets=(srec.targets||[]).filter(x=>x!=null && Number.isFinite(Number(x)));
     const resistance=[lt.t1,lt.t2,lt.t3].filter(x=>x!=null && Number.isFinite(Number(x)));
     const support=[lt.s1,lt.s2,lt.s3].filter(x=>x!=null && Number.isFinite(Number(x)));
