@@ -910,6 +910,40 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filter by the final Trader Decision bias shown on each coin card.</div>
         </div>
         <div class="controlItem">
+          <label class="controlLabel">🟢 Long Entry Status</label>
+          <select id="longEntryFilter">
+            <option value="ALL">All Long Entry States</option>
+            <option value="CONFIRMED">🟢 Confirmed / staged</option>
+            <option value="STAGED">⚠️ Staged / conditional</option>
+            <option value="CONDITIONAL">🟡 Conditional</option>
+            <option value="WAIT">⏸ Wait</option>
+            <option value="NOT_READY">❌ Not yet / wait</option>
+            <option value="DONT_CHASE">🚫 Don't chase</option>
+          </select>
+          <div class="dashboardHint">Filters by the actual Long entry status and its current confirmation condition.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">🔴 Short Entry Status</label>
+          <select id="shortEntryFilter">
+            <option value="ALL">All Short Entry States</option>
+            <option value="CONDITIONAL">🟠 Conditional</option>
+            <option value="WAIT">⏸ Wait</option>
+            <option value="REJECTION">🟠 Rejection / failed bounce</option>
+            <option value="LOWER_HIGH">🔴 Failed bounce / lower-high</option>
+            <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
+          </select>
+          <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">Entry Status Sort</label>
+          <select id="entryStatusSort">
+            <option value="NONE">No dedicated sort</option>
+            <option value="LONG_DESC">🟢 Long entry readiness</option>
+            <option value="SHORT_DESC">🔴 Short entry readiness</option>
+          </select>
+          <div class="dashboardHint">Ranks the same entry-status conditions used by the filters.</div>
+        </div>
+        <div class="controlItem">
           <label class="controlLabel">Funding Direction</label>
           <select id="fundingFilter">
             <option value="ALL">All Funding</option>
@@ -1123,6 +1157,9 @@ const el = {
   sortDir: document.getElementById('sortDir'),
   correctionFilter: document.getElementById('correctionFilter'),
   biasFilter: document.getElementById('biasFilter'),
+  longEntryFilter: document.getElementById('longEntryFilter'),
+  shortEntryFilter: document.getElementById('shortEntryFilter'),
+  entryStatusSort: document.getElementById('entryStatusSort'),
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
@@ -5293,6 +5330,8 @@ function getValueForKey(r, key) {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.stageRank, 0);
     }
+    case 'longEntryStatus': return getEntryStatusRank(r, 'long');
+    case 'shortEntryStatus': return getEntryStatusRank(r, 'short');
     default: return 0;
   }
 }
@@ -5407,6 +5446,104 @@ function traderBiasMatches(r, code){
   return true;
 }
 
+/* ---------- Entry-status intelligence ----------
+   These helpers mirror the conditions printed in Trader Decision. They are
+   deliberately status-based: filters never guess from bias alone. */
+function getEntryStatusSnapshot(r){
+  const item=r||{};
+  const rec=getFinalRecommendation(item);
+  const checks=item.accumChecks||[];
+  const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
+  const a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
+  const rsi4h=Number(item.rsi4h||0);
+  const vol=Number(item.volSpike4||0);
+  const phase=String(item.phase?.phase||item.phase||'Unknown');
+  const phaseLc=phase.toLowerCase();
+  const reasons=(item.phase?.reasons||[]).map(String);
+  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
+  const distribution=/distribution|breakdown/i.test(phaseLc);
+  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!item.returnToNormal?.isReturn;
+  const accumulationPhase=/accumulation|re-accumulation/i.test(phaseLc);
+  const strongHTF=a4h>=60 && a1d>=55;
+  const structureBear=hasLowerHigh || distribution;
+  const overheated=rsi4h>=80;
+  const ema200=item.correctionGuide?.ema200Stretch15;
+  const correctionConfirmed=!!(rec.confirmed || (ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
+  const drop=Math.abs(Number(item.dropPctFromPeak||0));
+  const rtnScore=Number(item.returnToNormal?.score||0);
+  const postCorrection=correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const lr=Number(item.liquidity?.score||0);
+  const liqEvent=String(item.liquidity?.event||'').toUpperCase();
+  const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
+  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP');
+  const shortConditional=hasLowerHigh || structureBear || lr>=60;
+
+  // Priority mirrors Trader Decision's branch order closely enough that the
+  // filter follows the displayed entry condition rather than raw bias.
+  if(postCorrection){
+    const recoveryConfirmed=(strongHTF && hasHigherLow && !overheated);
+    if(liqUpsideSweep){
+      return {
+        long: hasHigherLow ? 'CONDITIONAL' : 'NOT_READY',
+        short: (hasLowerHigh || lr>=60) ? 'LOWER_HIGH' : 'WAIT',
+        longLabel: hasHigherLow ? '🟡 Conditional — higher-low + liquidity reclaim' : '❌ Not yet',
+        shortLabel: (hasLowerHigh || lr>=60) ? '🟠 Conditional — failed reclaim / lower-high' : '⏸ Wait'
+      };
+    }
+    if(liqDownsideSweep){
+      return {
+        long:'CONDITIONAL',
+        short: lr>=60 ? 'ACCEPTANCE' : 'WAIT',
+        longLabel:'🟡 Conditional — reclaim + higher-low',
+        shortLabel:lr>=60?'🟠 Conditional — acceptance + lower-high':'⏸ Wait'
+      };
+    }
+    return {
+      long: recoveryConfirmed ? 'CONFIRMED' : 'NOT_READY',
+      short: (Number(item.lowerHighCount||0)>0 || hasLowerHigh || Number(item.downsideStructureScore||0)>=35) ? 'LOWER_HIGH' : 'WAIT',
+      longLabel: recoveryConfirmed ? '🟢 Staged recovery entry' : '❌ Not yet',
+      shortLabel: (hasLowerHigh || shortConditional) ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait'
+    };
+  }
+  if(correctionConfirmed){
+    return {
+      long:(strongHTF && hasHigherLow)?'STAGED':'WAIT',
+      short:structureBear?'REJECTION':'WAIT',
+      longLabel:(strongHTF&&hasHigherLow)?'🟡 Recovery long — staged only':'❌ Wait — correction active',
+      shortLabel:structureBear?'🟠 Conditional — rejection / failed bounce':'⏸ Wait'
+    };
+  }
+  if(overheated && (distribution || Number(item.preCrash?.score||0)>=6)){
+    return {long:'DONT_CHASE', short:'REJECTION', longLabel:'❌ Don’t chase', shortLabel:'🟠 Wait for rejection / failed bounce'};
+  }
+  if(strongHTF && hasHigherLow && !distribution && !overheated){
+    return {long:'CONFIRMED', short:'WAIT', longLabel:'🟢 Confirmed structure — staged', shortLabel:'⏸ Wait / low priority'};
+  }
+  if(recovery){
+    return {long:'STAGED', short:hasLowerHigh?'LOWER_HIGH':'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:hasLowerHigh?'🟠 Conditional — failed bounce / lower-high':'⏸ Wait'};
+  }
+  if(distribution || structureBear){
+    return {long:'WAIT', short:'REJECTION', longLabel:'❌ Wait — structure weak', shortLabel:'⚠️ Conditional — rejection first'};
+  }
+  return {long:'STAGED', short:'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:'⏸ Wait for structure'};
+}
+
+function getEntryStatusRank(r, side){
+  const s=getEntryStatusSnapshot(r);
+  const code=side==='short'?s.short:s.long;
+  const ranks={WAIT:10,NOT_READY:20,DONT_CHASE:30,STAGED:50,CONDITIONAL:65,REJECTION:65,LOWER_HIGH:80,ACCEPTANCE:85,CONFIRMED:100};
+  return ranks[code]||0;
+}
+
+function entryStatusMatches(r, side, code){
+  if(code==='ALL') return true;
+  const s=getEntryStatusSnapshot(r);
+  if(side==='long') return s.long===code;
+  if(code==='CONDITIONAL') return ['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE'].includes(s.short);
+  return s.short===code;
+}
+
 function filterResultsForDist(results) {
   // When Favorites mode is active, include the persistent favorite snapshots
   // in addition to the current scan. This makes favorites discoverable even
@@ -5435,6 +5572,16 @@ function filterResultsForDist(results) {
   const biasFilter = el.biasFilter ? el.biasFilter.value : 'ALL';
   if (biasFilter !== 'ALL') {
     filtered = filtered.filter(r => traderBiasMatches(r, biasFilter));
+  }
+
+  const longEntryFilter = el.longEntryFilter ? el.longEntryFilter.value : 'ALL';
+  if (longEntryFilter !== 'ALL') {
+    filtered = filtered.filter(r => entryStatusMatches(r, 'long', longEntryFilter));
+  }
+
+  const shortEntryFilter = el.shortEntryFilter ? el.shortEntryFilter.value : 'ALL';
+  if (shortEntryFilter !== 'ALL') {
+    filtered = filtered.filter(r => entryStatusMatches(r, 'short', shortEntryFilter));
   }
 
   const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
@@ -5831,6 +5978,20 @@ if (el.correctionFilter) {
 }
 if (el.biasFilter) {
   el.biasFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.longEntryFilter) {
+  el.longEntryFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.shortEntryFilter) {
+  el.shortEntryFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.entryStatusSort) {
+  el.entryStatusSort.addEventListener('change', () => {
+    const v=el.entryStatusSort.value;
+    if(v==='LONG_DESC'){ el.sortBy.value='longEntryStatus'; sortDesc=true; if(el.sortDir) el.sortDir.innerText='Desc'; }
+    else if(v==='SHORT_DESC'){ el.sortBy.value='shortEntryStatus'; sortDesc=true; if(el.sortDir) el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
 }
 if (el.fundingFilter) {
   el.fundingFilter.addEventListener('change', () => renderActiveView(true));
@@ -7701,7 +7862,7 @@ function commitMarketScanResults(nextResults){
   const activeFilterState = (() => {
     try {
       const ids = [
-        'correctionFilter','biasFilter','fundingFilter','marketExhaustionFilter',
+        'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','fundingFilter','marketExhaustionFilter',
         'hvdFilter','rsi15SessionFilter','liquidityFilter','bearishStructureFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
