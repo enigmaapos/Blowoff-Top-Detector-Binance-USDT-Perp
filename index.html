@@ -1626,11 +1626,26 @@ function detectLiquidityIntelligence(r){
   return {score,state,event,interpretation,above:above.slice(0,3),below:below.slice(0,3),nearestAbove:nearestA,nearestBelow:nearestB};
 }
 
+function getLiquidityDisplayFilter(){
+  const v=document.getElementById('liquidityFilter')?.value || 'ALL';
+  return String(v).toUpperCase();
+}
 function renderLiquidityIntelligence(r){
   const d=r?.liquidity || detectLiquidityIntelligence(r||{});
+  const filter=getLiquidityDisplayFilter();
   const fmt=x=>x?`${x.type} • ${x.tf} • ${x.distancePct>=0?'+':''}${x.distancePct.toFixed(2)}% • Strength ${x.strength}/100 • ${x.count} hit${x.count===1?'':'s'}`:'No mapped pool';
   const stateClass=/REJECTION/i.test(String(d.state||''))?'liqRejected':/ACCEPTANCE/i.test(String(d.state||''))?'liqAccepted':/PENDING/i.test(String(d.state||''))?'liqPending':/APPROACHING/i.test(String(d.state||''))?'liqApproaching':'';
-  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent ${stateClass}">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
+  // Direction filters are also display filters: when the user selects UPSIDE,
+  // do not show the opposite-side liquidity in the card. This keeps the visual
+  // result consistent with the selected scanner filter.
+  const showAbove=filter!=='DOWNSIDE';
+  const showBelow=filter!=='UPSIDE';
+  const cols=(showAbove?1:0)+(showBelow?1:0);
+  const gridStyle=cols===1?'grid-template-columns:1fr;':'';
+  const aboveHtml=showAbove?`<div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div>`:'';
+  const belowHtml=showBelow?`<div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div>`:'';
+  const filterNote=filter==='UPSIDE'?' • Showing upside liquidity only':filter==='DOWNSIDE'?' • Showing downside liquidity only':'';
+  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP${filterNote}</span><span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span></div><div class="liqGrid" style="${gridStyle}">${aboveHtml}${belowHtml}</div><div class="liqEvent ${stateClass}">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
 }
 
 function renderTrendExhaustionState(r){
@@ -6209,8 +6224,10 @@ function renderTraderDecisionBlock(r, compact=false){
   const liqDecisionToneLabel=liqDecisionTone==='rejected'?'🔴 REJECTION':liqDecisionTone==='accepted'?'🟢 ACCEPTANCE':liqDecisionTone==='pending'?'🟡 OUTCOME PENDING':liqDecisionTone==='approaching'?'🟠 APPROACHING':'';
   const liqAbove=liq?.nearestAbove;
   const liqBelow=liq?.nearestBelow;
+  const liqDisplayFilter=getLiquidityDisplayFilter();
   const liqAboveTxt=liqAbove ? `Above ${Number(liqAbove.distancePct)>=0?'+':''}${Number(liqAbove.distancePct).toFixed(2)}% • ${liqAbove.type} • ${liqAbove.tf} • ${liqAbove.strength}/100` : 'No mapped upside pool';
   const liqBelowTxt=liqBelow ? `Below ${Number(liqBelow.distancePct)>=0?'+':''}${Number(liqBelow.distancePct).toFixed(2)}% • ${liqBelow.type} • ${liqBelow.tf} • ${liqBelow.strength}/100` : 'No mapped downside pool';
+  const liqContextTxt=liqDisplayFilter==='UPSIDE' ? liqAboveTxt : liqDisplayFilter==='DOWNSIDE' ? liqBelowTxt : `${liqAboveTxt}<br>${liqBelowTxt}`;
   let liquidityDecision='No dominant liquidity event is active; use nearby pools as reaction/target zones rather than standalone trade signals.';
   if(/UPSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent)) liquidityDecision='Upside liquidity sweep rejected: bearish reversal risk is elevated; wait for lower-high/structure confirmation before shorting.';
   else if(/UPSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent)) liquidityDecision='Upside liquidity sweep accepted: continuation is favored while price holds above the pool; do not fade the breakout without rejection.';
@@ -6419,7 +6436,7 @@ function renderTraderDecisionBlock(r, compact=false){
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
-    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqAboveTxt}<br>${liqBelowTxt}</span><br><span class="small">${liquidityDecision}</span></div>
+    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
@@ -6664,7 +6681,9 @@ function chartLevelCandidates(r){
   // drawn as contextual zones and do not alter the EMA200 correction layer.
   try{
     const l=r?.liquidity || (typeof detectLiquidityIntelligence==='function'?detectLiquidityIntelligence(r):{});
-    [...(l?.above||[]),...(l?.below||[])].slice(0,6).forEach((x,i)=>{
+    const df=getLiquidityDisplayFilter();
+    const pools=df==='UPSIDE' ? (l?.above||[]) : df==='DOWNSIDE' ? (l?.below||[]) : [...(l?.above||[]),...(l?.below||[])];
+    pools.slice(0,6).forEach((x,i)=>{
       if(x?.price) levels.push({name:`💧 ${x.type||'Liquidity'} ${x.tf||''}`,value:Number(x.price),type:Number(x.price)>=Number(r.closeNow)?'liqAbove':'liqBelow',strength:Number(x.strength||0),distancePct:Number(x.distancePct||0)});
     });
   }catch(e){}
@@ -6860,7 +6879,7 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span style="color:#ffe38a">💧 Upside liquidity</span><span style="color:#ff6675">💧 Downside liquidity</span><span>— Current price</span></div>
+          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span>${getLiquidityDisplayFilter()==='DOWNSIDE'?'': '<span style="color:#ffe38a">💧 Upside liquidity</span>'}${getLiquidityDisplayFilter()==='UPSIDE'?'': '<span style="color:#ff6675">💧 Downside liquidity</span>'}<span>— Current price</span></div>
           <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
 
