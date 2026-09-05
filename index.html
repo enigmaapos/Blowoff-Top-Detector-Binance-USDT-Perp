@@ -1645,7 +1645,25 @@ function renderLiquidityIntelligence(r){
   const aboveHtml=showAbove?`<div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div>`:'';
   const belowHtml=showBelow?`<div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div>`:'';
   const filterNote=filter==='UPSIDE'?' • Showing upside liquidity only':filter==='DOWNSIDE'?' • Showing downside liquidity only':'';
-  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP${filterNote}</span><span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span></div><div class="liqGrid" style="${gridStyle}">${aboveHtml}${belowHtml}</div><div class="liqEvent ${stateClass}">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
+  const selectedStrength = filter==='UPSIDE'
+    ? Number(d.nearestAbove?.strength||0)
+    : filter==='DOWNSIDE'
+      ? Number(d.nearestBelow?.strength||0)
+      : Number(d.score||0);
+  const strengthLabel = filter==='UPSIDE' ? 'Upside Strength'
+    : filter==='DOWNSIDE' ? 'Downside Strength'
+    : 'Liquidity Strength';
+
+  return `<div class="liqPanel">
+    <div class="liqHead">
+      <span>💧 LIQUIDITY MAP${filterNote}</span>
+      <span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span>
+    </div>
+    <div class="liqGrid" style="${gridStyle}">${aboveHtml}${belowHtml}</div>
+    <div class="liqEvent ${stateClass}">⚡ ${mspEscape(d.event||'NONE')}</div>
+    <div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div>
+    <div class="small" style="margin-top:6px"><strong>${mspEscape(strengthLabel)}:</strong> ${selectedStrength}/100</div>
+  </div>`;
 }
 
 function renderTrendExhaustionState(r){
@@ -5221,8 +5239,18 @@ function sortResults(results) {
   const key = (el.sortBy && el.sortBy.value) ? el.sortBy.value : 'score';
 
   results.sort((a, b) => {
-    const Araw = getValueForKey(a, key);
-    const Braw = getValueForKey(b, key);
+    let Araw = getValueForKey(a, key);
+    let Braw = getValueForKey(b, key);
+
+    // Directional liquidity filters rank the SAME side shown by the liquidity map.
+    const activeLiqFilter = el.liquidityFilter ? el.liquidityFilter.value : 'ALL';
+    if(key === 'liquidityStrength' && (activeLiqFilter === 'UPSIDE' || activeLiqFilter === 'DOWNSIDE')){
+      const side = activeLiqFilter === 'UPSIDE' ? 'nearestAbove' : 'nearestBelow';
+      const la = a?.liquidity || detectLiquidityIntelligence(a || {});
+      const lb = b?.liquidity || detectLiquidityIntelligence(b || {});
+      Araw = Number(la?.[side]?.strength ?? -Infinity);
+      Braw = Number(lb?.[side]?.strength ?? -Infinity);
+    }
     const A = normalizeVal(Araw);
     const B = normalizeVal(Braw);
 
@@ -5415,15 +5443,15 @@ function filterResultsForDist(results) {
       const hasBelow = !!below && Number.isFinite(Number(below?.price));
       const swept = event.includes('LIQUIDITY SWEEP') || state.includes('LIQUIDITY SWEPT');
 
+      // Direction filters are tied directly to the mapped pool displayed in the card.
+      // No hidden >=50 side-strength threshold is applied.
       switch(liquidityFilter){
         case 'STRENGTH_60': return score >= 60;
         case 'STRENGTH_75': return score >= 75;
         case 'APPROACHING': return state === 'APPROACHING' || event.includes('APPROACHING LIQUIDITY');
         case 'SWEEP': return swept;
-        // Direction filters mean a real mapped pool exists on that side,
-        // regardless of whether it is currently the active event.
-        case 'UPSIDE': return hasAbove && aboveStrength >= 50 || event.includes('UPSIDE LIQUIDITY');
-        case 'DOWNSIDE': return hasBelow && belowStrength >= 50 || event.includes('DOWNSIDE LIQUIDITY');
+        case 'UPSIDE': return hasAbove;
+        case 'DOWNSIDE': return hasBelow;
         default: return true;
       }
     });
@@ -5726,15 +5754,21 @@ if (el.hvdFilter) {
 if (el.liquidityFilter) {
   el.liquidityFilter.addEventListener('change', () => {
     const v=el.liquidityFilter.value;
-    // Selecting a liquidity filter should immediately rank the matching set
-    // by the most relevant liquidity metric, instead of leaving an unrelated
-    // global sort active.
+
+    // Filter + sort use one explicit liquidity contract.
+    // APPROACHING sorts closest-first; all other liquidity ranks sort strongest-first.
     if(el.sortBy && v !== 'ALL'){
-      if(v === 'STRENGTH_60' || v === 'STRENGTH_75' || v === 'UPSIDE' || v === 'DOWNSIDE') el.sortBy.value='liquidityStrength';
-      else if(v === 'APPROACHING') el.sortBy.value='liquidityDistance';
-      else if(v === 'SWEEP') el.sortBy.value='liquidityEvent';
-      sortDesc=true;
-      if(el.sortDir) el.sortDir.innerText='Desc';
+      if(v === 'STRENGTH_60' || v === 'STRENGTH_75' || v === 'UPSIDE' || v === 'DOWNSIDE'){
+        el.sortBy.value='liquidityStrength';
+        sortDesc=true;
+      }else if(v === 'APPROACHING'){
+        el.sortBy.value='liquidityDistance';
+        sortDesc=false;
+      }else if(v === 'SWEEP'){
+        el.sortBy.value='liquidityEvent';
+        sortDesc=true;
+      }
+      if(el.sortDir) el.sortDir.innerText=sortDesc ? 'Desc' : 'Asc';
     }
     renderActiveView(true);
   });
