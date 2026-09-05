@@ -1595,10 +1595,31 @@ function detectLiquidityIntelligence(r){
   const nearestA=above[0]||null, nearestB=below[0]||null;
   let event='NONE', state='BALANCED', interpretation='No nearby high-quality liquidity event detected.';
   const upper=nearestA&&nearestA.distancePct<=2.0, lower=nearestB&&Math.abs(nearestB.distancePct)<=2.0;
-  const sweptHigh=Array.isArray(r.k4h)&&r.k4h.length>3&&nearestA&&Math.max(...r.k4h.slice(-4).map(k=>Number(k[2])).filter(Number.isFinite))>nearestA.price*1.001;
-  const sweptLow=Array.isArray(r.k4h)&&r.k4h.length>3&&nearestB&&Math.min(...r.k4h.slice(-4).map(k=>Number(k[3])).filter(Number.isFinite))<nearestB.price*0.999;
-  if(sweptHigh){ event='UPSIDE LIQUIDITY SWEEP'; state='SWEEP WATCH'; interpretation='Upside liquidity has been traded through; look for rejection versus acceptance/retest before calling reversal.'; }
-  else if(sweptLow){ event='DOWNSIDE LIQUIDITY SWEEP'; state='SWEEP WATCH'; interpretation='Downside liquidity has been traded through; look for rejection versus acceptance/retest before calling reversal.'; }
+  const recent4h=Array.isArray(r.k4h)?r.k4h.slice(-4):[];
+  const finite4h=recent4h.filter(k=>Array.isArray(k)&&[1,2,3,4].every(i=>Number.isFinite(Number(k[i]))));
+  const sweptHigh=finite4h.length>0&&nearestA&&Math.max(...finite4h.map(k=>Number(k[2])))>nearestA.price*1.001;
+  const sweptLow=finite4h.length>0&&nearestB&&Math.min(...finite4h.map(k=>Number(k[3])))<nearestB.price*0.999;
+  const last4h=finite4h[finite4h.length-1]||null;
+  const prev4h=finite4h[finite4h.length-2]||null;
+  const classifySweep=(side,level)=>{
+    if(!last4h||!level) return {state:'LIQUIDITY SWEPT — OUTCOME PENDING',suffix:'OUTCOME PENDING',interpretation:side==='up'?'Upside liquidity was swept, but rejection versus acceptance is not confirmed yet. Wait for a close back below the pool or sustained acceptance/retest above it.':'Downside liquidity was swept, but rejection versus acceptance is not confirmed yet. Wait for a reclaim/close back above the pool or sustained acceptance below it.'};
+    const o=Number(last4h[1]), h=Number(last4h[2]), l=Number(last4h[3]), c=Number(last4h[4]);
+    const range=Math.max(h-l,Number.EPSILON);
+    if(side==='up'){
+      const rejection=c<level.price && (h-level.price)/range>=0.15;
+      const acceptance=c>level.price*1.001 && (!prev4h || Number(prev4h[4])>level.price*0.999);
+      if(rejection) return {state:'LIQUIDITY SWEPT — REJECTION',suffix:'REJECTION',interpretation:'Upside liquidity was swept and price closed back below the pool. Rejection favors a reversal setup; acceptance/retest above the pool would invalidate that bearish read.'};
+      if(acceptance) return {state:'LIQUIDITY SWEPT — ACCEPTANCE',suffix:'ACCEPTANCE',interpretation:'Upside liquidity was swept and price is holding above the pool. Acceptance/retest supports continuation rather than an automatic reversal.'};
+    }else{
+      const rejection=c>level.price && (level.price-l)/range>=0.15;
+      const acceptance=c<level.price*0.999 && (!prev4h || Number(prev4h[4])<level.price*1.001);
+      if(rejection) return {state:'LIQUIDITY SWEPT — REJECTION',suffix:'REJECTION',interpretation:'Downside liquidity was swept and price closed back above the pool. Reclaim/rejection favors a recovery or reversal setup; acceptance below the pool would strengthen downside continuation.'};
+      if(acceptance) return {state:'LIQUIDITY SWEPT — ACCEPTANCE',suffix:'ACCEPTANCE',interpretation:'Downside liquidity was swept and price is holding below the pool. Acceptance supports downside continuation rather than an automatic long.'};
+    }
+    return {state:'LIQUIDITY SWEPT — OUTCOME PENDING',suffix:'OUTCOME PENDING',interpretation:side==='up'?'Upside liquidity was swept, but rejection versus acceptance is not confirmed yet. Wait for a close back below the pool or sustained acceptance/retest above it.':'Downside liquidity was swept, but rejection versus acceptance is not confirmed yet. Wait for a reclaim/close back above the pool or sustained acceptance below it.'};
+  };
+  if(sweptHigh){ const x=classifySweep('up',nearestA); event=`UPSIDE LIQUIDITY SWEEP — ${x.suffix}`; state=x.state; interpretation=x.interpretation; }
+  else if(sweptLow){ const x=classifySweep('down',nearestB); event=`DOWNSIDE LIQUIDITY SWEEP — ${x.suffix}`; state=x.state; interpretation=x.interpretation; }
   else if(upper&&nearestA.strength>=60){ event='APPROACHING UPSIDE LIQUIDITY'; state='APPROACHING'; interpretation='Price is close to a meaningful upside liquidity pool; breakout acceptance or rejection is the next decision point.'; }
   else if(lower&&nearestB.strength>=60){ event='APPROACHING DOWNSIDE LIQUIDITY'; state='APPROACHING'; interpretation='Price is close to a meaningful downside liquidity pool; rejection or continued acceptance below support is the next decision point.'; }
   const score=Math.max(nearestA?.strength||0,nearestB?.strength||0);
@@ -1608,7 +1629,8 @@ function detectLiquidityIntelligence(r){
 function renderLiquidityIntelligence(r){
   const d=r?.liquidity || detectLiquidityIntelligence(r||{});
   const fmt=x=>x?`${x.type} • ${x.tf} • ${x.distancePct>=0?'+':''}${x.distancePct.toFixed(2)}% • Strength ${x.strength}/100 • ${x.count} hit${x.count===1?'':'s'}`:'No mapped pool';
-  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
+  const stateClass=/REJECTION/i.test(String(d.state||''))?'liqRejected':/ACCEPTANCE/i.test(String(d.state||''))?'liqAccepted':/PENDING/i.test(String(d.state||''))?'liqPending':/APPROACHING/i.test(String(d.state||''))?'liqApproaching':'';
+  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
 }
 
 function renderTrendExhaustionState(r){
@@ -7933,7 +7955,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 <style id="liquidity-intelligence-style">
 .liqPanel{margin-top:10px;padding:10px 12px;border:1px solid rgba(126,220,255,.18);border-radius:10px;background:rgba(126,220,255,.035)}
-.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqAbove strong{color:#ffd966}.liqBelow strong{color:#ff5c6c}.liqBelow{border:1px solid rgba(255,92,108,.18);background:rgba(255,92,108,.045)}.liqAbove{border:1px solid rgba(255,217,102,.16);background:rgba(255,217,102,.035)}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
+.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqBadge.liqRejected{background:rgba(255,92,92,.12);border:1px solid rgba(255,92,92,.25);color:#ff9b9b}.liqBadge.liqAccepted{background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.25);color:#8ff4e0}.liqBadge.liqPending{background:rgba(255,217,102,.10);border:1px solid rgba(255,217,102,.22);color:#ffd966}.liqBadge.liqApproaching{background:rgba(255,159,67,.10);border:1px solid rgba(255,159,67,.22);color:#ffc080}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqAbove strong{color:#ffd966}.liqBelow strong{color:#ff5c6c}.liqBelow{border:1px solid rgba(255,92,108,.18);background:rgba(255,92,108,.045)}.liqAbove{border:1px solid rgba(255,217,102,.16);background:rgba(255,217,102,.035)}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
 </style>
 <script>
 // Professional terminology/state guidance layer. This supplements the existing scanner calculations.
