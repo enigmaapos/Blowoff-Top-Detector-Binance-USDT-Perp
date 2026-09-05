@@ -5153,14 +5153,39 @@ function getValueForKey(r, key) {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.confidence, getNumeric(b.score, 0));
     }
-    case 'liquidityStrength': return getNumeric(r.liquidity?.score, 0);
-    case 'liquidityDistance': {
-      const a=Math.abs(getNumeric(r.liquidity?.nearestAbove?.distancePct, Infinity));
-      const b=Math.abs(getNumeric(r.liquidity?.nearestBelow?.distancePct, Infinity));
-      return Math.min(a,b);
+    // Liquidity sorting uses the same normalized intelligence object shown in the UI.
+    // Strength = strongest mapped pool; Distance = nearest mapped pool.
+    case 'liquidityStrength': {
+      const l=r?.liquidity || detectLiquidityIntelligence(r||{});
+      return getNumeric(l?.score, Math.max(getNumeric(l?.nearestAbove?.strength,0), getNumeric(l?.nearestBelow?.strength,0)));
     }
-    case 'liquidityEvent': return getText(r.liquidity?.event);
-    case 'liquidityState': return getText(r.liquidity?.state);
+    case 'liquidityDistance': {
+      const l=r?.liquidity || detectLiquidityIntelligence(r||{});
+      const vals=[l?.nearestAbove?.distancePct,l?.nearestBelow?.distancePct]
+        .map(v=>Number(v)).filter(Number.isFinite).map(Math.abs);
+      return vals.length ? Math.min(...vals) : Infinity;
+    }
+    case 'liquidityEvent': {
+      const l=r?.liquidity || detectLiquidityIntelligence(r||{});
+      const e=String(l?.event||'').toUpperCase();
+      // Semantic rank: rejection/acceptance are more informative than pending,
+      // which is more informative than approaching, with NONE last.
+      if(e.includes('REJECTION')) return 4;
+      if(e.includes('ACCEPTANCE')) return 3;
+      if(e.includes('OUTCOME PENDING')) return 2;
+      if(e.includes('SWEEP')) return 2;
+      if(e.includes('APPROACHING')) return 1;
+      return 0;
+    }
+    case 'liquidityState': {
+      const l=r?.liquidity || detectLiquidityIntelligence(r||{});
+      const st=String(l?.state||'').toUpperCase();
+      if(st.includes('REJECTION')) return 4;
+      if(st.includes('ACCEPTANCE')) return 3;
+      if(st.includes('PENDING')) return 2;
+      if(st.includes('APPROACHING')) return 1;
+      return 0;
+    }
     case 'smcStageRank': {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.stageRank, 0);
@@ -5357,23 +5382,35 @@ function filterResultsForDist(results) {
     });
   }
 
-  // Dedicated Liquidity Intelligence filter. Liquidity is contextual and
-  // never overrides the authoritative 15m EMA200 correction layer.
+  // Dedicated Liquidity Intelligence filter.
+  // IMPORTANT: filters operate on the exact same liquidity object/metrics used
+  // by Trader Decision and the Liquidity Map. They never alter EMA200 correction.
   const liquidityFilter = el.liquidityFilter ? el.liquidityFilter.value : 'ALL';
   if (liquidityFilter !== 'ALL') {
     filtered = filtered.filter(r => {
       const l = r?.liquidity || detectLiquidityIntelligence(r || {});
       const score = Number(l?.score || 0);
+      const state = String(l?.state || '').toUpperCase();
       const event = String(l?.event || '').toUpperCase();
-      const above = Number(l?.nearestAbove?.strength || 0);
-      const below = Number(l?.nearestBelow?.strength || 0);
-      if (liquidityFilter === 'STRENGTH_60') return score >= 60;
-      if (liquidityFilter === 'STRENGTH_75') return score >= 75;
-      if (liquidityFilter === 'APPROACHING') return String(l?.state || '').toUpperCase() === 'APPROACHING';
-      if (liquidityFilter === 'SWEEP') return event.includes('LIQUIDITY SWEEP');
-      if (liquidityFilter === 'UPSIDE') return above >= 50 || event.includes('UPSIDE LIQUIDITY');
-      if (liquidityFilter === 'DOWNSIDE') return below >= 50 || event.includes('DOWNSIDE LIQUIDITY');
-      return true;
+      const above = l?.nearestAbove || null;
+      const below = l?.nearestBelow || null;
+      const aboveStrength = Number(above?.strength || 0);
+      const belowStrength = Number(below?.strength || 0);
+      const hasAbove = !!above && Number.isFinite(Number(above?.price));
+      const hasBelow = !!below && Number.isFinite(Number(below?.price));
+      const swept = event.includes('LIQUIDITY SWEEP') || state.includes('LIQUIDITY SWEPT');
+
+      switch(liquidityFilter){
+        case 'STRENGTH_60': return score >= 60;
+        case 'STRENGTH_75': return score >= 75;
+        case 'APPROACHING': return state === 'APPROACHING' || event.includes('APPROACHING LIQUIDITY');
+        case 'SWEEP': return swept;
+        // Direction filters mean a real mapped pool exists on that side,
+        // regardless of whether it is currently the active event.
+        case 'UPSIDE': return hasAbove && aboveStrength >= 50 || event.includes('UPSIDE LIQUIDITY');
+        case 'DOWNSIDE': return hasBelow && belowStrength >= 50 || event.includes('DOWNSIDE LIQUIDITY');
+        default: return true;
+      }
     });
   }
 
@@ -5672,7 +5709,20 @@ if (el.hvdFilter) {
   el.hvdFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.liquidityFilter) {
-  el.liquidityFilter.addEventListener('change', () => renderActiveView(true));
+  el.liquidityFilter.addEventListener('change', () => {
+    const v=el.liquidityFilter.value;
+    // Selecting a liquidity filter should immediately rank the matching set
+    // by the most relevant liquidity metric, instead of leaving an unrelated
+    // global sort active.
+    if(el.sortBy && v !== 'ALL'){
+      if(v === 'STRENGTH_60' || v === 'STRENGTH_75' || v === 'UPSIDE' || v === 'DOWNSIDE') el.sortBy.value='liquidityStrength';
+      else if(v === 'APPROACHING') el.sortBy.value='liquidityDistance';
+      else if(v === 'SWEEP') el.sortBy.value='liquidityEvent';
+      sortDesc=true;
+      if(el.sortDir) el.sortDir.innerText='Desc';
+    }
+    renderActiveView(true);
+  });
 }
 if (el.bearishStructureFilter) {
   el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
