@@ -6174,6 +6174,42 @@ function renderTraderDecisionBlock(r, compact=false){
     (rsi4h<45?5:0) +
     (drop>=15 && !recovery?10:0)
   )));
+  // Liquidity is a decision modifier, not a replacement for the authoritative EMA200 correction layer.
+  const liqStrength=Number(liqScore)||0;
+  const liqAboveDist=liqAbove?Math.abs(Number(liqAbove.distancePct)||999):999;
+  const liqBelowDist=liqBelow?Math.abs(Number(liqBelow.distancePct)||999):999;
+  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP');
+  const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
+  const liqApproachUp=liqEvent.includes('APPROACHING UPSIDE');
+  const liqApproachDown=liqEvent.includes('APPROACHING DOWNSIDE');
+  const liqStrongAbove=!!liqAbove && liqAbove.strength>=60;
+  const liqStrongBelow=!!liqBelow && liqBelow.strength>=60;
+  const liqNearAbove=liqStrongAbove && liqAboveDist<=1.5;
+  const liqNearBelow=liqStrongBelow && liqBelowDist<=1.5;
+
+  // Event-aware contribution: sweeps affect the *next action* differently from raw pool strength.
+  // A sweep is deliberately kept conditional until rejection/acceptance is confirmed.
+  let liquidityRecoveryAdj=0, liquidityDownsideAdj=0, liquidityConfidenceAdj=0;
+  if(liqUpsideSweep){
+    liquidityRecoveryAdj += (liqStrength>=75?8:5);
+    liquidityConfidenceAdj += 4;
+    if(liqNearAbove) liquidityRecoveryAdj += 3;
+  }
+  if(liqDownsideSweep){
+    liquidityRecoveryAdj += (liqStrength>=75?7:4);
+    liquidityDownsideAdj += (liqStrength>=75?8:5);
+    liquidityConfidenceAdj += 4;
+  }
+  if(liqApproachUp && liqNearAbove) liquidityDownsideAdj += 3;
+  if(liqApproachDown && liqNearBelow) liquidityDownsideAdj += 4;
+  if(liqStrongBelow && liqBelowDist<=0.75) liquidityDownsideAdj += 4;
+  if(liqStrongAbove && liqAboveDist<=0.75) liquidityConfidenceAdj += 2;
+
+  const rawRecoveryScore=recoveryScore;
+  const rawDownsideScore=downsideScore;
+  const liquidityRecoveryScore=Math.max(0,Math.min(100,Math.round(rawRecoveryScore+liquidityRecoveryAdj)));
+  const liquidityDownsideScore=Math.max(0,Math.min(100,Math.round(rawDownsideScore+liquidityDownsideAdj)));
+
   const correctionCompletion=Math.max(0,Math.min(100,Math.round(
     correctionEvidence +
     (postCorrection?25:0) +
@@ -6186,12 +6222,12 @@ function renderTraderDecisionBlock(r, compact=false){
   let decisionScore=0, currentState='';
 
   if(postCorrection){
-    currentState = recoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 RECOVERY DEVELOPING' : '🟣 POST-CORRECTION / RETURN-TO-NORMAL';
+    currentState = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 RECOVERY DEVELOPING' : '🟣 POST-CORRECTION / RETURN-TO-NORMAL';
     bias = recoveryScore>=70 && strongHTF ? 'Neutral / Recovery Improving' : 'Neutral / Cautious Bearish';
-    longEntry = recoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
+    longEntry = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
     shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high rejection' : '⏸ Wait for downside structure';
-    readiness = recoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
-    bestAction = recoveryScore>=70 && strongHTF && hasHigherLow
+    readiness = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
+    bestAction = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow
       ? 'The major correction has already occurred and recovery structure is developing. Favor staged entries on higher-lows; add only while 4H/1D accumulation and volume continue to improve.'
       : 'The major correction has already occurred. Do not chase the decline and do not wait for another correction. The market is now in a post-correction stabilization/recovery phase; wait for a higher-low and improving 4H/1D accumulation before treating it as a confirmed recovery entry.';
     if(!hasHigherLow) missing.push('confirmed higher-low');
@@ -6201,6 +6237,20 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('new lower-low');
     invalid.push('renewed EMA200 loss / support failure');
     if(hasLowerHigh) invalid.push('failed bounce followed by lower-high');
+    // Liquidity-aware action layer: modify the recommendation only when the event has enough quality/distance to matter.
+  if(postCorrection && liqUpsideSweep){
+    bestAction='The major correction has already occurred and upside liquidity has been swept. Do not chase the move. Watch whether price rejects back below the swept pool or accepts/retests above it; the nearby downside liquidity pool is the next key reaction zone.';
+    shortEntry=(hasLowerHigh||liquidityDownsideScore>=60)?'🟠 Conditional — only on failed reclaim / lower-high rejection':'⏸ Wait for sweep outcome';
+    longEntry=hasHigherLow?'🟡 Conditional — higher-low plus reclaim/acceptance above swept liquidity':'❌ Not yet — recovery and liquidity acceptance not confirmed';
+    missing.unshift('sweep outcome: rejection vs acceptance/retest');
+  } else if(postCorrection && liqDownsideSweep){
+    bestAction='Downside liquidity has been swept. Do not automatically short or long: a reclaim/rejection of the swept pool favors recovery, while acceptance below it increases downside-continuation risk.';
+    longEntry='🟡 Conditional — reclaim of swept downside liquidity + higher-low';
+    shortEntry=liquidityDownsideScore>=60?'🟠 Conditional — acceptance below swept liquidity + lower-high':'⏸ Wait for acceptance/rejection';
+    missing.unshift('sweep outcome: reclaim/rejection vs acceptance below');
+  } else if(postCorrection && liqNearBelow){
+    bestAction='Post-correction stabilization remains the base case, but a strong downside liquidity pool is very close. Treat that pool as the next decision level: rejection/reclaim supports recovery; acceptance below raises downside-continuation risk.';
+  }
     decisionScore=Math.round(Math.max(35,Math.min(96,45 + recoveryScore*0.35 - downsideScore*0.15 + (postCorrection?10:0))));
   } else if(correctionConfirmed){
     currentState='🔴 CORRECTION ACTIVE';
@@ -6299,7 +6349,7 @@ function renderTraderDecisionBlock(r, compact=false){
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
     </div>
     <div class="small" style="margin-top:7px;color:var(--muted)">
-      Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${recoveryScore}% • Downside continuation ${downsideScore}%<br>
+      Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
       Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}
     </div>
   </div>`;
