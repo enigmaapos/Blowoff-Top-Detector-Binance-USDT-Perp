@@ -6,7 +6,7 @@
 
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Liquidity Intelligence • Blowoff Scanner • Secure Login</title>
+<title>Blowoff Scanner • Secure Login</title>
 <style>
   :root{
     --bg:#07101a;
@@ -947,6 +947,19 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filter specifically by the accumulation → double-top → neckline → reversal stage.</div>
         </div>
         <div class="controlItem">
+          <label class="controlLabel">💧 Liquidity Intelligence</label>
+          <select id="liquidityFilter">
+            <option value="ALL">All Liquidity</option>
+            <option value="STRENGTH_60">💧 Strong Pool ≥60</option>
+            <option value="STRENGTH_75">💧 Major Pool ≥75</option>
+            <option value="APPROACHING">🟡 Approaching Liquidity</option>
+            <option value="SWEEP">⚡ Liquidity Sweep</option>
+            <option value="UPSIDE">⬆️ Upside Liquidity</option>
+            <option value="DOWNSIDE">⬇️ Downside Liquidity</option>
+          </select>
+          <div class="dashboardHint">Filter by nearby liquidity strength, approach, or sweep event. Context only — never overrides 15m EMA200 correction confirmation.</div>
+        </div>
+        <div class="controlItem">
           <label class="controlLabel">Market Exhaustion</label>
           <select id="marketExhaustionFilter">
             <option value="ALL">All</option>
@@ -1093,6 +1106,7 @@ const el = {
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
   hvdFilter: document.getElementById('hvdFilter'),
+  liquidityFilter: document.getElementById('liquidityFilter'),
   bearishStructureFilter: document.getElementById('bearishStructureFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
   smcDirectionFilter: document.getElementById('smcDirectionFilter')
@@ -5321,6 +5335,26 @@ function filterResultsForDist(results) {
     });
   }
 
+  // Dedicated Liquidity Intelligence filter. Liquidity is contextual and
+  // never overrides the authoritative 15m EMA200 correction layer.
+  const liquidityFilter = el.liquidityFilter ? el.liquidityFilter.value : 'ALL';
+  if (liquidityFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const l = r?.liquidity || detectLiquidityIntelligence(r || {});
+      const score = Number(l?.score || 0);
+      const event = String(l?.event || '').toUpperCase();
+      const above = Number(l?.nearestAbove?.strength || 0);
+      const below = Number(l?.nearestBelow?.strength || 0);
+      if (liquidityFilter === 'STRENGTH_60') return score >= 60;
+      if (liquidityFilter === 'STRENGTH_75') return score >= 75;
+      if (liquidityFilter === 'APPROACHING') return String(l?.state || '').toUpperCase() === 'APPROACHING';
+      if (liquidityFilter === 'SWEEP') return event.includes('LIQUIDITY SWEEP');
+      if (liquidityFilter === 'UPSIDE') return above >= 50 || event.includes('UPSIDE LIQUIDITY');
+      if (liquidityFilter === 'DOWNSIDE') return below >= 50 || event.includes('DOWNSIDE LIQUIDITY');
+      return true;
+    });
+  }
+
   // Dedicated Unified Bearish Structure filter.
   // Threshold semantics: selecting BOS, for example, includes BOS, RETEST,
   // and full BREAKDOWN states. This makes the filter useful for scanning
@@ -5614,6 +5648,9 @@ if (el.marketExhaustionFilter) {
 }
 if (el.hvdFilter) {
   el.hvdFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.liquidityFilter) {
+  el.liquidityFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.bearishStructureFilter) {
   el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
@@ -6092,6 +6129,19 @@ function renderTraderDecisionBlock(r, compact=false){
   const drop=Math.abs(Number(item.dropPctFromPeak||0));
   const rtnScore=Number(returnObj.score||0);
   const correctionConfirmed=!!(rec.confirmed || ema200Lost || /significant correction|correction confirmed/i.test(String(cg.label||'')));
+  const liq=item.liquidity || (typeof detectLiquidityIntelligence==='function' ? detectLiquidityIntelligence(item) : {});
+  const liqScore=Number(liq?.score||0);
+  const liqEvent=String(liq?.event||'NONE');
+  const liqState=String(liq?.state||'—');
+  const liqAbove=liq?.nearestAbove;
+  const liqBelow=liq?.nearestBelow;
+  const liqAboveTxt=liqAbove ? `Above ${Number(liqAbove.distancePct)>=0?'+':''}${Number(liqAbove.distancePct).toFixed(2)}% • ${liqAbove.type} • ${liqAbove.tf} • ${liqAbove.strength}/100` : 'No mapped upside pool';
+  const liqBelowTxt=liqBelow ? `Below ${Number(liqBelow.distancePct)>=0?'+':''}${Number(liqBelow.distancePct).toFixed(2)}% • ${liqBelow.type} • ${liqBelow.tf} • ${liqBelow.strength}/100` : 'No mapped downside pool';
+  let liquidityDecision='No dominant liquidity event is active; use nearby pools as reaction/target zones rather than standalone trade signals.';
+  if(liqEvent.includes('UPSIDE LIQUIDITY SWEEP')) liquidityDecision='Upside liquidity was swept. Do not automatically short: rejection favors a reversal setup, while acceptance/retest above the pool favors continuation.';
+  else if(liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP')) liquidityDecision='Downside liquidity was swept. Do not automatically long: reclaim/rejection favors recovery, while acceptance below the pool favors further downside.';
+  else if(liqEvent.includes('APPROACHING UPSIDE')) liquidityDecision='Price is approaching an upside liquidity pool; treat it as a decision/target zone and wait for breakout acceptance or rejection.';
+  else if(liqEvent.includes('APPROACHING DOWNSIDE')) liquidityDecision='Price is approaching a downside liquidity pool; treat it as a decision/target zone and wait for rejection or acceptance below support.';
   const correctionEvidence=Math.max(
     correctionConfirmed?45:0,
     Math.min(35, drop>=15 ? 35 : drop*2.33),
@@ -6242,6 +6292,7 @@ function renderTraderDecisionBlock(r, compact=false){
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
+    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> ${liqState} • ${liqEvent} • Strength ${liqScore}/100<br><span class="small">${liqAboveTxt}<br>${liqBelowTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
@@ -6482,6 +6533,14 @@ function chartLevelCandidates(r){
     add('S1',lt.s1,'support'); add('S2',lt.s2,'support');
     add('R1',lt.t1,'resistance'); add('R2',lt.t2,'resistance');
   }catch(e){}
+  // Liquidity Intelligence pools from the same scanner result. These are
+  // drawn as contextual zones and do not alter the EMA200 correction layer.
+  try{
+    const l=r?.liquidity || (typeof detectLiquidityIntelligence==='function'?detectLiquidityIntelligence(r):{});
+    [...(l?.above||[]),...(l?.below||[])].slice(0,6).forEach((x,i)=>{
+      if(x?.price) levels.push({name:`💧 ${x.type||'Liquidity'} ${x.tf||''}`,value:Number(x.price),type:Number(x.price)>=Number(r.closeNow)?'liqAbove':'liqBelow',strength:Number(x.strength||0),distancePct:Number(x.distancePct||0)});
+    });
+  }catch(e){}
   // The most useful transition trigger is the primary structural support.
   return levels;
 }
@@ -6553,7 +6612,14 @@ function chartRender(symbol, tf){
   // Scanner structural levels
   levels.forEach(l=>{
     if(l.value<minP||l.value>maxP) return;
-    const y=yFor(l.value); ctx.save(); ctx.setLineDash(l.type==='support'?[5,4]:[3,5]); ctx.lineWidth=1.1; ctx.strokeStyle=l.type==='support'?'rgba(45,212,191,.72)':'rgba(255,159,67,.72)';ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=l.type==='support'?'#9ff4dc':'#ffd0a1';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(l.name+' '+chartFormatPrice(l.value),w-pad.right+5,y-3);ctx.restore();
+    const y=yFor(l.value); const isLiq=String(l.type||'').startsWith('liq');
+    ctx.save();
+    ctx.setLineDash(isLiq?[2,4]:(l.type==='support'?[5,4]:[3,5]));
+    ctx.lineWidth=isLiq?1.5:1.1;
+    ctx.strokeStyle=isLiq ? (l.type==='liqAbove'?'rgba(255,217,102,.82)':'rgba(192,132,252,.82)') : (l.type==='support'?'rgba(45,212,191,.72)':'rgba(255,159,67,.72)');
+    ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle=isLiq ? (l.type==='liqAbove'?'#ffe38a':'#d9b3ff') : (l.type==='support'?'#9ff4dc':'#ffd0a1');
+    ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(l.name+' '+chartFormatPrice(l.value),w-pad.right+5,y-3);ctx.restore();
   });
   // Current price
   const last=closes[closes.length-1], ly=yFor(last);ctx.save();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.left,ly);ctx.lineTo(w-pad.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(chartFormatPrice(last),w-pad.right+5,ly+11);ctx.restore();
@@ -6648,7 +6714,6 @@ function renderCards(results){
           ${badge} ${accBadge}
           ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
           <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
-          <div style="flex:1 1 100%;margin-top:6px">${renderLiquidityIntelligence(r)}</div>
         </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
@@ -6667,11 +6732,9 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>— Current price</span></div>
+          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>💧 Upside liquidity</span><span>💧 Downside liquidity</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
-
-        <div style="margin-top:12px">${renderLiquidityIntelligence(r)}</div>
 
         <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
              The detector/render function already exists; this call keeps it visible
