@@ -6324,6 +6324,13 @@ function renderTraderDecisionBlock(r, compact=false){
   const a15=Number(tf['15m']??0), a1h=Number(tf['1h']??0), a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
   const accum=Number(item.accumCombined?.confidence??rec.accum??0);
   const rsi4h=Number(item.rsi4h||0), rsi15=Number(item.rsi15||0);
+  const rsi15Session=item.rsi15Session||{};
+  const rsi15Below50=Number(rsi15Session.countBelow50||0);
+  const rsi15SessionTotal=Number(rsi15Session.total||0);
+  const rsi15Below50Pct=Number(rsi15Session.pct||0);
+  const rsi15SessionText=rsi15SessionTotal
+    ? ` • 15m RSI <50 (8AM–8AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
+    : ' • 15m RSI <50 (8AM–8AM): no completed session data';
   const vol=Number(item.volSpike4||0);
   const ema70=Number(item.ema70DistPct||0);
   const cg=item.correctionGuide||{};
