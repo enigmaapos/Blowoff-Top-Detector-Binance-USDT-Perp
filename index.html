@@ -830,205 +830,45 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
 
-    <div class="controlSection controlZone filtersZone">
-      <div class="controlSectionTitle"><span>🎯</span> 5 · Result Filters</div>
+    <div class="controlSection controlZone filtersZone" id="decisionControls">
+      <div class="controlSectionTitle"><span>🎯</span> 5 · FINAL TRADER DECISION — Filter & Sort</div>
+      <div class="dashboardHint" style="margin-top:6px">Single source of truth: filters and sorting read the exact final Trader Decision shown on each coin. Liquidity, structure, correction, accumulation, momentum and volume are evidence — Trader Decision is the final output.</div>
       <div class="controlGrid three" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">Sort Results</label>
-          <select id="sortBy">
-            <option value="trendTransition" selected>⭐ Trend Transition Priority</option>
-            <option value="score">Blowoff Score</option>
-            <option value="topScore">Top-Detection Score</option>
-            <option value="similarity">Cycle similarity</option>
-            <option value="accum">Accum confidence</option>
-            <option value="preCrash">Exhaustion Warning</option>
-            <option value="rsi4h">RSI (4H)</option>
-            <option value="ema70DistPct">EMA70 stretch %</option>
-            <option value="ema200Stretch15">15m EMA200 stretch %</option>
-            <option value="last">Last price</option>
-            <option value="symbol">Symbol</option>
-            <option value="volSpike">Vol Spike</option>
-            <option value="vol1d">Volume 1D</option>
-            <option value="vol1dTrend">1D Volume Trend</option>
-            <option value="vol4h">Volume 4H</option>
-            <option value="vol15m">Volume 15m</option>
-            <option value="hvdScore">🕯️ HVD Score</option>
-            <option value="hvd1d">🕯️ HVD 1D</option>
-            <option value="hvd1w">🕯️ HVD 1W</option>
-            <option value="hvd1m">🕯️ HVD 1M</option>
-            <option value="cycleMatch">Cycle Match %</option>
-            <option value="correctionRank">Correction Status</option>
-            <option value="correctionConfidence">Correction Confidence</option>
-            <option value="fundingRate">Funding Rate</option>
-            <option value="phase">Market Phase</option>
-            <option value="phaseRank">Market Phase Rank</option>
-            <option value="simPhase">Similarity Phase</option>
-            <option value="simPhaseRank">Similarity Phase Rank</option>
-            <option value="liquidityStrength">💧 Liquidity Strength</option><option value="liquidityDistance">💧 Liquidity Distance</option><option value="liquidityEvent">💧 Liquidity Event</option><option value="liquidityState">💧 Liquidity State</option><option value="smcStrength">🧩 SMC Breaker Strength</option>
-            <option value="smcConfidence">🧩 SMC Confidence</option>
-            <option value="smcStageRank">🧩 SMC Stage</option>
+          <label class="controlLabel">🎯 Trade Filter</label>
+          <select id="tradeDecisionFilter">
+            <option value="ALL">All Final Decisions</option>
+            <option value="LONG">🟢 LONG — actionable / conditional</option>
+            <option value="SHORT">🔴 SHORT — actionable / conditional</option>
+            <option value="WAIT">🟡 WAIT — no directional edge</option>
           </select>
+          <div class="dashboardHint">Uses only the Long entry / Short entry actually produced by Trader Decision.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">📊 Sort Final Decision By</label>
+          <select id="sortBy">
+            <option value="decisionConfidence" selected>🎯 Decision Confidence</option>
+            <option value="decisionPriority">⭐ Final Decision Priority</option>
+            <option value="longOpportunity">🟢 Long Opportunity</option>
+            <option value="shortOpportunity">🔴 Short Opportunity</option>
+            <option value="recoveryScore">🟣 Recovery Strength</option>
+            <option value="downsideScore">🔻 Downside Continuation</option>
+            <option value="correctionCompletion">🔴 Correction Completion</option>
+          </select>
+          <div class="dashboardHint">Primary ranking comes from the final decision engine, not an independent indicator.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Sort Direction</label>
           <button id="sortDir" class="alt" title="Toggle sort direction" style="width:100%">Desc</button>
+          <div class="dashboardHint">Descending puts the strongest final decision first.</div>
         </div>
         <div class="controlItem">
-          <label class="controlToggle">
-            <input id="showDistBtn" type="checkbox">
-            <span>Show Distribution / Breakdown</span>
-          </label>
-          <div class="dashboardHint">Focus the results view on structural weakness.</div>
-        </div>
-      </div>
-    </div>
-      <div class="controlGrid three">
-        <div class="controlItem">
-          <label class="controlLabel">⭐ Trend Transition Priority</label>
-          <select id="trendTransitionFilter">
-            <option value="ALL">All</option>
-            <option value="WATCH">🟡 Watch ≥45</option>
-            <option value="PRE_BREAKDOWN">🟠 Pre-Breakdown ≥60</option>
-            <option value="HIGH">🔴 High Priority ≥75</option>
-            <option value="CONFIRMED">🔴 Breakdown Confirmed</option>
-          </select>
-          <div class="dashboardHint">Start here. Filters the scanner by trend-transition priority, not a price-fall probability.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🎯 Trader Bias</label>
-          <select id="biasFilter">
-            <option value="ALL">All Biases</option>
-            <option value="BULLISH">🟢 Bullish</option>
-            <option value="MILD_BULLISH">🟢 Mild Bullish</option>
-            <option value="RECOVERY">🟣 Recovery Watch</option>
-            <option value="NEUTRAL">⚪ Neutral</option>
-            <option value="BEARISH_RISK">🟠 Bearish Risk</option>
-            <option value="BEARISH_CAUTIOUS">🔴 Bearish / Cautious</option>
-          </select>
-          <div class="dashboardHint">Filter by the final Trader Decision bias shown on each coin card.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Funding Direction</label>
-          <select id="fundingFilter">
-            <option value="ALL">All Funding</option>
-            <option value="NEGATIVE">🔴 Negative Funding (&lt; 0)</option>
-            <option value="POSITIVE">🟢 Positive Funding (&gt; 0)</option>
-            <option value="NEUTRAL">⚪ Neutral Funding (= 0)</option>
-          </select>
-          <div class="dashboardHint">Filter by the latest funding rate.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Correction Status</label>
-          <select id="correctionFilter">
-            <option value="ALL">All</option>
-            <option value="SIGNIFICANT_CORRECTION_CONFIRMED">🔴 Confirmed</option>
-            <option value="CORRECTION_DEVELOPING">🟠 Developing — Not Confirmed</option>
-            <option value="HIGH_CORRECTION_RISK">🟡 High Risk</option>
-            <option value="HIGH_CORRECTION_RISK_MANIA">🔥 High Risk / Mania</option>
-            <option value="POST_CORRECTION_RECOVERY">⚫ Recovery</option>
-            <option value="OVERBOUGHT_CONTINUATION_SUPPORTED">⚪ Overbought / Continuation Supported</option>
-            <option value="VULNERABILITY_INCREASING">🟡 Vulnerability Increasing</option>
-            <option value="HIGH_VULNERABILITY">🟠 High Vulnerability</option>
-            <option value="OVERBOUGHT">⚪ Overbought</option>
-            <option value="NO_SIGNIFICANT_CORRECTION_SIGNAL">🟢 Continuation</option>
-          </select>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Accumulation Double-Top</label>
-          <select id="accumDoubleTopFilter">
-            <option value="ALL">All</option>
-            <option value="DETECTED">📐 Any detected</option>
-            <option value="FORMING">🟡 Developing</option>
-            <option value="DOUBLE_TOP">🟡 Double Top / Break Watch</option>
-            <option value="BREAKOUT">🟡 Neckline Break — Retest Pending</option>
-            <option value="RETEST">🟠 Neckline Retest — Bearish</option>
-            <option value="REVERSAL_CONFIRMED">🔴 Reversal Confirmed</option>
-          </select>
-          <div class="dashboardHint">Filter specifically by the accumulation → double-top → neckline → reversal stage.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">💧 Liquidity Intelligence</label>
-          <select id="liquidityFilter">
-            <option value="ALL">All Liquidity</option>
-            <option value="STRENGTH_60">💧 Strong Pool ≥60</option>
-            <option value="STRENGTH_75">💧 Major Pool ≥75</option>
-            <option value="APPROACHING">🟡 Approaching Liquidity</option>
-            <option value="SWEEP">⚡ Liquidity Sweep</option>
-            <option value="UPSIDE">⬆️ Upside Liquidity</option>
-            <option value="DOWNSIDE">⬇️ Downside Liquidity</option>
-          </select>
-          <div class="dashboardHint">Filter by nearby liquidity strength, approach, or sweep event. Context only — never overrides 15m EMA200 correction confirmation.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Market Exhaustion</label>
-          <select id="marketExhaustionFilter">
-            <option value="ALL">All</option>
-            <option value="DEVELOPING">🟡 Exhaustion Developing</option>
-            <option value="STRONG">🟠 Strong Exhaustion</option>
-            <option value="EXTREME">🔴 Extreme Exhaustion</option>
-            <option value="MOMENTUM">📉 Momentum Exhaustion</option>
-            <option value="VOLUME">📊 Volume Exhaustion</option>
-            <option value="DISTRIBUTION">🟣 Distribution Exhaustion</option>
-            <option value="BLOWOFF">🔥 Blowoff / Climax</option>
-          </select>
-          <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🕯️ High-Volume Doji (HVD)</label>
-          <select id="hvdFilter">
-            <option value="ALL">All HVD</option>
-            <option value="ANY_55">🕯️ Any HVD ≥55%</option>
-            <option value="ANY_70">🟠 Any HVD ≥70%</option>
-            <option value="ANY_80">🔴 Any HVD ≥80%</option>
-            <option value="1D_55">📅 1D HVD ≥55%</option>
-            <option value="1W_55">📅 1W HVD ≥55%</option>
-            <option value="1M_55">📅 1M HVD ≥55%</option>
-            <option value="LATEST_ANY">⚡ Latest completed HVD — Any TF</option>
-            <option value="LATEST_1D">⚡ Latest completed 1D HVD</option>
-            <option value="LATEST_1W">⚡ Latest completed 1W HVD</option>
-            <option value="LATEST_1M">⚡ Latest completed 1M HVD</option>
-          </select>
-          <div class="dashboardHint">Strict small-body + high-volume detector on completed 1D / 1W / 1M candles. Filters use the actual stored HVD score.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Unified Bearish Structure</label>
-          <select id="bearishStructureFilter">
-            <option value="ALL">All</option>
-            <option value="MSS">🟡 MSS Confirmed+</option>
-            <option value="CHOCH">🟠 CHoCH Confirmed+</option>
-            <option value="BOS">🔴 BOS Confirmed+</option>
-            <option value="RETEST">🔴 Failed Retest Confirmed+</option>
-            <option value="BREAKDOWN">🔴 Bearish Breakdown Confirmed</option>
-          </select>
-          <div class="dashboardHint">Filters by the unified MSS → CHoCH → BOS → failed retest → breakdown sequence. It never overrides the authoritative correction status.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">SMC Breaker Stage</label>
-          <select id="smcBreakerFilter">
-            <option value="ALL">All SMC Setups</option>
-            <option value="ANY_SETUP">🧩 Any Breaker Setup</option>
-            <option value="WAIT_FOR_RETEST">🟡 Wait for Retest</option>
-            <option value="RETEST_ACTIVE">🟠 Retest Active</option>
-            <option value="CONFIRMED">🟢 Confirmed</option>
-          </select>
-          <div class="dashboardHint">Filters the 15m SMC breaker lifecycle. Confirmed ranks above active retests and waiting setups.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">SMC Direction</label>
-          <select id="smcDirectionFilter">
-            <option value="ALL">Both Directions</option>
-            <option value="BULLISH">🟢 Bullish Breakers</option>
-            <option value="BEARISH">🔴 Bearish Breakers</option>
-          </select>
-          <div class="dashboardHint">Optional direction filter for the 15m breaker detector.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Scan Status</label>
-          <div id="scanStatus" class="dashboardStatusValue">Ready.</div>
+          <label class="controlLabel">Final Decision Status</label>
+          <div id="decisionFilterStatus" class="dashboardStatusValue">All final decisions</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Scanner Note</label>
-          <div id="runBelow50Note" class="dashboardStatusValue" style="font-size:11px;color:var(--muted)">Ready.</div>
+          <div id="runBelow50Note" class="dashboardStatusValue" style="font-size:11px;color:var(--muted)">Decision-first workflow active.</div>
         </div>
       </div>
     </div>
@@ -1100,16 +940,8 @@ const el = {
   // sorting elements (populated below)
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir'),
-  correctionFilter: document.getElementById('correctionFilter'),
-  biasFilter: document.getElementById('biasFilter'),
-  fundingFilter: document.getElementById('fundingFilter'),
-  accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
-  marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
-  hvdFilter: document.getElementById('hvdFilter'),
-  liquidityFilter: document.getElementById('liquidityFilter'),
-  bearishStructureFilter: document.getElementById('bearishStructureFilter'),
-  smcBreakerFilter: document.getElementById('smcBreakerFilter'),
-  smcDirectionFilter: document.getElementById('smcDirectionFilter')
+  tradeDecisionFilter: document.getElementById('tradeDecisionFilter'),
+  decisionFilterStatus: document.getElementById('decisionFilterStatus')
 };
 
   // ---------------------- Symbol search + single-symbol analyzer ----------------------
@@ -5105,7 +4937,21 @@ function getValueForKey(r, key) {
   if (!r) return null;
 
   switch (key) {
-    // ---- Legacy sorting keys ----
+    // ---- FINAL TRADER DECISION sorting keys ----
+    case 'decisionConfidence': return getFinalTraderDecision(r).decisionScore;
+    case 'decisionPriority': {
+      const d=getFinalTraderDecision(r);
+      const dir=String(d.direction||'WAIT');
+      const edge=Math.max(Number(d.longOpportunity||0),Number(d.shortOpportunity||0));
+      const side=dir==='LONG'?1:dir==='SHORT'?-1:0;
+      return Number(d.decisionScore||0)*1000 + edge*10 + side;
+    }
+    case 'longOpportunity': return getFinalTraderDecision(r).longOpportunity;
+    case 'shortOpportunity': return getFinalTraderDecision(r).shortOpportunity;
+    case 'recoveryScore': return getFinalTraderDecision(r).recoveryScore;
+    case 'downsideScore': return getFinalTraderDecision(r).downsideScore;
+    case 'correctionCompletion': return getFinalTraderDecision(r).correctionCompletion;
+    // ---- Legacy sorting keys (kept internally for compatibility only) ----
     case 'score': return getNumeric(r.score, 0);
     case 'topScore': return getNumeric(r.topDetection && r.topDetection.score, 0);
     case 'similarity': return getNumeric(r.similarity, 0);
@@ -5309,192 +5155,78 @@ function traderBiasMatches(r, code){
   return true;
 }
 
+function getFinalTraderDecision(r){
+  if(!r) return {
+    decisionScore:0, currentState:'⚪ NO CLEAR EDGE', readiness:'⚪ No clear edge', bias:'Neutral',
+    longEntry:'⏸ Wait for structure', shortEntry:'⏸ Wait for structure',
+    correctionCompletion:0, recoveryScore:0, downsideScore:0,
+    longOpportunity:0, shortOpportunity:0, direction:'WAIT'
+  };
+  if(r.__finalTraderDecision) return r.__finalTraderDecision;
+  // renderTraderDecisionBlock is the authoritative decision engine. It stores
+  // the exact values it displays on r.__finalTraderDecision before returning HTML.
+  if(typeof renderTraderDecisionBlock==='function') renderTraderDecisionBlock(r, true);
+  if(r.__finalTraderDecision) return r.__finalTraderDecision;
+  return {decisionScore:0,currentState:'⚪ NO CLEAR EDGE',readiness:'⚪ No clear edge',bias:'Neutral',longEntry:'⏸ Wait for structure',shortEntry:'⏸ Wait for structure',correctionCompletion:0,recoveryScore:0,downsideScore:0,longOpportunity:0,shortOpportunity:0,direction:'WAIT'};
+}
+
+function finalDecisionDirection(d){
+  const longText=String(d?.longEntry||'').toLowerCase();
+  const shortText=String(d?.shortEntry||'').toLowerCase();
+  const longAction=!/^(?:❌|⏸)/.test(String(d?.longEntry||'')) && !/wait|don't chase|not yet|correction still active/.test(longText);
+  const shortAction=!/^(?:❌|⏸)/.test(String(d?.shortEntry||'')) && !/wait for|wait for structure|wait for acceptance|wait for rejection/.test(shortText);
+  if(longAction && shortAction){
+    if(Number(d.longOpportunity||0) > Number(d.shortOpportunity||0)) return 'LONG';
+    if(Number(d.shortOpportunity||0) > Number(d.longOpportunity||0)) return 'SHORT';
+    return 'BOTH';
+  }
+  if(longAction) return 'LONG';
+  if(shortAction) return 'SHORT';
+  return 'WAIT';
+}
+
+function traderDecisionMatches(r, code){
+  if(code==='ALL') return true;
+  const d=getFinalTraderDecision(r);
+  const dir=String(d.direction||finalDecisionDirection(d));
+  if(code==='LONG') return dir==='LONG' || dir==='BOTH';
+  if(code==='SHORT') return dir==='SHORT' || dir==='BOTH';
+  if(code==='WAIT') return dir==='WAIT';
+  return true;
+}
+
 function filterResultsForDist(results) {
-  // When Favorites mode is active, include the persistent favorite snapshots
-  // in addition to the current scan. This makes favorites discoverable even
-  // when a later market scan no longer contains that coin.
   let source = Array.isArray(results) ? results.slice() : [];
   if (showFavoritesOnly) {
     const bySymbol = new Map();
     source.forEach(r => {
-      const sym = String(r?.symbol || '').trim().toUpperCase();
-      if(sym) bySymbol.set(sym, r);
+      const sym=String(r?.symbol||'').trim().toUpperCase();
+      if(sym) bySymbol.set(sym,r);
     });
     restoreFavoriteResultSnapshots().forEach(r => {
-      const sym = String(r?.symbol || '').trim().toUpperCase();
-      if(sym && !bySymbol.has(sym)) bySymbol.set(sym, r);
+      const sym=String(r?.symbol||'').trim().toUpperCase();
+      if(sym && !bySymbol.has(sym)) bySymbol.set(sym,r);
     });
-    source = [...bySymbol.values()];
+    source=[...bySymbol.values()];
   }
-  let filtered = source.filter(r => r && !closedSymbols.has(r.symbol));
-  if (activeViewMode === 'favorite' || showFavoritesOnly) {
-    filtered = filtered.filter(r => favoriteSymbols.has(String(r.symbol || '').trim().toUpperCase()));
-  }
-  const correctionCode = el.correctionFilter ? el.correctionFilter.value : 'ALL';
-  if (correctionCode !== 'ALL') {
-    filtered = filtered.filter(r => String(r?.correctionGuide?.code || '').toUpperCase() === correctionCode);
-  }
-  const biasFilter = el.biasFilter ? el.biasFilter.value : 'ALL';
-  if (biasFilter !== 'ALL') {
-    filtered = filtered.filter(r => traderBiasMatches(r, biasFilter));
+  let filtered=source.filter(r=>r && !closedSymbols.has(r.symbol));
+  if(activeViewMode==='favorite' || showFavoritesOnly){
+    filtered=filtered.filter(r=>favoriteSymbols.has(String(r.symbol||'').trim().toUpperCase()));
   }
 
-  const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
-  if (fundingFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const funding = Number(r?.fundingRate);
-      if (!Number.isFinite(funding)) return false;
-      if (fundingFilter === 'NEGATIVE') return funding < 0;
-      if (fundingFilter === 'POSITIVE') return funding > 0;
-      if (fundingFilter === 'NEUTRAL') return funding === 0;
-      return true;
-    });
+  // FINAL TRADER DECISION is the only trade-direction filter.
+  const code=el.tradeDecisionFilter ? el.tradeDecisionFilter.value : 'ALL';
+  if(code!=='ALL') filtered=filtered.filter(r=>traderDecisionMatches(r,code));
+
+  const status=document.getElementById('decisionFilterStatus');
+  if(status){
+    status.textContent = code==='LONG' ? '🟢 LONG candidates' : code==='SHORT' ? '🔴 SHORT candidates' : code==='WAIT' ? '🟡 WAIT / No directional edge' : 'All final decisions';
   }
 
-  // Dedicated Market Exhaustion filter. This is intentionally independent
-  // from both correction confirmation and the Accumulation Double-Top filter.
-  // The exhaustion score is a warning/formation layer; it never confirms the
-  // authoritative 15m EMA200 correction state.
-  const exhaustionFilter = el.marketExhaustionFilter ? el.marketExhaustionFilter.value : 'ALL';
-  if (exhaustionFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const ex = calculateTrendExhaustionState(r || {});
-      const score = Number(ex?.score || 0);
-      const c = (r?.topDetection?.components || calculateTopDetectionStack(r || {}).components || {});
-      if (exhaustionFilter === 'DEVELOPING') return score >= 25 && score < 45;
-      if (exhaustionFilter === 'STRONG') return score >= 45 && score < 70;
-      if (exhaustionFilter === 'EXTREME') return score >= 70;
-      if (exhaustionFilter === 'MOMENTUM') return Number(c.momentumExhaustion || 0) >= 55;
-      if (exhaustionFilter === 'VOLUME') return Number(c.volumeExhaustion || 0) >= 55;
-      if (exhaustionFilter === 'DISTRIBUTION') return Number(c.distribution || 0) >= 45;
-      if (exhaustionFilter === 'BLOWOFF') return Number(c.blowoff || 0) >= 50;
-      return false;
-    });
-  }
-
-  // Dedicated High-Volume Doji filter. This is an early-warning candle-pattern
-  // layer. It only uses completed 1D/1W/1M candles and never confirms correction.
-  const hvdFilter = el.hvdFilter ? el.hvdFilter.value : 'ALL';
-  if (hvdFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const h = r?.hvd || {};
-      const d = h.byTf || {};
-      const s1 = Number(d['1D']?.score || 0), sW = Number(d['1W']?.score || 0), sM = Number(d['1M']?.score || 0);
-      const l1 = !!d['1D']?.detected && !!d['1D']?.latest;
-      const lW = !!d['1W']?.detected && !!d['1W']?.latest;
-      const lM = !!d['1M']?.detected && !!d['1M']?.latest;
-      if (hvdFilter === 'ANY_55') return Math.max(s1,sW,sM) >= 55;
-      if (hvdFilter === 'ANY_70') return Math.max(s1,sW,sM) >= 70;
-      if (hvdFilter === 'ANY_80') return Math.max(s1,sW,sM) >= 80;
-      if (hvdFilter === '1D_55') return s1 >= 55;
-      if (hvdFilter === '1W_55') return sW >= 55;
-      if (hvdFilter === '1M_55') return sM >= 55;
-      if (hvdFilter === 'LATEST_ANY') return l1 || lW || lM;
-      if (hvdFilter === 'LATEST_1D') return l1;
-      if (hvdFilter === 'LATEST_1W') return lW;
-      if (hvdFilter === 'LATEST_1M') return lM;
-      return false;
-    });
-  }
-
-  // Dedicated Liquidity Intelligence filter.
-  // IMPORTANT: filters operate on the exact same liquidity object/metrics used
-  // by Trader Decision and the Liquidity Map. They never alter EMA200 correction.
-  const liquidityFilter = el.liquidityFilter ? el.liquidityFilter.value : 'ALL';
-  if (liquidityFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const l = r?.liquidity || detectLiquidityIntelligence(r || {});
-      const score = Number(l?.score || 0);
-      const state = String(l?.state || '').toUpperCase();
-      const event = String(l?.event || '').toUpperCase();
-      const above = l?.nearestAbove || null;
-      const below = l?.nearestBelow || null;
-      const aboveStrength = Number(above?.strength || 0);
-      const belowStrength = Number(below?.strength || 0);
-      const hasAbove = !!above && Number.isFinite(Number(above?.price));
-      const hasBelow = !!below && Number.isFinite(Number(below?.price));
-      const swept = event.includes('LIQUIDITY SWEEP') || state.includes('LIQUIDITY SWEPT');
-
-      switch(liquidityFilter){
-        case 'STRENGTH_60': return score >= 60;
-        case 'STRENGTH_75': return score >= 75;
-        case 'APPROACHING': return state === 'APPROACHING' || event.includes('APPROACHING LIQUIDITY');
-        case 'SWEEP': return swept;
-        // Direction filters mean a real mapped pool exists on that side,
-        // regardless of whether it is currently the active event.
-        case 'UPSIDE': return hasAbove && aboveStrength >= 50 || event.includes('UPSIDE LIQUIDITY');
-        case 'DOWNSIDE': return hasBelow && belowStrength >= 50 || event.includes('DOWNSIDE LIQUIDITY');
-        default: return true;
-      }
-    });
-  }
-
-  // Dedicated Unified Bearish Structure filter.
-  // Threshold semantics: selecting BOS, for example, includes BOS, RETEST,
-  // and full BREAKDOWN states. This makes the filter useful for scanning
-  // structures that have reached at least the selected confirmation stage.
-  // This filter is independent from correction confirmation and can NEVER
-  // override SIGNIFICANT_CORRECTION_CONFIRMED.
-  const bearishStructureFilter = el.bearishStructureFilter ? el.bearishStructureFilter.value : 'ALL';
-  if (bearishStructureFilter !== 'ALL') {
-    const requiredRank = {MSS:1, CHOCH:2, BOS:3, RETEST:4, BREAKDOWN:5}[bearishStructureFilter] || 0;
-    filtered = filtered.filter(r => {
-      const b = r?.bearishStructure || {};
-      const rank = Number(b.stageRank || 0);
-      return !!b.confirmed && rank >= requiredRank;
-    });
-  }
-
-  // Dedicated Accumulation → Double Top → Neckline → Reversal filter.
-  // This is intentionally independent from the correction filter: a confirmed
-  // double-top reversal does NOT imply that the authoritative 15m EMA200
-  // correction layer is confirmed.
-  const adrFilter = el.accumDoubleTopFilter ? el.accumDoubleTopFilter.value : 'ALL';
-  if (adrFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const adr = r?.accumulationReversal || {};
-      const stage = String(adr.stage || 'NONE').toUpperCase();
-      if (adrFilter === 'DETECTED') return !!adr.detected && stage !== 'NONE' && stage !== 'ERROR';
-      return stage === adrFilter;
-    });
-  }
-
-  // Dedicated SMC Breaker filter. This layer is independent from the
-  // correction, exhaustion, accumulation and unified-bearish filters.
-  // Stage semantics intentionally match the visual panel:
-  // CONFIRMED > RETEST ACTIVE > WAIT FOR RETEST.
-  const smcFilter = el.smcBreakerFilter ? el.smcBreakerFilter.value : 'ALL';
-  if (smcFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const b = r?.smcBreakerBlock || {};
-      const rank = Number(b.stageRank || 0);
-      if (smcFilter === 'ANY_SETUP') return rank >= 3;
-      if (smcFilter === 'WAIT_FOR_RETEST') return rank === 3 && !b.retest && !b.continuation;
-      if (smcFilter === 'RETEST_ACTIVE') return rank === 4 && !!b.retest && !b.continuation;
-      if (smcFilter === 'CONFIRMED') return rank >= 5 && !!b.continuation;
-      return false;
-    });
-  }
-
-  const smcDirection = el.smcDirectionFilter ? el.smcDirectionFilter.value : 'ALL';
-  if (smcDirection !== 'ALL') {
-    filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
-  }
-
-  if (!showOnlyDist) return filtered;
-
-  return filtered.filter(r => {
-    if (!r) return false;
-    let phaseText = '';
-    if (r.phase) {
-      if (typeof r.phase === 'string') phaseText = r.phase.toLowerCase();
-      else if (typeof r.phase === 'object') {
-        phaseText = String(r.phase.phaseName || r.phase.phase || '').toLowerCase();
-      }
-    }
-    if (!phaseText && r.simPhase) phaseText = String(r.simPhase).toLowerCase();
-    return distKeywords.some(k => phaseText.includes(k));
-  });
+  if(!showOnlyDist) return filtered;
+  // Legacy distribution toggle is intentionally neutralized as a trade filter;
+  // the final-decision filter above is the sole directional filter.
+  return filtered;
 }
 
 function persistFavorites(){
@@ -5677,15 +5409,6 @@ function applyFilterAndSortThenRender(results, allowFast=false) {
   renderActiveView(allowFast);
 }
 
-if (el.sortDir) {
-  el.sortDir.addEventListener('click', () => {
-    sortDesc = !sortDesc;
-    el.sortDir.innerText = sortDesc ? 'Desc' : 'Asc';
-    renderActiveView(true);
-  });
-  el.sortDir.innerText = sortDesc ? 'Desc' : 'Asc';
-}
-
 const showDistBtn = document.getElementById('showDistBtn');
 if (showDistBtn) {
   showDistBtn.addEventListener('click', () => {
@@ -5698,69 +5421,18 @@ if (showDistBtn) {
   });
 }
 
-// Default to the decision-first workflow: Trend Transition Priority, Desc.
-if (el.sortBy) el.sortBy.value = 'trendTransition';
+// Default to the final-decision workflow.
+if (el.sortBy) el.sortBy.value = 'decisionConfidence';
+if (el.sortDir) { sortDesc=true; el.sortDir.innerText='Desc'; }
 
-// Instant local UI controls: sorting/filtering never require a network request.
-if (el.sortBy) {
-  el.sortBy.addEventListener('change', () => renderActiveView(true));
-}
-if (el.correctionFilter) {
-  el.correctionFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.biasFilter) {
-  el.biasFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.fundingFilter) {
-  el.fundingFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.accumDoubleTopFilter) {
-  el.accumDoubleTopFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.marketExhaustionFilter) {
-  el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.hvdFilter) {
-  el.hvdFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.liquidityFilter) {
-  el.liquidityFilter.addEventListener('change', () => {
-    const v=el.liquidityFilter.value;
-    // Selecting a liquidity filter should immediately rank the matching set
-    // by the most relevant liquidity metric, instead of leaving an unrelated
-    // global sort active.
-    if(el.sortBy && v !== 'ALL'){
-      if(v === 'STRENGTH_60' || v === 'STRENGTH_75' || v === 'UPSIDE' || v === 'DOWNSIDE') el.sortBy.value='liquidityStrength';
-      else if(v === 'APPROACHING') el.sortBy.value='liquidityDistance';
-      else if(v === 'SWEEP') el.sortBy.value='liquidityEvent';
-      sortDesc=true;
-      if(el.sortDir) el.sortDir.innerText='Desc';
-    }
-    renderActiveView(true);
-  });
-}
-if (el.bearishStructureFilter) {
-  el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.smcBreakerFilter) {
-  el.smcBreakerFilter.addEventListener('change', () => {
-    // Selecting an SMC lifecycle stage automatically switches to the
-    // SMC strength sorter so the strongest matching breaker appears first.
-    if (el.sortBy) {
-      if (el.smcBreakerFilter.value !== 'ALL') {
-        el.sortBy.value = 'smcStrength';
-        if (el.sortDir) { sortDesc = true; el.sortDir.innerText = 'Desc'; }
-      } else if (el.sortBy.value === 'smcStrength' || el.sortBy.value === 'smcConfidence' || el.sortBy.value === 'smcStageRank') {
-        el.sortBy.value = 'score';
-      }
-    }
-    renderActiveView(true);
-  });
-}
-if (el.smcDirectionFilter) {
-  el.smcDirectionFilter.addEventListener('change', () => renderActiveView(true));
-}
-
+// Instant local controls: no network request is triggered by filtering/sorting.
+if (el.sortBy) el.sortBy.addEventListener('change', () => renderActiveView(true));
+if (el.sortDir) el.sortDir.addEventListener('click', () => {
+  sortDesc=!sortDesc;
+  el.sortDir.innerText=sortDesc?'Desc':'Asc';
+  renderActiveView(true);
+});
+if (el.tradeDecisionFilter) el.tradeDecisionFilter.addEventListener('change', () => renderActiveView(true));
 
 /* ---------- Long-term target generator ---------- */
 function getLongTermTargets(item){
@@ -6427,6 +6099,14 @@ function renderTraderDecisionBlock(r, compact=false){
     : correctionConfirmed
       ? `🔴 Confirmed — correction still active`
       : `🟢 Not confirmed`;
+
+  // Publish the exact decision values displayed below. Filters and sorting use
+  // this object only, so the UI cannot disagree with Trader Decision.
+  const finalLongOpportunity = Math.max(0, Math.min(100, Math.round(liquidityRecoveryScore)));
+  const finalShortOpportunity = Math.max(0, Math.min(100, Math.round(liquidityDownsideScore)));
+  const finalDecision = {decisionScore,currentState,readiness,bias,longEntry,shortEntry,correctionCompletion,recoveryScore:finalLongOpportunity,downsideScore:finalShortOpportunity,longOpportunity:finalLongOpportunity,shortOpportunity:finalShortOpportunity};
+  finalDecision.direction = finalDecisionDirection(finalDecision);
+  item.__finalTraderDecision = finalDecision;
 
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
@@ -8239,7 +7919,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
     return `<div class="ttQueue"><div class="ttQueueTitle">⭐ PRIORITY QUEUE • CHECK TOP TO BOTTOM</div>${top.map((x,i)=>{const c=priorityColor(x.t.score);return `<div class="ttQueueRow"><div class="ttQueueRank">${i+1}</div><div><div class="ttQueueSym">${esc(x.r.symbol||'—')}</div><div class="ttQueueHint">${esc(x.t.reasons.slice(0,2).join(' • ')||'Transition watch')}</div></div><div class="ttQueueState" style="color:${c}">${esc(x.t.state.replace(/^\S+\s*/,''))}</div><div class="ttQueueScore" style="color:${c}">${x.t.score}/100</div></div>`}).join('')}<div class="ttLegend">Workflow: <strong>Scan → Rank → Investigate → Confirm → Trade Setup.</strong> Ignore low-priority names unless you have a specific reason to inspect them.</div></div>`;
   }
 
-  // Add the new sort key without disturbing legacy sort keys.
+  // Legacy trend-transition wrapper retained only for detector compatibility; its retired filter has no UI control.
   if(typeof window.getValueForKey==='function'){
     const oldGetValueForKey=window.getValueForKey;
     window.getValueForKey=function(r,key){if(key==='trendTransition')return calculateTrendTransitionPriority(r).score;return oldGetValueForKey(r,key);};
