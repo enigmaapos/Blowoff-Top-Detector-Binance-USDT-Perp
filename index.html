@@ -6716,11 +6716,7 @@ function renderCards(results){
           <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
         </div>
 
-        <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
-          <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
-          <div class="coinDetailsBody" style="margin-top:10px">
-
-        <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
+<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
           <div class="binanceChartHead">
             <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • scanner levels and EMA structure overlaid</div></div>
             <div class="binanceChartControls">
@@ -6735,6 +6731,12 @@ function renderCards(results){
           <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>💧 Upside liquidity</span><span>💧 Downside liquidity</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
+
+        <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
+          <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
+          <div class="coinDetailsBody" style="margin-top:10px">
+
+        
 
         <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
              The detector/render function already exists; this call keeps it visible
