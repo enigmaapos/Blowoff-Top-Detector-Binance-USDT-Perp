@@ -1608,7 +1608,7 @@ function detectLiquidityIntelligence(r){
 function renderLiquidityIntelligence(r){
   const d=r?.liquidity || detectLiquidityIntelligence(r||{});
   const fmt=x=>x?`${x.type} • ${x.tf} • ${x.distancePct>=0?'+':''}${x.distancePct.toFixed(2)}% • Strength ${x.strength}/100 • ${x.count} hit${x.count===1?'':'s'}`:'No mapped pool';
-  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
+  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
 }
 
 function renderTrendExhaustionState(r){
@@ -6585,7 +6585,7 @@ function chartRender(symbol, tf){
   const rect=wrap.getBoundingClientRect(); const w=Math.max(300,rect.width), h=Math.max(240,rect.height);
   c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); c.style.width=w+'px'; c.style.height=h+'px';
   const ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-  ctx.fillStyle='#171e28';ctx.fillRect(0,0,w,h);
+  ctx.fillStyle='#0d1724';ctx.fillRect(0,0,w,h);
   const pad={left:8,right:62,top:12,bottom:54}, volH=Math.min(72,h*.20), plotTop=pad.top, plotBottom=h-pad.bottom-volH;
   const opens=candles.map(k=>Number(k[1])), highs=candles.map(k=>Number(k[2])), lows=candles.map(k=>Number(k[3])), closes=candles.map(k=>Number(k[4])), vols=candles.map(k=>Number(k[5]));
   let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r);
@@ -6616,9 +6616,9 @@ function chartRender(symbol, tf){
     ctx.save();
     ctx.setLineDash(isLiq?[2,4]:(l.type==='support'?[5,4]:[3,5]));
     ctx.lineWidth=isLiq?1.5:1.1;
-    ctx.strokeStyle=isLiq ? (l.type==='liqAbove'?'rgba(255,217,102,.82)':'rgba(192,132,252,.82)') : (l.type==='support'?'rgba(45,212,191,.72)':'rgba(255,159,67,.72)');
+    ctx.strokeStyle=isLiq ? (l.type==='liqAbove'?'rgba(255,217,102,.90)':'rgba(255,92,108,.92)') : (l.type==='support'?'rgba(45,212,191,.72)':'rgba(255,159,67,.72)');
     ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();ctx.setLineDash([]);
-    ctx.fillStyle=isLiq ? (l.type==='liqAbove'?'#ffe38a':'#d9b3ff') : (l.type==='support'?'#9ff4dc':'#ffd0a1');
+    ctx.fillStyle=isLiq ? (l.type==='liqAbove'?'#ffe38a':'#ff7b86') : (l.type==='support'?'#9ff4dc':'#ffd0a1');
     ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(l.name+' '+chartFormatPrice(l.value),w-pad.right+5,y-3);ctx.restore();
   });
   // Current price
@@ -6643,19 +6643,24 @@ function bindBinanceCharts(){
         if(fit){ ev.preventDefault(); chartRender(host.dataset.symbol,host.dataset.tf||'4h'); }
       });
     }
-    const d=host.closest('details.coinDetails');
-    if(d?.open) chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+    // The Binance Futures chart is displayed directly under Trader Decision,
+    // outside the collapsible Detailed Evidence <details>. Render it immediately.
+    chartRender(host.dataset.symbol,host.dataset.tf||'4h');
   });
 }
 window.addEventListener('resize',()=>{
   document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
-    const d=host.closest('details.coinDetails'); if(d?.open) chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+    chartRender(host.dataset.symbol,host.dataset.tf||'4h');
   });
 });
 document.addEventListener('toggle',ev=>{
   const d=ev.target.closest?.('details.coinDetails'); if(!d||!d.open) return;
   const host=d.querySelector('.binanceChartPanel[data-symbol]'); if(host) setTimeout(()=>chartRender(host.dataset.symbol,host.dataset.tf||'4h'),30);
 },true);
+// Chart is outside Detailed Evidence, so resize it independently.
+window.addEventListener('load',()=>{
+  setTimeout(()=>document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>chartRender(host.dataset.symbol,host.dataset.tf||'4h')),60);
+});
 
 function renderCards(results){
   // PROFESSIONAL MOBILE CARD: Data → State → Evidence → Decision → Levels → Details
@@ -7878,7 +7883,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 <style id="liquidity-intelligence-style">
 .liqPanel{margin-top:10px;padding:10px 12px;border:1px solid rgba(126,220,255,.18);border-radius:10px;background:rgba(126,220,255,.035)}
-.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
+.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqAbove strong{color:#ffd966}.liqBelow strong{color:#ff5c6c}.liqBelow{border:1px solid rgba(255,92,108,.18);background:rgba(255,92,108,.045)}.liqAbove{border:1px solid rgba(255,217,102,.16);background:rgba(255,217,102,.035)}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
 </style>
 <script>
 // Professional terminology/state guidance layer. This supplements the existing scanner calculations.
