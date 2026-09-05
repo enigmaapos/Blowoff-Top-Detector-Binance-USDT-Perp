@@ -6,7 +6,7 @@
 
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Blowoff Scanner • Secure Login</title>
+<title>Liquidity Intelligence • Blowoff Scanner • Secure Login</title>
 <style>
   :root{
     --bg:#07101a;
@@ -6648,6 +6648,7 @@ function renderCards(results){
           ${badge} ${accBadge}
           ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
           <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
+          <div style="flex:1 1 100%;margin-top:6px">${renderLiquidityIntelligence(r)}</div>
         </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
@@ -6669,6 +6670,8 @@ function renderCards(results){
           <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
+
+        <div style="margin-top:12px">${renderLiquidityIntelligence(r)}</div>
 
         <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
              The detector/render function already exists; this call keeps it visible
