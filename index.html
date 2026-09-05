@@ -949,15 +949,14 @@ body.authLocked{overflow:hidden}
         <div class="controlItem">
           <label class="controlLabel">💧 Liquidity Intelligence</label>
           <select id="liquidityFilter">
-            <option value="ALL">All Liquidity</option>
-            <option value="STRENGTH_60">💧 Strong Pool ≥60</option>
-            <option value="STRENGTH_75">💧 Major Pool ≥75</option>
-            <option value="APPROACHING">🟡 Approaching Liquidity</option>
-            <option value="SWEEP">⚡ Liquidity Sweep</option>
-            <option value="UPSIDE">⬆️ Upside Liquidity</option>
-            <option value="DOWNSIDE">⬇️ Downside Liquidity</option>
+            <option value="ALL">All Liquidity Contexts</option>
+            <option value="REJECTION">🔴 REJECTION</option>
+            <option value="PENDING">🟡 OUTCOME PENDING</option>
+            <option value="ACCEPTANCE">🟢 ACCEPTANCE</option>
+            <option value="APPROACHING">🟠 APPROACHING</option>
+            <option value="OTHERS">⚪ Others</option>
           </select>
-          <div class="dashboardHint">Filter by nearby liquidity strength, approach, or sweep event. Context only — never overrides 15m EMA200 correction confirmation.</div>
+          <div class="dashboardHint">Filter by the exact Liquidity Context shown in each scanner result. Context only — never overrides 15m EMA200 correction confirmation.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Market Exhaustion</label>
@@ -5203,12 +5202,11 @@ function getValueForKey(r, key) {
       const e=String(l?.event||'').toUpperCase();
       // Semantic rank: rejection/acceptance are more informative than pending,
       // which is more informative than approaching, with NONE last.
-      if(e.includes('REJECTION')) return 4;
-      if(e.includes('ACCEPTANCE')) return 3;
-      if(e.includes('OUTCOME PENDING')) return 2;
-      if(e.includes('SWEEP')) return 2;
-      if(e.includes('APPROACHING')) return 1;
-      return 0;
+      if(e.includes('REJECTION')) return 5;
+      if(e.includes('ACCEPTANCE')) return 4;
+      if(e.includes('OUTCOME PENDING')) return 3;
+      if(e.includes('APPROACHING')) return 2;
+      return 1;
     }
     case 'liquidityState': {
       const l=r?.liquidity || detectLiquidityIntelligence(r||{});
@@ -5445,13 +5443,18 @@ function filterResultsForDist(results) {
 
       // Direction filters are tied directly to the mapped pool displayed in the card.
       // No hidden >=50 side-strength threshold is applied.
+      // Filter by the exact Liquidity Context label shown in the UI.
+      const context = /REJECTION/i.test(state) || /REJECTION/i.test(event) ? 'REJECTION'
+        : /ACCEPTANCE/i.test(state) || /ACCEPTANCE/i.test(event) ? 'ACCEPTANCE'
+        : /PENDING/i.test(state) || /OUTCOME PENDING/i.test(event) ? 'PENDING'
+        : /APPROACHING/i.test(state) || /APPROACHING/i.test(event) ? 'APPROACHING'
+        : 'OTHERS';
       switch(liquidityFilter){
-        case 'STRENGTH_60': return score >= 60;
-        case 'STRENGTH_75': return score >= 75;
-        case 'APPROACHING': return state === 'APPROACHING' || event.includes('APPROACHING LIQUIDITY');
-        case 'SWEEP': return swept;
-        case 'UPSIDE': return hasAbove;
-        case 'DOWNSIDE': return hasBelow;
+        case 'REJECTION': return context === 'REJECTION';
+        case 'PENDING': return context === 'PENDING';
+        case 'ACCEPTANCE': return context === 'ACCEPTANCE';
+        case 'APPROACHING': return context === 'APPROACHING';
+        case 'OTHERS': return context === 'OTHERS';
         default: return true;
       }
     });
@@ -5758,17 +5761,9 @@ if (el.liquidityFilter) {
     // Filter + sort use one explicit liquidity contract.
     // APPROACHING sorts closest-first; all other liquidity ranks sort strongest-first.
     if(el.sortBy && v !== 'ALL'){
-      if(v === 'STRENGTH_60' || v === 'STRENGTH_75' || v === 'UPSIDE' || v === 'DOWNSIDE'){
-        el.sortBy.value='liquidityStrength';
-        sortDesc=true;
-      }else if(v === 'APPROACHING'){
-        el.sortBy.value='liquidityDistance';
-        sortDesc=false;
-      }else if(v === 'SWEEP'){
-        el.sortBy.value='liquidityEvent';
-        sortDesc=true;
-      }
-      if(el.sortDir) el.sortDir.innerText=sortDesc ? 'Desc' : 'Asc';
+      el.sortBy.value='liquidityEvent';
+      sortDesc=true;
+      if(el.sortDir) el.sortDir.innerText='Desc';
     }
     renderActiveView(true);
   });
