@@ -864,7 +864,7 @@ body.authLocked{overflow:hidden}
             <option value="phaseRank">Market Phase Rank</option>
             <option value="simPhase">Similarity Phase</option>
             <option value="simPhaseRank">Similarity Phase Rank</option>
-            <option value="smcStrength">🧩 SMC Breaker Strength</option>
+            <option value="liquidityStrength">💧 Liquidity Strength</option><option value="liquidityDistance">💧 Liquidity Distance</option><option value="liquidityEvent">💧 Liquidity Event</option><option value="liquidityState">💧 Liquidity State</option><option value="smcStrength">🧩 SMC Breaker Strength</option>
             <option value="smcConfidence">🧩 SMC Confidence</option>
             <option value="smcStageRank">🧩 SMC Stage</option>
           </select>
@@ -1523,6 +1523,78 @@ function calculateTrendExhaustionState(item){
   }catch(err){
     return {score:0,code:'ERROR',label:'⚪ TREND STATE UNAVAILABLE',tone:'good',explanation:'Trend-state calculation failed; existing correction confirmation remains unchanged.',reasons:[err.message],meta:{}};
   }
+}
+
+
+/* ---------- LIQUIDITY INTELLIGENCE LAYER ----------
+   Local-only analysis: reuses candles already fetched by the scanner.
+   No additional Binance/API requests. Liquidity is context and never
+   overrides the authoritative 15m EMA200 correction layer.
+*/
+function detectLiquidityIntelligence(r){
+  r=r||{};
+  const tfs=[['15m',r.k15m,1],['1h',r.k1h,2],['4h',r.k4h,4],['1d',r.k1d,5]];
+  const price=Number(r.closeNow);
+  if(!Number.isFinite(price)||price<=0) return {score:0,state:'NO DATA',above:[],below:[],event:'NONE',interpretation:'Liquidity map unavailable.'};
+  const levels=[];
+  for(const [tf,arr,tfWeight] of tfs){
+    if(!Array.isArray(arr)||arr.length<8) continue;
+    const end=Math.min(arr.length-2,220);
+    const start=Math.max(2,end-120);
+    for(let i=start;i<=end;i++){
+      const k=arr[i], prev=arr[i-1], next=arr[i+1];
+      const h=Number(k?.[2]),l=Number(k?.[3]);
+      const ph=Number(prev?.[2]),pl=Number(prev?.[3]),nh=Number(next?.[2]),nl=Number(next?.[3]);
+      if(![h,l,ph,pl,nh,nl].every(Number.isFinite)) continue;
+      const isHigh=h>ph&&h>=nh, isLow=l<pl&&l<=nl;
+      if(isHigh) levels.push({price:h,tf,type:'SWING HIGH',weight:tfWeight,time:Number(k[0])});
+      if(isLow) levels.push({price:l,tf,type:'SWING LOW',weight:tfWeight,time:Number(k[0])});
+    }
+  }
+  // Add existing structural S/R as higher-quality liquidity anchors.
+  for(const x of [
+    {p:Number(r.resistanceLevel),side:'above',type:'STRUCTURAL RESISTANCE',tf:'4H',weight:4},
+    {p:Number(r.supportLevel),side:'below',type:'STRUCTURAL SUPPORT',tf:'4H',weight:4}
+  ]) if(Number.isFinite(x.p)&&x.p>0) levels.push({price:x.p,tf:x.tf,type:x.type,weight:x.weight,time:Date.now()});
+
+  const tol=0.0045; const clusters=[];
+  for(const lv of levels){
+    let c=clusters.find(z=>Math.abs(lv.price-z.price)/Math.max(price,lv.price,1)<=tol);
+    if(!c){c={price:lv.price,items:[]};clusters.push(c)}
+    c.items.push(lv); c.price=c.items.reduce((a,x)=>a+x.price,0)/c.items.length;
+  }
+  const now=Date.now();
+  for(const c of clusters){
+    c.items.sort((a,b)=>b.weight-a.weight);
+    c.count=c.items.length; c.tfs=[...new Set(c.items.map(x=>x.tf))];
+    c.above=c.price>price;
+    c.distancePct=((c.price-price)/price)*100;
+    c.strength=Math.min(100,Math.round(25+Math.min(30,c.count*9)+Math.min(25,(c.tfs.length-1)*8)+Math.max(...c.items.map(x=>x.weight))*4));
+    const ageH=Math.max(0,(now-Math.max(...c.items.map(x=>x.time||now)))/3600000);
+    c.strength=Math.max(0,c.strength-Math.min(12,Math.round(ageH/48)));
+    c.type=c.count>=2?'LIQUIDITY CLUSTER':c.items[0].type;
+    c.tf=c.tfs.join('/');
+  }
+  clusters.sort((a,b)=>b.strength-a.strength);
+  const above=clusters.filter(x=>x.above).sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct));
+  const below=clusters.filter(x=>!x.above).sort((a,b)=>Math.abs(a.distancePct)-Math.abs(b.distancePct));
+  const nearestA=above[0]||null, nearestB=below[0]||null;
+  let event='NONE', state='BALANCED', interpretation='No nearby high-quality liquidity event detected.';
+  const upper=nearestA&&nearestA.distancePct<=2.0, lower=nearestB&&Math.abs(nearestB.distancePct)<=2.0;
+  const sweptHigh=Array.isArray(r.k4h)&&r.k4h.length>3&&nearestA&&Math.max(...r.k4h.slice(-4).map(k=>Number(k[2])).filter(Number.isFinite))>nearestA.price*1.001;
+  const sweptLow=Array.isArray(r.k4h)&&r.k4h.length>3&&nearestB&&Math.min(...r.k4h.slice(-4).map(k=>Number(k[3])).filter(Number.isFinite))<nearestB.price*0.999;
+  if(sweptHigh){ event='UPSIDE LIQUIDITY SWEEP'; state='SWEEP WATCH'; interpretation='Upside liquidity has been traded through; look for rejection versus acceptance/retest before calling reversal.'; }
+  else if(sweptLow){ event='DOWNSIDE LIQUIDITY SWEEP'; state='SWEEP WATCH'; interpretation='Downside liquidity has been traded through; look for rejection versus acceptance/retest before calling reversal.'; }
+  else if(upper&&nearestA.strength>=60){ event='APPROACHING UPSIDE LIQUIDITY'; state='APPROACHING'; interpretation='Price is close to a meaningful upside liquidity pool; breakout acceptance or rejection is the next decision point.'; }
+  else if(lower&&nearestB.strength>=60){ event='APPROACHING DOWNSIDE LIQUIDITY'; state='APPROACHING'; interpretation='Price is close to a meaningful downside liquidity pool; rejection or continued acceptance below support is the next decision point.'; }
+  const score=Math.max(nearestA?.strength||0,nearestB?.strength||0);
+  return {score,state,event,interpretation,above:above.slice(0,3),below:below.slice(0,3),nearestAbove:nearestA,nearestBelow:nearestB};
+}
+
+function renderLiquidityIntelligence(r){
+  const d=r?.liquidity || detectLiquidityIntelligence(r||{});
+  const fmt=x=>x?`${x.type} • ${x.tf} • ${x.distancePct>=0?'+':''}${x.distancePct.toFixed(2)}% • Strength ${x.strength}/100 • ${x.count} hit${x.count===1?'':'s'}`:'No mapped pool';
+  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
 }
 
 function renderTrendExhaustionState(r){
@@ -2434,6 +2506,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       cached.smcBreakerBlock = Array.isArray(cached.k4h) ? detectSMCBreakerBlock({
         k4h:cached.k4h, closeNow:Number(cached.k4h.at(-1)?.[4]||cached.closeNow)
       }) : null;
+      cached.liquidity = detectLiquidityIntelligence(cached);
       cached.topDetection = calculateTopDetectionStack(cached);
       const cachedAdrStage=cached.accumulationReversal?.stage||'NONE';
       const cachedAdrBoost={DOUBLE_TOP:4,BREAKOUT:10,RETEST:16,REVERSAL_CONFIRMED:20}[cachedAdrStage]||0;
@@ -2678,6 +2751,9 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       }),
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
     };
+
+    // ===== local liquidity intelligence (no extra API calls) =====
+    result.liquidity = detectLiquidityIntelligence(result);
 
     // ===== upgraded multi-detector top stack =====
     result.topDetection = calculateTopDetectionStack(result);
@@ -5041,6 +5117,14 @@ function getValueForKey(r, key) {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.confidence, getNumeric(b.score, 0));
     }
+    case 'liquidityStrength': return getNumeric(r.liquidity?.score, 0);
+    case 'liquidityDistance': {
+      const a=Math.abs(getNumeric(r.liquidity?.nearestAbove?.distancePct, Infinity));
+      const b=Math.abs(getNumeric(r.liquidity?.nearestBelow?.distancePct, Infinity));
+      return Math.min(a,b);
+    }
+    case 'liquidityEvent': return getText(r.liquidity?.event);
+    case 'liquidityState': return getText(r.liquidity?.state);
     case 'smcStageRank': {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.stageRank, 0);
@@ -6344,7 +6428,7 @@ function renderTable(results){
     let status=r.score>=threshold?'<span class="blowBadge">🔥 Blowoff</span>':r.score===threshold-1?'<span class="potBadge">⚠ Potential</span>':'<span class="small">normal</span>';
     const tf=(r.accumChecks||[]).map(t=>`${t.tf}:${t.result.confidence}%${t.result.isAccum?'✓':''}`).join(' | ');
     const pro=renderProfessionalAnalysis(r,rec,srec,lt);
-    return `<tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><td class="coinCell"><div class="coinName">${String(r.symbol||'').replace(/USDT$/i,'')}</div><div class="coinTicker">${r.symbol}</div><div style="margin-top:7px">${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div><div style="margin-top:7px">${histGet(histSymbol(r)) ? histCardActionsHtml(r) : `<button type="button" class="alt histSaveBtn" data-symbol="${histSymbol(r)}">📌 Save observation</button>`}</div><div style="margin-top:7px">${status} <span class="accBadge">Accum ${accum.confidence}%</span> <span class="phaseTag">${phase.phase}</span></div><div style="margin-top:7px">${renderTrendExhaustionState(r)}</div></td><td>${r.closeNow}</td><td>${Number(r.rsi4h||0).toFixed(1)}</td><td class="small">Vol×${r.volSpike4} • Wick ${Number(r.wickRatio4||0).toFixed(2)} • EMA70 ${r.ema70DistPct}%<br>EMA200 ${cg.ema200Stretch15==null?'n/a':Number(cg.ema200Stretch15).toFixed(2)+'%'}</td><td class="small"><span class="phasePill">${cyclePhase}</span><br><strong>Similarity:</strong> <span class="metricPill">${simPct}%</span> • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>${tf}<br><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'No setup'}</td></tr><tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ><td colspan="5" style="padding:10px 12px"><div class="small" style="color:var(--muted)">${expl.label} • reversal estimate ${expl.prob}%</div><details class="coinDetails"><summary><strong>＋ Detailed evidence</strong></summary><div class="coinDetailsBody" style="margin-top:10px">${pro}</div></details></td></tr>`;
+    return `<tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}"><td class="coinCell"><div class="coinName">${String(r.symbol||'').replace(/USDT$/i,'')}</div><div class="coinTicker">${r.symbol}</div><div style="margin-top:7px">${favoriteButtonHtml(r.symbol)} ${closeButtonHtml(r.symbol)}</div><div style="margin-top:7px">${histGet(histSymbol(r)) ? histCardActionsHtml(r) : `<button type="button" class="alt histSaveBtn" data-symbol="${histSymbol(r)}">📌 Save observation</button>`}</div><div style="margin-top:7px">${status} <span class="accBadge">Accum ${accum.confidence}%</span> <span class="phaseTag">${phase.phase}</span></div><div style="margin-top:7px">${renderTrendExhaustionState(r)}${renderLiquidityIntelligence(r)}</div></td><td>${r.closeNow}</td><td>${Number(r.rsi4h||0).toFixed(1)}</td><td class="small">Vol×${r.volSpike4} • Wick ${Number(r.wickRatio4||0).toFixed(2)} • EMA70 ${r.ema70DistPct}%<br>EMA200 ${cg.ema200Stretch15==null?'n/a':Number(cg.ema200Stretch15).toFixed(2)+'%'}</td><td class="small"><span class="phasePill">${cyclePhase}</span><br><strong>Similarity:</strong> <span class="metricPill">${simPct}%</span> • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>${tf}<br><strong>SMC:</strong> ${r.smcBreakerBlock?.state||'No setup'}</td></tr><tr data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ><td colspan="5" style="padding:10px 12px"><div class="small" style="color:var(--muted)">${expl.label} • reversal estimate ${expl.prob}%</div><details class="coinDetails"><summary><strong>＋ Detailed evidence</strong></summary><div class="coinDetailsBody" style="margin-top:10px">${pro}</div></details></td></tr>`;
   }).join('');
   el.tableView.innerHTML=`<div class="card-panel"><div class="tableScroll"><table><thead><tr><th>Symbol / Status</th><th>Last</th><th>RSI4H</th><th>Signals</th><th>Context / Accumulation</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
@@ -7722,6 +7806,11 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 .topDetLevel{margin:9px 0 11px;padding:8px 10px;border-radius:9px;font-weight:800}.topDetLevel.good{background:rgba(46,204,113,.08)}.topDetLevel.watch{background:rgba(241,196,15,.08)}.topDetLevel.warn{background:rgba(243,156,18,.08)}.topDetLevel.danger{background:rgba(231,76,60,.08)}.topDetLevel.info{background:rgba(126,220,255,.08);color:#bdeeff}
 .topDetGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}.topDetRow{display:grid;grid-template-columns:145px 1fr 38px;gap:7px;align-items:center;font-size:12px}.topDetBar{height:6px;background:rgba(255,255,255,.09);border-radius:99px;overflow:hidden}.topDetBar i{display:block;height:100%;background:currentColor;border-radius:99px}.topDetRow b{text-align:right}.topDetPostNote{margin-bottom:10px;padding:8px 10px;border-left:3px solid #7edcff;border-radius:7px;background:rgba(126,220,255,.07);color:#cfeeff;font-size:11px;line-height:1.45;font-weight:700}.topDetReasons{margin-top:12px;font-size:12px;line-height:1.55;color:var(--muted)}.topDetNote{margin-top:8px;font-size:11px;color:var(--muted)}
 @media(max-width:700px){.topDetGrid{grid-template-columns:1fr}.topDetRow{grid-template-columns:132px 1fr 34px}}
+</style>
+
+<style id="liquidity-intelligence-style">
+.liqPanel{margin-top:10px;padding:10px 12px;border:1px solid rgba(126,220,255,.18);border-radius:10px;background:rgba(126,220,255,.035)}
+.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
 </style>
 <script>
 // Professional terminology/state guidance layer. This supplements the existing scanner calculations.
