@@ -607,7 +607,7 @@ table{min-width:0!important;width:100%}.tableScroll{width:100%;overflow-x:auto;-
 .binanceChartControls{display:flex;gap:5px;flex-wrap:wrap}
 .binanceTfBtn,.binanceChartAction{border:1px solid rgba(159,179,204,.24);background:rgba(255,255,255,.045);color:var(--text,#fff);border-radius:7px;padding:5px 8px;font-size:11px;font-weight:800;cursor:pointer}
 .binanceTfBtn.active{background:rgba(126,220,255,.16);border-color:rgba(126,220,255,.55);color:#dff7ff}
-.binanceChartCanvasWrap{position:relative;width:100%;height:360px;border-radius:9px;overflow:hidden;background:#171e28;border:1px solid rgba(255,255,255,.06)}
+.binanceChartCanvasWrap{position:relative;width:100%;height:360px;border-radius:9px;overflow:hidden;background:#0d1724;border:1px solid rgba(255,255,255,.06)}
 .binanceChartCanvas{display:block;width:100%;height:100%;touch-action:none}
 .binanceChartLegend{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px;font-size:10px;color:var(--muted,#9fb3cc)}
 .binanceChartLegend span{padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.035)}
@@ -1630,7 +1630,7 @@ function renderLiquidityIntelligence(r){
   const d=r?.liquidity || detectLiquidityIntelligence(r||{});
   const fmt=x=>x?`${x.type} • ${x.tf} • ${x.distancePct>=0?'+':''}${x.distancePct.toFixed(2)}% • Strength ${x.strength}/100 • ${x.count} hit${x.count===1?'':'s'}`:'No mapped pool';
   const stateClass=/REJECTION/i.test(String(d.state||''))?'liqRejected':/ACCEPTANCE/i.test(String(d.state||''))?'liqAccepted':/PENDING/i.test(String(d.state||''))?'liqPending':/APPROACHING/i.test(String(d.state||''))?'liqApproaching':'';
-  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
+  return `<div class="liqPanel"><div class="liqHead"><span>💧 LIQUIDITY MAP</span><span class="liqBadge ${stateClass}">${mspEscape(d.state||'—')}</span></div><div class="liqGrid"><div class="liqSide liqAbove"><strong>⬆️ Above Price</strong><div class="small">${mspEscape(fmt(d.nearestAbove))}</div></div><div class="liqSide liqBelow"><strong>⬇️ Below Price</strong><div class="small">${mspEscape(fmt(d.nearestBelow))}</div></div></div><div class="liqEvent ${stateClass}">⚡ ${mspEscape(d.event||'NONE')}</div><div class="liqInterpret">${mspEscape(d.interpretation||'—')}</div></div>`;
 }
 
 function renderTrendExhaustionState(r){
@@ -6155,13 +6155,18 @@ function renderTraderDecisionBlock(r, compact=false){
   const liqScore=Number(liq?.score||0);
   const liqEvent=String(liq?.event||'NONE');
   const liqState=String(liq?.state||'—');
+  const liqDecisionTone=/REJECTION/i.test(liqState)?'rejected':/ACCEPTANCE/i.test(liqState)?'accepted':/PENDING/i.test(liqState)?'pending':/APPROACHING/i.test(liqState)?'approaching':'';
+  const liqDecisionToneLabel=liqDecisionTone==='rejected'?'🔴 REJECTION':liqDecisionTone==='accepted'?'🟢 ACCEPTANCE':liqDecisionTone==='pending'?'🟡 OUTCOME PENDING':liqDecisionTone==='approaching'?'🟠 APPROACHING':'';
   const liqAbove=liq?.nearestAbove;
   const liqBelow=liq?.nearestBelow;
   const liqAboveTxt=liqAbove ? `Above ${Number(liqAbove.distancePct)>=0?'+':''}${Number(liqAbove.distancePct).toFixed(2)}% • ${liqAbove.type} • ${liqAbove.tf} • ${liqAbove.strength}/100` : 'No mapped upside pool';
   const liqBelowTxt=liqBelow ? `Below ${Number(liqBelow.distancePct)>=0?'+':''}${Number(liqBelow.distancePct).toFixed(2)}% • ${liqBelow.type} • ${liqBelow.tf} • ${liqBelow.strength}/100` : 'No mapped downside pool';
   let liquidityDecision='No dominant liquidity event is active; use nearby pools as reaction/target zones rather than standalone trade signals.';
-  if(liqEvent.includes('UPSIDE LIQUIDITY SWEEP')) liquidityDecision='Upside liquidity was swept. Do not automatically short: rejection favors a reversal setup, while acceptance/retest above the pool favors continuation.';
-  else if(liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP')) liquidityDecision='Downside liquidity was swept. Do not automatically long: reclaim/rejection favors recovery, while acceptance below the pool favors further downside.';
+  if(/UPSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent)) liquidityDecision='Upside liquidity sweep rejected: bearish reversal risk is elevated; wait for lower-high/structure confirmation before shorting.';
+  else if(/UPSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent)) liquidityDecision='Upside liquidity sweep accepted: continuation is favored while price holds above the pool; do not fade the breakout without rejection.';
+  else if(/DOWNSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent)) liquidityDecision='Downside liquidity sweep rejected: reclaim supports recovery/reversal; do not automatically short unless lower-high/acceptance below returns.';
+  else if(/DOWNSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent)) liquidityDecision='Downside liquidity sweep accepted: downside continuation is favored while price holds below the pool; do not automatically long.';
+  else if(liqEvent.includes('LIQUIDITY SWEEP')) liquidityDecision='Liquidity was swept, but the outcome is pending: wait for rejection/reclaim or acceptance before assigning directional bias.';
   else if(liqEvent.includes('APPROACHING UPSIDE')) liquidityDecision='Price is approaching an upside liquidity pool; treat it as a decision/target zone and wait for breakout acceptance or rejection.';
   else if(liqEvent.includes('APPROACHING DOWNSIDE')) liquidityDecision='Price is approaching a downside liquidity pool; treat it as a decision/target zone and wait for rejection or acceptance below support.';
   const correctionEvidence=Math.max(
@@ -6364,7 +6369,7 @@ function renderTraderDecisionBlock(r, compact=false){
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
-    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> ${liqState} • ${liqEvent} • Strength ${liqScore}/100<br><span class="small">${liqAboveTxt}<br>${liqBelowTxt}</span><br><span class="small">${liquidityDecision}</span></div>
+    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqAboveTxt}<br>${liqBelowTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
@@ -6805,7 +6810,7 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>💧 Upside liquidity</span><span>💧 Downside liquidity</span><span>— Current price</span></div>
+          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span style="color:#ffe38a">💧 Upside liquidity</span><span style="color:#ff6675">💧 Downside liquidity</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
 
@@ -7955,7 +7960,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 <style id="liquidity-intelligence-style">
 .liqPanel{margin-top:10px;padding:10px 12px;border:1px solid rgba(126,220,255,.18);border-radius:10px;background:rgba(126,220,255,.035)}
-.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqBadge.liqRejected{background:rgba(255,92,92,.12);border:1px solid rgba(255,92,92,.25);color:#ff9b9b}.liqBadge.liqAccepted{background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.25);color:#8ff4e0}.liqBadge.liqPending{background:rgba(255,217,102,.10);border:1px solid rgba(255,217,102,.22);color:#ffd966}.liqBadge.liqApproaching{background:rgba(255,159,67,.10);border:1px solid rgba(255,159,67,.22);color:#ffc080}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqAbove strong{color:#ffd966}.liqBelow strong{color:#ff5c6c}.liqBelow{border:1px solid rgba(255,92,108,.18);background:rgba(255,92,108,.045)}.liqAbove{border:1px solid rgba(255,217,102,.16);background:rgba(255,217,102,.035)}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
+.liqHead{display:flex;justify-content:space-between;gap:8px;align-items:center;font-weight:900}.liqBadge{font-size:11px;padding:3px 7px;border-radius:999px;background:rgba(126,220,255,.10);color:#7edcff}.liqBadge.liqRejected{background:rgba(255,82,82,.16);border:1px solid rgba(255,82,82,.48);color:#ff6675}.liqBadge.liqAccepted{background:rgba(45,212,191,.16);border:1px solid rgba(45,212,191,.48);color:#57e7c8}.liqBadge.liqPending{background:rgba(255,217,102,.16);border:1px solid rgba(255,217,102,.48);color:#ffe38a}.liqBadge.liqApproaching{background:rgba(255,159,67,.16);border:1px solid rgba(255,159,67,.48);color:#ffb36b}.liqEvent.liqRejected{color:#ff6675}.liqEvent.liqAccepted{color:#57e7c8}.liqEvent.liqPending{color:#ffe38a}.liqEvent.liqApproaching{color:#ffb36b}.liqDecisionState{display:inline-block;padding:2px 6px;border-radius:999px;font-weight:900;font-size:10px;margin-right:4px}.liqDecisionState.rejected{background:rgba(255,82,82,.16);color:#ff6675;border:1px solid rgba(255,82,82,.40)}.liqDecisionState.accepted{background:rgba(45,212,191,.16);color:#57e7c8;border:1px solid rgba(45,212,191,.40)}.liqDecisionState.pending{background:rgba(255,217,102,.16);color:#ffe38a;border:1px solid rgba(255,217,102,.40)}.liqDecisionState.approaching{background:rgba(255,159,67,.16);color:#ffb36b;border:1px solid rgba(255,159,67,.40)}.liqBadge.liqRejected{background:rgba(255,92,92,.12);border:1px solid rgba(255,92,92,.25);color:#ff9b9b}.liqBadge.liqAccepted{background:rgba(45,212,191,.12);border:1px solid rgba(45,212,191,.25);color:#8ff4e0}.liqBadge.liqPending{background:rgba(255,217,102,.10);border:1px solid rgba(255,217,102,.22);color:#ffd966}.liqBadge.liqApproaching{background:rgba(255,159,67,.10);border:1px solid rgba(255,159,67,.22);color:#ffc080}.liqGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.liqSide{padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}.liqSide strong{display:block;font-size:12px}.liqAbove strong{color:#ffd966}.liqBelow strong{color:#ff5c6c}.liqBelow{border:1px solid rgba(255,92,108,.18);background:rgba(255,92,108,.045)}.liqAbove{border:1px solid rgba(255,217,102,.16);background:rgba(255,217,102,.035)}.liqSide .small{line-height:1.45}.liqEvent{margin-top:8px;font-size:12px;font-weight:800}.liqInterpret{margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}@media(max-width:700px){.liqGrid{grid-template-columns:1fr}}
 </style>
 <script>
 // Professional terminology/state guidance layer. This supplements the existing scanner calculations.
