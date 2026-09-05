@@ -7183,12 +7183,18 @@ function renderResponsiveResults(results, allowFast=false){
   preserveHistoricalCompareState();
   const safe = Array.isArray(results) ? results.filter(Boolean) : [];
   const isMobile = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+
   const key = safe.map(r => String(r?.symbol || '').toUpperCase()).join('|');
   const prevKey = window.__renderShapeKey || '';
 
   // Fast path: when the same analyzed coins are already mounted, only reorder/show/hide
   // existing DOM nodes. No HTML generation, no indicator recomputation, no DOM teardown.
-  if(allowFast && fastPatchResultDOM(safe, isMobile)){
+  // If the active pane has no mounted result nodes, bypass the patcher and force a
+  // complete render so a finished scan can never remain visually blank.
+  const paneHasMountedResults = isMobile
+    ? !!el.cardView?.querySelector('.coinCard,.resultCard')
+    : !!el.tableView?.querySelector('tbody tr[data-symbol]');
+  if(allowFast && paneHasMountedResults && fastPatchResultDOM(safe, isMobile)){
     try{ restoreHistoricalCompareStates(); }catch(e){}
     if(softRefresh){
       requestAnimationFrame(()=>{ window.scrollTo(savedScrollX, savedScrollY); window.__magmaSoftRefresh=false; });
@@ -7672,8 +7678,44 @@ function commitMarketScanResults(nextResults){
   window.lastScanResults = marketScanResults.slice();
   saveFavoriteResultSnapshots(marketScanResults);
 
-  const displayResults = filterResultsForDist(marketScanResults.slice());
+  // Build the visible result set from the freshly completed scan.
+  // IMPORTANT: a completed scan must never end in a visually blank result pane.
+  // If a filter accidentally resolves to zero while raw scan data exists, keep
+  // the raw completed scan visible and report the filter mismatch instead of
+  // making the scanner look as if it produced no results.
+  let displayResults = filterResultsForDist(marketScanResults.slice());
   sortResults(displayResults);
+  const rawCount = marketScanResults.length;
+  const filteredCount = displayResults.length;
+  const activeFilterState = (() => {
+    try {
+      const ids = [
+        'correctionFilter','biasFilter','fundingFilter','marketExhaustionFilter',
+        'hvdFilter','rsi15SessionFilter','liquidityFilter','bearishStructureFilter',
+        'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
+      ];
+      const active = ids.some(id => {
+        const x = document.getElementById(id);
+        return x && x.value && x.value !== 'ALL';
+      });
+      return active || !!showOnlyDist || !!showFavoritesOnly || activeViewMode === 'favorite';
+    } catch (_) {
+      return false;
+    }
+  })();
+
+  if(rawCount > 0 && filteredCount === 0 && !activeFilterState){
+    console.warn('Completed scan returned data but filter pipeline produced zero visible results; showing raw scan results.');
+    displayResults = marketScanResults.slice();
+    sortResults(displayResults);
+  }
+
+  // Keep the status line truthful after the atomic commit.
+  if(el.message){
+    el.message.innerText = filteredCount === 0 && rawCount > 0
+      ? `Scan complete • ${rawCount} analyzed • showing completed scan results`
+      : `Scan complete • ${rawCount} analyzed • ${displayResults.length} shown`;
+  }
 
   prevBlowoffSet = new Set(
     window.lastScanResults
