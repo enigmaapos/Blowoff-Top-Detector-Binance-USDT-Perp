@@ -7321,6 +7321,13 @@ function renderCards(results){
     const rsi15Below50=Number(rsi15Session.countBelow50||0);
     const rsi15SessionTotal=Number(rsi15Session.total||0);
     const rsi15Below50Pct=Number(rsi15Session.pct||0);
+    // 4H RSI <50 rolling 2-week stats — explicitly scoped to this result card.
+    // This fixes the scan-time ReferenceError that prevented completed results
+    // from being rendered after the scan finished.
+    const rsi4h2w=r.rsi4h2w||{};
+    const rsi4h2wBelow50=Number(rsi4h2w.countBelow50||0);
+    const rsi4h2wTotal=Number(rsi4h2w.total||0);
+    const rsi4h2wPct=Number(rsi4h2w.pct||0);
     const shortTargets=(srec.targets||[]).filter(x=>x!=null && Number.isFinite(Number(x)));
     const resistance=[lt.t1,lt.t2,lt.t3].filter(x=>x!=null && Number.isFinite(Number(x)));
     const support=[lt.s1,lt.s2,lt.s3].filter(x=>x!=null && Number.isFinite(Number(x)));
