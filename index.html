@@ -2851,8 +2851,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const rsi15Session = get15mRsiSessionStats(k15,14);
 
     // ===== 4H RSI <50 1-WEEK SESSION STAT =====
-    // Local browser session: 00:00 -> 00:00 seven days later. Only completed
-    // 4H candles are counted. RSI is seeded from the full available 4H history
+    // Rolling completed 7-day history, bounded by the latest completed local
+    // 00:00 session boundary. Only completed 4H candles are counted. RSI is seeded from the full available 4H history
     // before the 1W window is filtered, so the first counted candle is not reset.
     function get4hRsi1WeekStats(klines, period=14){
       const arr = Array.isArray(klines) ? klines : [];
@@ -2873,9 +2873,11 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         rsis[i]=r;
       }
       const now=Date.now();
-      const d=new Date(now); d.setHours(8,0,0,0);
-      let start=d.getTime(); if(now < start) start-=24*60*60*1000;
-      const end=start+(7*24*60*60*1000);
+      const d=new Date(now); d.setHours(0,0,0,0);
+      let sessionEnd=d.getTime();
+      if(now < sessionEnd) sessionEnd-=24*60*60*1000;
+      const end=sessionEnd;
+      const start=end-(7*24*60*60*1000);
       let total=0,count=0;
       for(let i=0;i<arr.length;i++){
         const open=Number(arr[i]?.[0]);
@@ -2890,8 +2892,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const rsi4h1w = get4hRsi1WeekStats(k4hFull,14);
 
     // ===== 8H RSI <50 1-MONTH SESSION STAT =====
-    // Rolling 30-day macro window, anchored at local 00:00. Only completed
-    // 8H candles are counted. RSI is seeded from the full available 8H history.
+    // Rolling completed 30-day history, bounded by the latest completed local
+    // 00:00 session boundary. Only completed 8H candles are counted. RSI is seeded from the full available 8H history.
     function get8hRsi1MonthStats(klines, period=14){
       const arr = Array.isArray(klines) ? klines : [];
       const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:90,days:30,timezone:'local',session:'00:00–00:00',timeframe:'1M',candleTimeframe:'8H'};
@@ -2911,9 +2913,11 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         rsis[i]=r;
       }
       const now=Date.now();
-      const d=new Date(now); d.setHours(8,0,0,0);
-      let start=d.getTime(); if(now < start) start-=24*60*60*1000;
-      const end=start+(30*24*60*60*1000);
+      const d=new Date(now); d.setHours(0,0,0,0);
+      let sessionEnd=d.getTime();
+      if(now < sessionEnd) sessionEnd-=24*60*60*1000;
+      const end=sessionEnd;
+      const start=end-(30*24*60*60*1000);
       let total=0,count=0;
       for(let i=0;i<arr.length;i++){
         const open=Number(arr[i]?.[0]);
