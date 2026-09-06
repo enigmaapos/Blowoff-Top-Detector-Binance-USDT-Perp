@@ -845,6 +845,8 @@ body.authLocked{overflow:hidden}
             <option value="rsi4h">RSI (4H)</option>
             <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (8AM–8AM)</option>
             <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (8AM–8AM)</option>
+            <option value="rsi4h2wCount">📉 4H RSI &lt;50 candle count (2 Week)</option>
+            <option value="rsi4h2wPct">📉 4H RSI &lt;50 percentage (2 Week)</option>
             <option value="ema70DistPct">EMA70 stretch %</option>
             <option value="ema200Stretch15">15m EMA200 stretch %</option>
             <option value="last">Last price</option>
@@ -1029,6 +1031,26 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Overrides the normal sort while selected and ranks the current 8AM–8AM RSI weakness.</div>
         </div>
         <div class="controlItem">
+          <label class="controlLabel">📉 4H RSI &lt;50 • 2 Week</label>
+          <select id="rsi4h2wFilter">
+            <option value="ALL">All</option>
+            <option value="ANY">🔎 RSI &lt;50 Any</option>
+            <option value="P25">🟡 ≥25% of candles</option>
+            <option value="P50">🟠 ≥50% of candles</option>
+            <option value="P75">🔴 ≥75% of candles</option>
+          </select>
+          <div class="dashboardHint">Counts completed 4H candle closes with RSI &lt;50 across the latest rolling 14 days. Max 84 candles.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">📊 4H RSI &lt;50 • 2W Sort</label>
+          <select id="rsi4h2wSort">
+            <option value="NONE">No dedicated sort</option>
+            <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
+            <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
+          </select>
+          <div class="dashboardHint">Overrides the normal sort while selected and ranks persistent 4H RSI weakness over the rolling 2-week window.</div>
+        </div>
+        <div class="controlItem">
           <label class="controlLabel">🕯️ High-Volume Doji (HVD)</label>
           <select id="hvdFilter">
             <option value="ALL">All HVD</option>
@@ -1165,6 +1187,8 @@ const el = {
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
   rsi15SessionFilter: document.getElementById('rsi15SessionFilter'),
   rsi15SessionSort: document.getElementById('rsi15SessionSort'),
+  rsi4h2wFilter: document.getElementById('rsi4h2wFilter'),
+  rsi4h2wSort: document.getElementById('rsi4h2wSort'),
   hvdFilter: document.getElementById('hvdFilter'),
   liquidityFilter: document.getElementById('liquidityFilter'),
   bearishStructureFilter: document.getElementById('bearishStructureFilter'),
@@ -2795,6 +2819,42 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     }
     const rsi15Session = get15mRsiSessionStats(k15,14);
 
+    // ===== 4H RSI <50 ROLLING 2-WEEK STAT =====
+    // Same Wilder RSI methodology as the 15m detector, but a rolling 14-day window.
+    // RSI is seeded from the full available 4H history; only completed 4H candles
+    // inside the latest 14 days are counted. Maximum = 84 candles.
+    function get4hRsi2WeekStats(klines, period=14){
+      const arr = Array.isArray(klines) ? klines : [];
+      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:84,days:14,timezone:'local'};
+      if(arr.length < period + 1) return empty;
+      const closes = arr.map(k=>Number(k?.[4]));
+      if(!closes.every(Number.isFinite)) return empty;
+      const rsis=[];
+      let gains=0, losses=0;
+      for(let i=1;i<=period;i++){ const d=closes[i]-closes[i-1]; if(d>=0) gains+=d; else losses-=d; }
+      let r=losses===0?100:100-(100/(1+(gains/losses)));
+      rsis[period]=r;
+      for(let i=period+1;i<closes.length;i++){
+        const d=closes[i]-closes[i-1], g=Math.max(0,d), l=Math.max(0,-d);
+        gains=(gains*(period-1)+g)/period;
+        losses=(losses*(period-1)+l)/period;
+        r=losses===0?100:100-(100/(1+(gains/losses)));
+        rsis[i]=r;
+      }
+      const now=Date.now(), end=now, start=now-(14*24*60*60*1000);
+      let total=0,count=0;
+      for(let i=0;i<arr.length;i++){
+        const open=Number(arr[i]?.[0]);
+        if(!Number.isFinite(open) || open<start || open>=end) continue;
+        if(open+(4*60*60*1000)>now) continue;
+        if(!Number.isFinite(rsis[i])) continue;
+        total++; if(rsis[i]<50) count++;
+      }
+      total=Math.min(total,84); count=Math.min(count,total);
+      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:84,days:14,timezone:'local'};
+    }
+    const rsi4h2w = get4hRsi2WeekStats(k4h,14);
+
     const ema14_15 = closes15.length >= 14 ? ema(closes15, 14) : null;
     const ema21_15 = closes15.length >= 21 ? ema(closes15, 21) : null;
     const ema200_15 = closes15.length >= 200 ? ema(closes15, 200) : null;
@@ -2870,6 +2930,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       signals: {},
       rsi1d, rsi4h, rsi1h, rsi15,
       rsi15Session,
+      rsi4h2w,
       volSpike4, volSpike15,
       // NEW: raw volumes included for sorting/display
       volume1d: lastVol1d,
@@ -5245,6 +5306,8 @@ function getValueForKey(r, key) {
     case 'rsi4h': return getNumeric(r.rsi4h, 0);
     case 'rsi15SessionCount': return getNumeric(r.rsi15Session?.countBelow50, 0);
     case 'rsi15SessionPct': return getNumeric(r.rsi15Session?.pct, 0);
+    case 'rsi4h2wCount': return getNumeric(r.rsi4h2w?.countBelow50, 0);
+    case 'rsi4h2wPct': return getNumeric(r.rsi4h2w?.pct, 0);
     case 'ema70DistPct': return Math.abs(getNumeric(r.ema70DistPct, 0));
     // Signed 15m EMA200 stretch: negative = price below EMA200 (confirmed correction),
     // positive = price above EMA200. Do NOT use Math.abs() here because direction matters.
@@ -5660,6 +5723,21 @@ function filterResultsForDist(results) {
     });
   }
 
+  // Dedicated 4H RSI <50 rolling 2-week filter. Independent of the 15m filter.
+  const rsi4h2wFilter = el.rsi4h2wFilter ? el.rsi4h2wFilter.value : 'ALL';
+  if (rsi4h2wFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const st = r?.rsi4h2w || {};
+      const count = Number(st.countBelow50 || 0), total = Number(st.total || 0), pct = Number(st.pct || 0);
+      if (!total) return false;
+      if (rsi4h2wFilter === 'ANY') return count > 0;
+      if (rsi4h2wFilter === 'P25') return pct >= 25;
+      if (rsi4h2wFilter === 'P50') return pct >= 50;
+      if (rsi4h2wFilter === 'P75') return pct >= 75;
+      return true;
+    });
+  }
+
   // Dedicated Liquidity Intelligence filter.
   // IMPORTANT: filters operate on the exact same liquidity object/metrics used
   // by Trader Decision and the Liquidity Map. They never alter EMA200 correction.
@@ -6010,6 +6088,17 @@ if (el.rsi15SessionSort) {
     const v = el.rsi15SessionSort.value;
     if (v === 'COUNT_DESC') { el.sortBy.value='rsi15SessionCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
     else if (v === 'PCT_DESC') { el.sortBy.value='rsi15SessionPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
+}
+if (el.rsi4h2wFilter) {
+  el.rsi4h2wFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi4h2wSort) {
+  el.rsi4h2wSort.addEventListener('change', () => {
+    const v = el.rsi4h2wSort.value;
+    if (v === 'COUNT_DESC') { el.sortBy.value='rsi4h2wCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    else if (v === 'PCT_DESC') { el.sortBy.value='rsi4h2wPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
     renderActiveView(true);
   });
 }
@@ -6489,6 +6578,11 @@ function renderTraderDecisionBlock(r, compact=false){
   const rsi15Below50=Number(rsi15Session.countBelow50||0);
   const rsi15SessionTotal=Number(rsi15Session.total||0);
   const rsi15Below50Pct=Number(rsi15Session.pct||0);
+  const rsi4h2w=item.rsi4h2w||{};
+  const rsi4h2wBelow50=Number(rsi4h2w.countBelow50||0);
+  const rsi4h2wTotal=Number(rsi4h2w.total||0);
+  const rsi4h2wPct=Number(rsi4h2w.pct||0);
+  const rsi4h2wText=rsi4h2wTotal ? ` • 4H RSI <50 (2W): ${rsi4h2wBelow50}/${rsi4h2wTotal} (${rsi4h2wPct.toFixed(1)}%)` : ' • 4H RSI <50 (2W): no completed data';
   const rsi15SessionText=rsi15SessionTotal
     ? ` • 15m RSI <50 (8AM–8AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
     : ' • 15m RSI <50 (8AM–8AM): no completed session data';
@@ -6737,13 +6831,14 @@ function renderTraderDecisionBlock(r, compact=false){
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • Session 8AM–8AM</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h2wBelow50}/${rsi4h2wTotal || 84} completed 4H candles below RSI 50${rsi4h2wTotal?` • ${rsi4h2wPct.toFixed(1)}%`:''} • Rolling 2 weeks</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
     </div>
     <div class="small" style="margin-top:7px;color:var(--muted)">
       Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
-      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}${rsi15SessionText}
+      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}${rsi15SessionText}${rsi4h2wText}
     </div>
   </div>`;
 }
@@ -6757,6 +6852,11 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const rsi15Below50 = Number(rsi15Session.countBelow50 || 0);
   const rsi15SessionTotal = Number(rsi15Session.total || 0);
   const rsi15Below50Pct = Number(rsi15Session.pct || 0);
+  const rsi4h2w = r?.rsi4h2w || {};
+  const rsi4h2wBelow50 = Number(rsi4h2w.countBelow50 || 0);
+  const rsi4h2wTotal = Number(rsi4h2w.total || 0);
+  const rsi4h2wPct = Number(rsi4h2w.pct || 0);
+  const rsi4h2wText = rsi4h2wTotal ? ` • 4H RSI <50 (2W): ${rsi4h2wBelow50}/${rsi4h2wTotal} (${rsi4h2wPct.toFixed(1)}%)` : ' • 4H RSI <50 (2W): no completed data';
   const rsi15SessionText = rsi15SessionTotal
     ? ` • 15m RSI <50 (8AM–8AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
     : ' • 15m RSI <50 (8AM–8AM): no completed session data';
@@ -6845,7 +6945,7 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
       <summary><strong>＋ Detailed evidence</strong></summary>
       <div class="recBox" style="margin-top:8px">
         15m accumulation ${a15}% • 1h ${a1h}% • 4h ${a4h}%<br>
-        4H volume ×${vol.toFixed(2)} • 15m RSI ${rsi15.toFixed(0)} • Blowoff match ${blow}%<br>
+        4H volume ×${vol.toFixed(2)} • 15m RSI ${rsi15.toFixed(0)}${rsi4h2wText} • Blowoff match ${blow}%<br>
         15m EMA200 stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'}<br>
         Funding: ${Number(r.fundingRate||0).toFixed(6)} • Peak drawdown: ${Number(r.dropPctFromPeak||0).toFixed(1)}%
       </div>
@@ -7286,7 +7386,7 @@ function renderCards(results){
 
         <div class="recBox" style="margin-top:8px">
           15m accumulation ${a15}% • 1h ${a1h}% • 4h ${a4h}%<br>
-          4H volume ×${Number(r.volSpike4||0).toFixed(2)} • 15m RSI ${Math.round(r.rsi15||0)}${rsi15SessionTotal?` • RSI<50 ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`:''} • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>
+          4H volume ×${Number(r.volSpike4||0).toFixed(2)} • 15m RSI ${Math.round(r.rsi15||0)}${rsi15SessionTotal?` • RSI<50 ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`:''}${rsi4h2wTotal?` • 4H RSI<50 ${rsi4h2wBelow50}/${rsi4h2wTotal} (${rsi4h2wPct.toFixed(1)}%)`:''} • Blowoff ${r.score??0}/8 • ${r.expl?.label||'None'}<br>
           Correction Status: <strong>${cg.label||'🟢 NOT CONFIRMED / PRE-CORRECTION'}</strong> (${cg.confidence||0}%)<br>
           15m EMA200 stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'}<br>
           Funding: ${Number(r.fundingRate||0).toFixed(6)} • Peak drawdown: ${Number(r.dropPctFromPeak||0).toFixed(1)}%<br>
@@ -7863,7 +7963,7 @@ function commitMarketScanResults(nextResults){
     try {
       const ids = [
         'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','fundingFilter','marketExhaustionFilter',
-        'hvdFilter','rsi15SessionFilter','liquidityFilter','bearishStructureFilter',
+        'hvdFilter','rsi15SessionFilter','rsi4h2wFilter','liquidityFilter','bearishStructureFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
       const active = ids.some(id => {
