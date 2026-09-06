@@ -2499,13 +2499,31 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
         else if(anyMatch(simStr,bearishKeywords)){keep=true;keepReason='simPhase-match';}
       }else{keep=true;keepReason='mode-all';}
       if(keep){res._scanMode=opts.mode;res._matchedBy=keepReason;return res;}
-    }catch(err){console.warn('batch analyze error',sym,err.message);}
+    }catch(err){
+      console.warn('batch analyze error',sym,err.message);
+      if (isNetworkConnectivityError(err)) {
+        preserveMarketResultsOnConnectivityLoss(`${sym} request failed`);
+        const netErr = new Error(err.message);
+        netErr.isConnectivityError = true;
+        netErr.symbol = sym;
+        throw netErr;
+      }
+    }
     return null;
   };
 
   for(let start=0;start<symbols.length && session===modeSession && activeViewMode==='scan';start+=batchSize){
     const batch=symbols.slice(start,start+batchSize);
-    const batchResults=(await Promise.all(batch.map(analyzeOne))).filter(Boolean);
+    let batchResults;
+    try {
+      batchResults=(await Promise.all(batch.map(analyzeOne))).filter(Boolean);
+    } catch(err) {
+      if (err?.isConnectivityError || isNetworkConnectivityError(err)) {
+        preserveMarketResultsOnConnectivityLoss('scan paused');
+        return results;
+      }
+      throw err;
+    }
     results.push(...batchResults);
     if(typeof opts.onBatch==='function'){
       try{opts.onBatch(batchResults,results.slice(),Math.min(start+batch.length,symbols.length),symbols.length);}
@@ -3830,6 +3848,71 @@ async function waitForApiSlot(){
   }
 }
 
+
+/* === NETWORK-RESILIENT BINANCE FETCH PATCH === */
+let binanceConnectivityDown = false;
+let lastConnectivityErrorAt = 0;
+
+function isNetworkConnectivityError(err) {
+  const msg = String(err?.message || err || '');
+  return /Failed to fetch|ERR_INTERNET_DISCONNECTED|ERR_ADDRESS_UNREACHABLE|NetworkError|Load failed|network error|internet disconnected|address unreachable/i.test(msg);
+}
+
+function setBinanceConnectivityStatus(down, detail = '') {
+  binanceConnectivityDown = !!down;
+  if (down) lastConnectivityErrorAt = Date.now();
+
+  if (el?.scanStatus) {
+    el.scanStatus.innerText = down
+      ? `🔌 Binance connection lost — preserving previous results${detail ? ` • ${detail}` : ''}`
+      : `🟢 Binance connection restored${detail ? ` • ${detail}` : ''}`;
+  }
+  if (el?.safetyStatus && down) {
+    el.safetyStatus.innerText = '🔌 Binance offline/unreachable • Previous results preserved';
+  }
+}
+
+async function fetchWithConnectivityRetry(url, opts = {}) {
+  const maxRetries = Math.max(0, Math.min(3, Number(opts.networkRetries ?? 2)));
+  const retryBaseMs = Math.max(500, Number(opts.networkRetryBaseMs ?? 1500));
+  const fetchOpts = { ...opts };
+  delete fetchOpts.networkRetries;
+  delete fetchOpts.networkRetryBaseMs;
+
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (navigator.onLine === false) {
+        throw new Error('browser reports offline');
+      }
+      const response = await fetch(url, fetchOpts);
+      if (binanceConnectivityDown) setBinanceConnectivityStatus(false);
+      return response;
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= maxRetries) throw err;
+      setBinanceConnectivityStatus(true, `retry ${attempt + 1}/${maxRetries}`);
+      await delay(retryBaseMs * Math.pow(2, attempt));
+    }
+  }
+  throw lastErr;
+}
+
+function preserveMarketResultsOnConnectivityLoss(detail = '') {
+  setBinanceConnectivityStatus(true, detail);
+  // Deliberately do not publish [] and do not clear marketScanResults.
+  try {
+    if (typeof renderActiveView === 'function') renderActiveView(false);
+  } catch (_) {}
+}
+
+if (!window.__binanceConnectivityListenersInstalled) {
+  window.__binanceConnectivityListenersInstalled = true;
+  window.addEventListener('offline', () => setBinanceConnectivityStatus(true, 'device offline'));
+  window.addEventListener('online', () => setBinanceConnectivityStatus(false, 'online'));
+}
+/* === END NETWORK-RESILIENT BINANCE FETCH PATCH === */
+
 async function safeFetch(url, opts = {}) {
   if(!running && !opts.allowIfNotRunning) {
     throw new Error('Not running (call Start first)');
@@ -3864,10 +3947,14 @@ async function safeFetch(url, opts = {}) {
 
     let response;
     try {
-      response = await fetch(url, opts);
+      response = await fetchWithConnectivityRetry(url, opts);
       updateServerWeightFromHeaders(response);
     } catch(err) {
-      throw new Error(`Network error for ${url} → ${err.message}`);
+      if (isNetworkConnectivityError(err) || navigator.onLine === false) {
+        setBinanceConnectivityStatus(true, 'request failed');
+        throw new Error(`Network error for ${url} → ${err.message}`);
+      }
+      throw err;
     }
 
     const backoffMs = noteRateLimitResponse(response);
@@ -7944,6 +8031,13 @@ function commitScannerSurface(surface){
 }
 
 function commitMarketScanResults(nextResults){
+  // Connectivity failures must never replace a previously visible market scan with [].
+  if (binanceConnectivityDown && Array.isArray(nextResults) && nextResults.length === 0 &&
+      Array.isArray(marketScanResults) && marketScanResults.length > 0) {
+    preserveMarketResultsOnConnectivityLoss('empty scan suppressed');
+    return;
+  }
+
   const scrollY = window.scrollY || window.pageYOffset || 0;
 
   marketScanResults = Array.isArray(nextResults) ? nextResults.slice() : [];
