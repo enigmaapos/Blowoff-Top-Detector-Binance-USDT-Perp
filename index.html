@@ -831,7 +831,37 @@ body.authLocked{overflow:hidden}
     </div>
 
     <div class="controlSection controlZone filtersZone">
-      <div class="controlSectionTitle"><span>🎯</span> 5 · Result Filters</div>
+      <div class="controlSectionTitle"><span>🎯</span> 5 · Entry Filters</div>
+      <div class="controlGrid two" style="margin-top:10px">
+        <div class="controlItem">
+          <label class="controlLabel">🟢 Long Entry Status</label>
+          <select id="longEntryFilter">
+            <option value="ALL">All Long Entry States</option>
+            <option value="CONFIRMED">Confirmed / staged</option>
+            <option value="STAGED">Staged / conditional</option>
+            <option value="CONDITIONAL">Conditional</option>
+            <option value="WAIT">Wait</option>
+            <option value="NOT_READY">Not ready</option>
+            <option value="DONT_CHASE">Don't chase</option>
+          </select>
+          <div class="dashboardHint">Filter only by the actual Long Entry Status shown in each result.</div>
+        </div>
+
+        <div class="controlItem">
+          <label class="controlLabel">🔴 Short Entry Status</label>
+          <select id="shortEntryFilter">
+            <option value="ALL">All Short Entry States</option>
+            <option value="CONDITIONAL">Conditional</option>
+            <option value="WAIT">Wait</option>
+            <option value="REJECTION">Rejection / failed bounce</option>
+            <option value="LOWER_HIGH">Failed bounce / lower-high</option>
+            <option value="ACCEPTANCE">Acceptance below liquidity</option>
+          </select>
+          <div class="dashboardHint">Filter only by the actual Short Entry Status shown in each result.</div>
+        </div>
+      </div>
+    </div>
+<div class="controlSectionTitle"><span>🎯</span> 5 · Result Filters</div>
       <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
           <label class="controlLabel">🟢 Long Entry Status</label>
