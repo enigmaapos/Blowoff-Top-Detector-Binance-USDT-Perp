@@ -831,60 +831,32 @@ body.authLocked{overflow:hidden}
     </div>
 
     <div class="controlSection controlZone filtersZone">
-      <div class="controlSectionTitle"><span>🎯</span> 5 · Result Filters</div>
-      <div class="controlGrid three" style="margin-top:10px">
+      <div class="controlSectionTitle"><span>🎯</span> 5 · Entry Filters</div>
+      <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">Sort Results</label>
-          <select id="sortBy">
-            <option value="trendTransition" selected>⭐ Trend Transition Priority</option>
-            <option value="score">Blowoff Score</option>
-            <option value="topScore">Top-Detection Score</option>
-            <option value="similarity">Cycle similarity</option>
-            <option value="accum">Accum confidence</option>
-            <option value="preCrash">Exhaustion Warning</option>
-            <option value="rsi4h">RSI (4H)</option>
-            <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (1D • 24H)</option>
-            <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (1D • 24H)</option>
-            <option value="rsi4h1wCount">📉 4H RSI &lt;50 candle count (1W • 7D)</option>
-            <option value="rsi4h1wPct">📉 4H RSI &lt;50 percentage (1W • 7D)</option>
-            <option value="rsi8h1mCount">🌐 8H RSI &lt;50 candle count (1M • 30D)</option>
-            <option value="rsi8h1mPct">🌐 8H RSI &lt;50 percentage (1M • 30D)</option>
-            <option value="ema70DistPct">EMA70 stretch %</option>
-            <option value="ema200Stretch15">15m EMA200 stretch %</option>
-            <option value="last">Last price</option>
-            <option value="symbol">Symbol</option>
-            <option value="volSpike">Vol Spike</option>
-            <option value="vol1d">Volume 1D</option>
-            <option value="vol1dTrend">1D Volume Trend</option>
-            <option value="vol4h">Volume 4H</option>
-            <option value="vol15m">Volume 15m</option>
-            <option value="hvdScore">🕯️ HVD Score</option>
-            <option value="hvd1d">🕯️ HVD 1D</option>
-            <option value="hvd1w">🕯️ HVD 1W</option>
-            <option value="hvd1m">🕯️ HVD 1M</option>
-            <option value="cycleMatch">Cycle Match %</option>
-            <option value="correctionRank">Correction Status</option>
-            <option value="correctionConfidence">Correction Confidence</option>
-            <option value="fundingRate">Funding Rate</option>
-            <option value="phase">Market Phase</option>
-            <option value="phaseRank">Market Phase Rank</option>
-            <option value="simPhase">Similarity Phase</option>
-            <option value="simPhaseRank">Similarity Phase Rank</option>
-            <option value="liquidityStrength">💧 Liquidity Strength</option><option value="liquidityDistance">💧 Liquidity Distance</option><option value="liquidityEvent">💧 Liquidity Event</option><option value="liquidityState">💧 Liquidity State</option><option value="smcStrength">🧩 SMC Breaker Strength</option>
-            <option value="smcConfidence">🧩 SMC Confidence</option>
-            <option value="smcStageRank">🧩 SMC Stage</option>
+          <label class="controlLabel">🟢 Long Entry Status</label>
+          <select id="longEntryFilter">
+            <option value="ALL">All Long Entry States</option>
+            <option value="CONFIRMED">🟢 Confirmed / staged</option>
+            <option value="STAGED">⚠️ Staged / conditional</option>
+            <option value="CONDITIONAL">🟡 Conditional</option>
+            <option value="WAIT">⏸ Wait</option>
+            <option value="NOT_READY">❌ Not yet / wait</option>
+            <option value="DONT_CHASE">🚫 Don't chase</option>
           </select>
+          <div class="dashboardHint">Filter only by the actual Long Entry Status shown in each result.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">Sort Direction</label>
-          <button id="sortDir" class="alt" title="Toggle sort direction" style="width:100%">Desc</button>
-        </div>
-        <div class="controlItem">
-          <label class="controlToggle">
-            <input id="showDistBtn" type="checkbox">
-            <span>Show Distribution / Breakdown</span>
-          </label>
-          <div class="dashboardHint">Focus the results view on structural weakness.</div>
+          <label class="controlLabel">🔴 Short Entry Status</label>
+          <select id="shortEntryFilter">
+            <option value="ALL">All Short Entry States</option>
+            <option value="CONDITIONAL">🟠 Conditional</option>
+            <option value="WAIT">⏸ Wait</option>
+            <option value="REJECTION">🟠 Rejection / failed bounce</option>
+            <option value="LOWER_HIGH">🔴 Failed bounce / lower-high</option>
+            <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
+          </select>
+          <div class="dashboardHint">Filter only by the actual Short Entry Status shown in each result.</div>
         </div>
       </div>
     </div>
@@ -938,15 +910,7 @@ body.authLocked{overflow:hidden}
           </select>
           <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
         </div>
-        <div class="controlItem">
-          <label class="controlLabel">Entry Status Sort</label>
-          <select id="entryStatusSort">
-            <option value="NONE">No dedicated sort</option>
-            <option value="LONG_DESC">🟢 Long entry readiness</option>
-            <option value="SHORT_DESC">🔴 Short entry readiness</option>
-          </select>
-          <div class="dashboardHint">Ranks the same entry-status conditions used by the filters.</div>
-        </div>
+</div>
         <div class="controlItem">
           <label class="controlLabel">Funding Direction</label>
           <select id="fundingFilter">
@@ -1203,7 +1167,6 @@ const el = {
   biasFilter: document.getElementById('biasFilter'),
   longEntryFilter: document.getElementById('longEntryFilter'),
   shortEntryFilter: document.getElementById('shortEntryFilter'),
-  entryStatusSort: document.getElementById('entryStatusSort'),
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
   marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
@@ -6165,159 +6128,7 @@ if (el.longEntryFilter) {
 }
 if (el.shortEntryFilter) {
   el.shortEntryFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.entryStatusSort) {
-  el.entryStatusSort.addEventListener('change', () => {
-    const v=el.entryStatusSort.value;
-    if(v==='LONG_DESC'){ el.sortBy.value='longEntryStatus'; sortDesc=true; if(el.sortDir) el.sortDir.innerText='Desc'; }
-    else if(v==='SHORT_DESC'){ el.sortBy.value='shortEntryStatus'; sortDesc=true; if(el.sortDir) el.sortDir.innerText='Desc'; }
-    renderActiveView(true);
-  });
-}
-if (el.fundingFilter) {
-  el.fundingFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.accumDoubleTopFilter) {
-  el.accumDoubleTopFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.marketExhaustionFilter) {
-  el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.rsi15SessionFilter) {
-  el.rsi15SessionFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.rsi15SessionSort) {
-  el.rsi15SessionSort.addEventListener('change', () => {
-    const v = el.rsi15SessionSort.value;
-    if (v === 'COUNT_DESC') { el.sortBy.value='rsi15SessionCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
-    else if (v === 'PCT_DESC') { el.sortBy.value='rsi15SessionPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
-    renderActiveView(true);
-  });
-}
-if (el.rsi4h1wFilter) {
-  el.rsi4h1wFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.rsi4h1wSort) {
-  el.rsi4h1wSort.addEventListener('change', () => {
-    const v = el.rsi4h1wSort.value;
-    if (v === 'COUNT_DESC') { el.sortBy.value='rsi4h1wCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
-    else if (v === 'PCT_DESC') { el.sortBy.value='rsi4h1wPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
-    renderActiveView(true);
-  });
-}
-if (el.rsi8h1mFilter) {
-  el.rsi8h1mFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.rsi8h1mSort) {
-  el.rsi8h1mSort.addEventListener('change', () => {
-    const v = el.rsi8h1mSort.value;
-    if (v === 'COUNT_DESC') { el.sortBy.value='rsi8h1mCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
-    else if (v === 'PCT_DESC') { el.sortBy.value='rsi8h1mPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
-    renderActiveView(true);
-  });
-}
-if (el.hvdFilter) {
-  el.hvdFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.liquidityFilter) {
-  el.liquidityFilter.addEventListener('change', () => {
-    const v=el.liquidityFilter.value;
-
-    // Filter + sort use one explicit liquidity contract.
-    // APPROACHING sorts closest-first; all other liquidity ranks sort strongest-first.
-    if(el.sortBy && v !== 'ALL'){
-      el.sortBy.value='liquidityEvent';
-      sortDesc=true;
-      if(el.sortDir) el.sortDir.innerText='Desc';
-    }
-    renderActiveView(true);
-  });
-}
-if (el.bearishStructureFilter) {
-  el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
-}
-if (el.smcBreakerFilter) {
-  el.smcBreakerFilter.addEventListener('change', () => {
-    // Selecting an SMC lifecycle stage automatically switches to the
-    // SMC strength sorter so the strongest matching breaker appears first.
-    if (el.sortBy) {
-      if (el.smcBreakerFilter.value !== 'ALL') {
-        el.sortBy.value = 'smcStrength';
-        if (el.sortDir) { sortDesc = true; el.sortDir.innerText = 'Desc'; }
-      } else if (el.sortBy.value === 'smcStrength' || el.sortBy.value === 'smcConfidence' || el.sortBy.value === 'smcStageRank') {
-        el.sortBy.value = 'score';
-      }
-    }
-    renderActiveView(true);
-  });
-}
-if (el.smcDirectionFilter) {
-  el.smcDirectionFilter.addEventListener('change', () => renderActiveView(true));
-}
-
-
-/* ---------- Long-term target generator ---------- */
-function getLongTermTargets(item){
-  /*
-    Structure-based target engine.
-    Targets are derived from actual swing/pivot levels across 15m/1h/4h/1D,
-    rather than fixed percentage projections from the previous high.
-  */
-  try{
-    const close = Number(item.closeNow || 0);
-    const series = [
-      {name:'15m', data:item.k15m||[], radius:2, weight:1},
-      {name:'1h',  data:item.k1h||[],  radius:2, weight:2},
-      {name:'4h',  data:item.k4h||[],  radius:2, weight:3},
-      {name:'1D',  data:item.k1d||[],  radius:1, weight:4}
-    ];
-
-    const highs=[], lows=[];
-    const addPivots=(arr, radius, weight, tf)=>{
-      if(!Array.isArray(arr) || arr.length < radius*2+3) return;
-      const start=Math.max(radius, arr.length-120);
-      for(let i=start;i<arr.length-radius;i++){
-        const h=Number(arr[i][2]), l=Number(arr[i][3]);
-        if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
-        let ph=true, pl=true;
-        for(let j=1;j<=radius;j++){
-          if(Number(arr[i-j][2]) >= h || Number(arr[i+j][2]) > h) ph=false;
-          if(Number(arr[i-j][3]) <= l || Number(arr[i+j][3]) < l) pl=false;
-        }
-        if(ph) highs.push({price:h,weight,tf});
-        if(pl) lows.push({price:l,weight,tf});
-      }
-    };
-    series.forEach(x=>addPivots(x.data,x.radius,x.weight,x.name));
-
-    // Always include recent structural extremes as anchors.
-    const addExtremes=(arr, weight, tf)=>{
-      if(!arr.length) return;
-      const slice=arr.slice(-Math.min(40,arr.length));
-      const hi=Math.max(...slice.map(k=>Number(k[2])).filter(Number.isFinite));
-      const lo=Math.min(...slice.map(k=>Number(k[3])).filter(Number.isFinite));
-      if(Number.isFinite(hi)) highs.push({price:hi,weight,tf,anchor:true});
-      if(Number.isFinite(lo)) lows.push({price:lo,weight,tf,anchor:true});
-    };
-    series.forEach(x=>addExtremes(x.data,x.weight,x.name));
-
-    // Cluster nearby levels so repeated touches become one meaningful zone.
-    function cluster(levels){
-      const sorted=levels.filter(x=>Number.isFinite(x.price)).sort((a,b)=>a.price-b.price);
-      const groups=[];
-      for(const x of sorted){
-        const last=groups[groups.length-1];
-        const tolerance=Math.max(0.006, Math.min(0.018, x.price*0.015/(x.price||1)));
-        if(last && Math.abs(x.price-last.mean)/last.mean <= tolerance){
-          last.items.push(x);
-          last.mean=last.items.reduce((a,b)=>a+b.price,0)/last.items.length;
-        }else groups.push({mean:x.price,items:[x]});
-      }
-      return groups.map(g=>{
-        const score=g.items.reduce((a,x)=>a+x.weight,0) + g.items.length*0.75;
-        const tfs=[...new Set(g.items.map(x=>x.tf))];
-        return {price:g.mean,score,tfs,touches:g.items.length};
-      });
+});
     }
 
     const resist=cluster(highs).filter(x=>x.price>close*1.001).sort((a,b)=>a.price-b.price);
@@ -8113,9 +7924,7 @@ function commitMarketScanResults(nextResults){
   const activeFilterState = (() => {
     try {
       const ids = [
-        'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','fundingFilter','marketExhaustionFilter',
-        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','bearishStructureFilter',
-        'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
+        'longEntryFilter','shortEntryFilter'
       ];
       const active = ids.some(id => {
         const x = document.getElementById(id);
