@@ -961,6 +961,8 @@ const el = {
   stopBtn: document.getElementById('stopBtn'),
   oneShot: document.getElementById('oneShot'),
   message: document.getElementById('message'),
+  // Compatibility alias: scanner progress/status uses the existing #message UI.
+  scanStatus: document.getElementById('scanStatus') || document.getElementById('message'),
   bar: document.getElementById('bar'),
   tableView: document.getElementById('tableView'),
   cardView: document.getElementById('cardView'),
@@ -8293,7 +8295,7 @@ el.unifiedScanBtn.addEventListener('click', async () => {
     clearQuickTradingInterpretation();
     if(el.countdown) el.countdown.innerText = `Scanning ${getActiveScannerLabel()}…`;
     if (mode === 'topGreen') {
-      el.scanStatus.innerText = 'Running Top30 Gainers (green) scan...';
+      if (el.scanStatus) el.scanStatus.innerText = 'Running Top30 Gainers (green) scan...';
       await runTop30Scan({ positive:true, mode:'resistance', session });
       if(session === modeSession && activeViewMode === 'scan'){
         marketAutoEnabled = true;
@@ -8301,7 +8303,7 @@ el.unifiedScanBtn.addEventListener('click', async () => {
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
       }
     } else if (mode === 'topRed') {
-      el.scanStatus.innerText = 'Running Top30 Losers (red) scan...';
+      if (el.scanStatus) el.scanStatus.innerText = 'Running Top30 Losers (red) scan...';
       await runTop30Scan({ positive:false, mode:'bearish', session });
       if(session === modeSession && activeViewMode === 'scan'){
         marketAutoEnabled = true;
@@ -8309,7 +8311,7 @@ el.unifiedScanBtn.addEventListener('click', async () => {
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
       }
     } else if (mode === 'below50') {
-      el.scanStatus.innerText = 'Running Below-50 Accumulation / PreCrash scan...';
+      if (el.scanStatus) el.scanStatus.innerText = 'Running Below-50 Accumulation / PreCrash scan...';
       if(typeof window.runBelow50ScanUI === 'function') await window.runBelow50ScanUI({session});
       else if(typeof runBelow50Scan === 'function') await runBelow50Scan({session});
       else if(typeof runBelow50 === 'function') await runBelow50({session});
@@ -8320,7 +8322,7 @@ el.unifiedScanBtn.addEventListener('click', async () => {
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
       }
     } else {
-      el.scanStatus.innerText = 'Running Market scan...';
+      if (el.scanStatus) el.scanStatus.innerText = 'Running Market scan...';
       prevBlowoffSet = new Set();
       await runScan(false, session);
     }
