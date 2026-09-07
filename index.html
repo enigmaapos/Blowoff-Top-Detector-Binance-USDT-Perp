@@ -831,60 +831,8 @@ body.authLocked{overflow:hidden}
     </div>
 
     <div class="controlSection controlZone filtersZone">
-      <div class="controlSectionTitle"><span>🎯</span> 5 · Entry Filters</div>
+      <div class="controlSectionTitle"><span>🎯</span> 5 · Result Filters</div>
       <div class="controlGrid two" style="margin-top:10px">
-        <div class="controlItem">
-          <label class="controlLabel">🟢 Long Entry Status</label>
-          <select id="longEntryFilter">
-            <option value="ALL">All Long Entry States</option>
-            <option value="CONFIRMED">🟢 Confirmed / staged</option>
-            <option value="STAGED">⚠️ Staged / conditional</option>
-            <option value="CONDITIONAL">🟡 Conditional</option>
-            <option value="WAIT">⏸ Wait</option>
-            <option value="NOT_READY">❌ Not yet / wait</option>
-            <option value="DONT_CHASE">🚫 Don't chase</option>
-          </select>
-          <div class="dashboardHint">Filter only by the actual Long Entry Status shown in each result.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🔴 Short Entry Status</label>
-          <select id="shortEntryFilter">
-            <option value="ALL">All Short Entry States</option>
-            <option value="CONDITIONAL">🟠 Conditional</option>
-            <option value="WAIT">⏸ Wait</option>
-            <option value="REJECTION">🟠 Rejection / failed bounce</option>
-            <option value="LOWER_HIGH">🔴 Failed bounce / lower-high</option>
-            <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
-          </select>
-          <div class="dashboardHint">Filter only by the actual Short Entry Status shown in each result.</div>
-        </div>
-      </div>
-    </div>
-      <div class="controlGrid three">
-        <div class="controlItem">
-          <label class="controlLabel">⭐ Trend Transition Priority</label>
-          <select id="trendTransitionFilter">
-            <option value="ALL">All</option>
-            <option value="WATCH">🟡 Watch ≥45</option>
-            <option value="PRE_BREAKDOWN">🟠 Pre-Breakdown ≥60</option>
-            <option value="HIGH">🔴 High Priority ≥75</option>
-            <option value="CONFIRMED">🔴 Breakdown Confirmed</option>
-          </select>
-          <div class="dashboardHint">Start here. Filters the scanner by trend-transition priority, not a price-fall probability.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🎯 Trader Bias</label>
-          <select id="biasFilter">
-            <option value="ALL">All Biases</option>
-            <option value="BULLISH">🟢 Bullish</option>
-            <option value="MILD_BULLISH">🟢 Mild Bullish</option>
-            <option value="RECOVERY">🟣 Recovery Watch</option>
-            <option value="NEUTRAL">⚪ Neutral</option>
-            <option value="BEARISH_RISK">🟠 Bearish Risk</option>
-            <option value="BEARISH_CAUTIOUS">🔴 Bearish / Cautious</option>
-          </select>
-          <div class="dashboardHint">Filter by the final Trader Decision bias shown on each coin card.</div>
-        </div>
         <div class="controlItem">
           <label class="controlLabel">🟢 Long Entry Status</label>
           <select id="longEntryFilter">
@@ -910,192 +858,8 @@ body.authLocked{overflow:hidden}
           </select>
           <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
         </div>
-</div>
-        <div class="controlItem">
-          <label class="controlLabel">Funding Direction</label>
-          <select id="fundingFilter">
-            <option value="ALL">All Funding</option>
-            <option value="NEGATIVE">🔴 Negative Funding (&lt; 0)</option>
-            <option value="POSITIVE">🟢 Positive Funding (&gt; 0)</option>
-            <option value="NEUTRAL">⚪ Neutral Funding (= 0)</option>
-          </select>
-          <div class="dashboardHint">Filter by the latest funding rate.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Correction Status</label>
-          <select id="correctionFilter">
-            <option value="ALL">All</option>
-            <option value="SIGNIFICANT_CORRECTION_CONFIRMED">🔴 Confirmed</option>
-            <option value="CORRECTION_DEVELOPING">🟠 Developing — Not Confirmed</option>
-            <option value="HIGH_CORRECTION_RISK">🟡 High Risk</option>
-            <option value="HIGH_CORRECTION_RISK_MANIA">🔥 High Risk / Mania</option>
-            <option value="POST_CORRECTION_RECOVERY">⚫ Recovery</option>
-            <option value="OVERBOUGHT_CONTINUATION_SUPPORTED">⚪ Overbought / Continuation Supported</option>
-            <option value="VULNERABILITY_INCREASING">🟡 Vulnerability Increasing</option>
-            <option value="HIGH_VULNERABILITY">🟠 High Vulnerability</option>
-            <option value="OVERBOUGHT">⚪ Overbought</option>
-            <option value="NO_SIGNIFICANT_CORRECTION_SIGNAL">🟢 Continuation</option>
-          </select>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Accumulation Double-Top</label>
-          <select id="accumDoubleTopFilter">
-            <option value="ALL">All</option>
-            <option value="DETECTED">📐 Any detected</option>
-            <option value="FORMING">🟡 Developing</option>
-            <option value="DOUBLE_TOP">🟡 Double Top / Break Watch</option>
-            <option value="BREAKOUT">🟡 Neckline Break — Retest Pending</option>
-            <option value="RETEST">🟠 Neckline Retest — Bearish</option>
-            <option value="REVERSAL_CONFIRMED">🔴 Reversal Confirmed</option>
-          </select>
-          <div class="dashboardHint">Filter specifically by the accumulation → double-top → neckline → reversal stage.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">💧 Liquidity Intelligence</label>
-          <select id="liquidityFilter">
-            <option value="ALL">All Liquidity Contexts</option>
-            <option value="REJECTION">🔴 REJECTION</option>
-            <option value="PENDING">🟡 OUTCOME PENDING</option>
-            <option value="ACCEPTANCE">🟢 ACCEPTANCE</option>
-            <option value="APPROACHING">🟠 APPROACHING</option>
-            <option value="OTHERS">⚪ Others</option>
-          </select>
-          <div class="dashboardHint">Filter by the exact Liquidity Context shown in each scanner result. Context only — never overrides 15m EMA200 correction confirmation.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Market Exhaustion</label>
-          <select id="marketExhaustionFilter">
-            <option value="ALL">All</option>
-            <option value="DEVELOPING">🟡 Exhaustion Developing</option>
-            <option value="STRONG">🟠 Strong Exhaustion</option>
-            <option value="EXTREME">🔴 Extreme Exhaustion</option>
-            <option value="MOMENTUM">📉 Momentum Exhaustion</option>
-            <option value="VOLUME">📊 Volume Exhaustion</option>
-            <option value="DISTRIBUTION">🟣 Distribution Exhaustion</option>
-            <option value="BLOWOFF">🔥 Blowoff / Climax</option>
-          </select>
-          <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">📉 15m RSI &lt;50 • 1D • 24H</label>
-          <select id="rsi15SessionFilter">
-            <option value="ALL">All</option>
-            <option value="ANY">🔎 RSI &lt;50 Any</option>
-            <option value="P25">🟡 ≥25% of candles</option>
-            <option value="P50">🟠 ≥50% of candles</option>
-            <option value="P75">🔴 ≥75% of candles</option>
-          </select>
-          <div class="dashboardHint">Counts completed 15m candle closes with RSI &lt;50 in the latest 24 hours. Max 96 candles.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">📊 RSI &lt;50 • 1D Sort</label>
-          <select id="rsi15SessionSort">
-            <option value="NONE">No dedicated sort</option>
-            <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
-            <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
-          </select>
-          <div class="dashboardHint">Overrides the normal sort while selected and ranks the latest 24 hours of RSI weakness.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">📉 4H RSI &lt;50 • 1W • 7D</label>
-          <select id="rsi4h1wFilter">
-            <option value="ALL">All</option>
-            <option value="ANY">🔎 RSI &lt;50 Any</option>
-            <option value="P25">🟡 ≥25% of candles</option>
-            <option value="P50">🟠 ≥50% of candles</option>
-            <option value="P75">🔴 ≥75% of candles</option>
-          </select>
-          <div class="dashboardHint">Counts completed 4H candle closes with RSI &lt;50 across the latest 7 days. Max 42 candles.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">📊 4H RSI &lt;50 • 1W Sort</label>
-          <select id="rsi4h1wSort">
-            <option value="NONE">No dedicated sort</option>
-            <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
-            <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
-          </select>
-          <div class="dashboardHint">Overrides the normal sort while selected and ranks persistent 4H RSI weakness over the latest 7 days.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🌐 8H RSI &lt;50 • 1M • 30D</label>
-          <select id="rsi8h1mFilter">
-            <option value="ALL">All</option>
-            <option value="ANY">🔎 RSI &lt;50 Any</option>
-            <option value="P25">🟡 ≥25% of candles</option>
-            <option value="P50">🟠 ≥50% of candles</option>
-            <option value="P75">🔴 ≥75% of candles</option>
-          </select>
-          <div class="dashboardHint">Counts completed 8H candle closes with RSI &lt;50 over the latest 30 days. Max 90 candles.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">📊 8H RSI &lt;50 • 1M Sort</label>
-          <select id="rsi8h1mSort">
-            <option value="NONE">No dedicated sort</option>
-            <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
-            <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
-          </select>
-          <div class="dashboardHint">Ranks macro RSI weakness over the rolling 30-day 8H window.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🕯️ High-Volume Doji (HVD)</label>
-          <select id="hvdFilter">
-            <option value="ALL">All HVD</option>
-            <option value="ANY_55">🕯️ Any HVD ≥55%</option>
-            <option value="ANY_70">🟠 Any HVD ≥70%</option>
-            <option value="ANY_80">🔴 Any HVD ≥80%</option>
-            <option value="1D_55">📅 1D HVD ≥55%</option>
-            <option value="1W_55">📅 1W HVD ≥55%</option>
-            <option value="1M_55">📅 1M HVD ≥55%</option>
-            <option value="LATEST_ANY">⚡ Latest completed HVD — Any TF</option>
-            <option value="LATEST_1D">⚡ Latest completed 1D HVD</option>
-            <option value="LATEST_1W">⚡ Latest completed 1W HVD</option>
-            <option value="LATEST_1M">⚡ Latest completed 1M HVD</option>
-          </select>
-          <div class="dashboardHint">Strict small-body + high-volume detector on completed 1D / 1W / 1M candles. Filters use the actual stored HVD score.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Unified Bearish Structure</label>
-          <select id="bearishStructureFilter">
-            <option value="ALL">All</option>
-            <option value="MSS">🟡 MSS Confirmed+</option>
-            <option value="CHOCH">🟠 CHoCH Confirmed+</option>
-            <option value="BOS">🔴 BOS Confirmed+</option>
-            <option value="RETEST">🔴 Failed Retest Confirmed+</option>
-            <option value="BREAKDOWN">🔴 Bearish Breakdown Confirmed</option>
-          </select>
-          <div class="dashboardHint">Filters by the unified MSS → CHoCH → BOS → failed retest → breakdown sequence. It never overrides the authoritative correction status.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">SMC Breaker Stage</label>
-          <select id="smcBreakerFilter">
-            <option value="ALL">All SMC Setups</option>
-            <option value="ANY_SETUP">🧩 Any Breaker Setup</option>
-            <option value="WAIT_FOR_RETEST">🟡 Wait for Retest</option>
-            <option value="RETEST_ACTIVE">🟠 Retest Active</option>
-            <option value="CONFIRMED">🟢 Confirmed</option>
-          </select>
-          <div class="dashboardHint">Filters the 15m SMC breaker lifecycle. Confirmed ranks above active retests and waiting setups.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">SMC Direction</label>
-          <select id="smcDirectionFilter">
-            <option value="ALL">Both Directions</option>
-            <option value="BULLISH">🟢 Bullish Breakers</option>
-            <option value="BEARISH">🔴 Bearish Breakers</option>
-          </select>
-          <div class="dashboardHint">Optional direction filter for the 15m breaker detector.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Scan Status</label>
-          <div id="scanStatus" class="dashboardStatusValue">Ready.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">Scanner Note</label>
-          <div id="runBelow50Note" class="dashboardStatusValue" style="font-size:11px;color:var(--muted)">Ready.</div>
-        </div>
       </div>
     </div>
-  </div>
 
   <!-- ===== Button + results container ===== -->
 <!-- Scanner note is rendered in the dashboard status panel above. -->
@@ -1161,26 +925,27 @@ const el = {
   showShort: document.getElementById('showShort'),
   tradeInterpret: document.getElementById('tradeInterpret'),
   // sorting elements (populated below)
-  sortBy: document.getElementById('sortBy'),
-  sortDir: document.getElementById('sortDir'),
-  correctionFilter: document.getElementById('correctionFilter'),
-  biasFilter: document.getElementById('biasFilter'),
+  sortBy: document.getElementById(),
+  sortDir: document.getElementById(),
+  correctionFilter: document.getElementById(),
+  biasFilter: document.getElementById(),
   longEntryFilter: document.getElementById('longEntryFilter'),
   shortEntryFilter: document.getElementById('shortEntryFilter'),
-  fundingFilter: document.getElementById('fundingFilter'),
-  accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
-  marketExhaustionFilter: document.getElementById('marketExhaustionFilter'),
-  rsi15SessionFilter: document.getElementById('rsi15SessionFilter'),
-  rsi15SessionSort: document.getElementById('rsi15SessionSort'),
-  rsi4h1wFilter: document.getElementById('rsi4h1wFilter'),
-  rsi4h1wSort: document.getElementById('rsi4h1wSort'),
-  rsi8h1mFilter: document.getElementById('rsi8h1mFilter'),
-  rsi8h1mSort: document.getElementById('rsi8h1mSort'),
-  hvdFilter: document.getElementById('hvdFilter'),
-  liquidityFilter: document.getElementById('liquidityFilter'),
-  bearishStructureFilter: document.getElementById('bearishStructureFilter'),
-  smcBreakerFilter: document.getElementById('smcBreakerFilter'),
-  smcDirectionFilter: document.getElementById('smcDirectionFilter')
+  
+  fundingFilter: document.getElementById(),
+  accumDoubleTopFilter: document.getElementById(),
+  marketExhaustionFilter: document.getElementById(),
+  rsi15SessionFilter: document.getElementById(),
+  rsi15SessionSort: document.getElementById(),
+  rsi4h1wFilter: document.getElementById(),
+  rsi4h1wSort: document.getElementById(),
+  rsi8h1mFilter: document.getElementById(),
+  rsi8h1mSort: document.getElementById(),
+  hvdFilter: document.getElementById(),
+  liquidityFilter: document.getElementById(),
+  bearishStructureFilter: document.getElementById(),
+  smcBreakerFilter: document.getElementById(),
+  smcDirectionFilter: document.getElementById()
 };
 
   // ---------------------- Symbol search + single-symbol analyzer ----------------------
@@ -1698,7 +1463,7 @@ function detectLiquidityIntelligence(r){
 }
 
 function getLiquidityDisplayFilter(){
-  const v=document.getElementById('liquidityFilter')?.value || 'ALL';
+  const v=document.getElementById()?.value || 'ALL';
   return String(v).toUpperCase();
 }
 function renderLiquidityIntelligence(r){
@@ -6098,7 +5863,7 @@ if (el.sortDir) {
   el.sortDir.innerText = sortDesc ? 'Desc' : 'Asc';
 }
 
-const showDistBtn = document.getElementById('showDistBtn');
+const showDistBtn = document.getElementById();
 if (showDistBtn) {
   showDistBtn.addEventListener('click', () => {
     showOnlyDist = !showOnlyDist;
@@ -6128,7 +5893,155 @@ if (el.longEntryFilter) {
 }
 if (el.shortEntryFilter) {
   el.shortEntryFilter.addEventListener('change', () => renderActiveView(true));
-});
+}
+else if(v==='SHORT_DESC'){ el.sortBy.value='shortEntryStatus'; sortDesc=true; if(el.sortDir) el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
+}
+if (el.fundingFilter) {
+  el.fundingFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.accumDoubleTopFilter) {
+  el.accumDoubleTopFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.marketExhaustionFilter) {
+  el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi15SessionFilter) {
+  el.rsi15SessionFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi15SessionSort) {
+  el.rsi15SessionSort.addEventListener('change', () => {
+    const v = el.rsi15SessionSort.value;
+    if (v === 'COUNT_DESC') { el.sortBy.value='rsi15SessionCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    else if (v === 'PCT_DESC') { el.sortBy.value='rsi15SessionPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
+}
+if (el.rsi4h1wFilter) {
+  el.rsi4h1wFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi4h1wSort) {
+  el.rsi4h1wSort.addEventListener('change', () => {
+    const v = el.rsi4h1wSort.value;
+    if (v === 'COUNT_DESC') { el.sortBy.value='rsi4h1wCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    else if (v === 'PCT_DESC') { el.sortBy.value='rsi4h1wPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
+}
+if (el.rsi8h1mFilter) {
+  el.rsi8h1mFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.rsi8h1mSort) {
+  el.rsi8h1mSort.addEventListener('change', () => {
+    const v = el.rsi8h1mSort.value;
+    if (v === 'COUNT_DESC') { el.sortBy.value='rsi8h1mCount'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    else if (v === 'PCT_DESC') { el.sortBy.value='rsi8h1mPct'; sortDesc=true; el.sortDir.innerText='Desc'; }
+    renderActiveView(true);
+  });
+}
+if (el.hvdFilter) {
+  el.hvdFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.liquidityFilter) {
+  el.liquidityFilter.addEventListener('change', () => {
+    const v=el.liquidityFilter.value;
+
+    // Filter + sort use one explicit liquidity contract.
+    // APPROACHING sorts closest-first; all other liquidity ranks sort strongest-first.
+    if(el.sortBy && v !== 'ALL'){
+      el.sortBy.value='liquidityEvent';
+      sortDesc=true;
+      if(el.sortDir) el.sortDir.innerText='Desc';
+    }
+    renderActiveView(true);
+  });
+}
+if (el.bearishStructureFilter) {
+  el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.smcBreakerFilter) {
+  el.smcBreakerFilter.addEventListener('change', () => {
+    // Selecting an SMC lifecycle stage automatically switches to the
+    // SMC strength sorter so the strongest matching breaker appears first.
+    if (el.sortBy) {
+      if (el.smcBreakerFilter.value !== 'ALL') {
+        el.sortBy.value = 'smcStrength';
+        if (el.sortDir) { sortDesc = true; el.sortDir.innerText = 'Desc'; }
+      } else if (el.sortBy.value === 'smcStrength' || el.sortBy.value === 'smcConfidence' || el.sortBy.value === 'smcStageRank') {
+        el.sortBy.value = 'score';
+      }
+    }
+    renderActiveView(true);
+  });
+}
+if (el.smcDirectionFilter) {
+  el.smcDirectionFilter.addEventListener('change', () => renderActiveView(true));
+}
+
+
+/* ---------- Long-term target generator ---------- */
+function getLongTermTargets(item){
+  /*
+    Structure-based target engine.
+    Targets are derived from actual swing/pivot levels across 15m/1h/4h/1D,
+    rather than fixed percentage projections from the previous high.
+  */
+  try{
+    const close = Number(item.closeNow || 0);
+    const series = [
+      {name:'15m', data:item.k15m||[], radius:2, weight:1},
+      {name:'1h',  data:item.k1h||[],  radius:2, weight:2},
+      {name:'4h',  data:item.k4h||[],  radius:2, weight:3},
+      {name:'1D',  data:item.k1d||[],  radius:1, weight:4}
+    ];
+
+    const highs=[], lows=[];
+    const addPivots=(arr, radius, weight, tf)=>{
+      if(!Array.isArray(arr) || arr.length < radius*2+3) return;
+      const start=Math.max(radius, arr.length-120);
+      for(let i=start;i<arr.length-radius;i++){
+        const h=Number(arr[i][2]), l=Number(arr[i][3]);
+        if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
+        let ph=true, pl=true;
+        for(let j=1;j<=radius;j++){
+          if(Number(arr[i-j][2]) >= h || Number(arr[i+j][2]) > h) ph=false;
+          if(Number(arr[i-j][3]) <= l || Number(arr[i+j][3]) < l) pl=false;
+        }
+        if(ph) highs.push({price:h,weight,tf});
+        if(pl) lows.push({price:l,weight,tf});
+      }
+    };
+    series.forEach(x=>addPivots(x.data,x.radius,x.weight,x.name));
+
+    // Always include recent structural extremes as anchors.
+    const addExtremes=(arr, weight, tf)=>{
+      if(!arr.length) return;
+      const slice=arr.slice(-Math.min(40,arr.length));
+      const hi=Math.max(...slice.map(k=>Number(k[2])).filter(Number.isFinite));
+      const lo=Math.min(...slice.map(k=>Number(k[3])).filter(Number.isFinite));
+      if(Number.isFinite(hi)) highs.push({price:hi,weight,tf,anchor:true});
+      if(Number.isFinite(lo)) lows.push({price:lo,weight,tf,anchor:true});
+    };
+    series.forEach(x=>addExtremes(x.data,x.weight,x.name));
+
+    // Cluster nearby levels so repeated touches become one meaningful zone.
+    function cluster(levels){
+      const sorted=levels.filter(x=>Number.isFinite(x.price)).sort((a,b)=>a.price-b.price);
+      const groups=[];
+      for(const x of sorted){
+        const last=groups[groups.length-1];
+        const tolerance=Math.max(0.006, Math.min(0.018, x.price*0.015/(x.price||1)));
+        if(last && Math.abs(x.price-last.mean)/last.mean <= tolerance){
+          last.items.push(x);
+          last.mean=last.items.reduce((a,b)=>a+b.price,0)/last.items.length;
+        }else groups.push({mean:x.price,items:[x]});
+      }
+      return groups.map(g=>{
+        const score=g.items.reduce((a,x)=>a+x.weight,0) + g.items.length*0.75;
+        const tfs=[...new Set(g.items.map(x=>x.tf))];
+        return {price:g.mean,score,tfs,touches:g.items.length};
+      });
     }
 
     const resist=cluster(highs).filter(x=>x.price>close*1.001).sort((a,b)=>a.price-b.price);
@@ -7924,8 +7837,9 @@ function commitMarketScanResults(nextResults){
   const activeFilterState = (() => {
     try {
       const ids = [
-        'longEntryFilter','shortEntryFilter'
-      ];
+        'longEntryFilter','shortEntryFilter',
+        
+        ];
       const active = ids.some(id => {
         const x = document.getElementById(id);
         return x && x.value && x.value !== 'ALL';
@@ -8663,7 +8577,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
     const oldFilter=window.filterResultsForDist;
     window.filterResultsForDist=function(results){
       let out=oldFilter(results);
-      const f=document.getElementById('trendTransitionFilter');
+      const f=document.getElementById();
       const v=f?f.value:'ALL';
       if(v!=='ALL') out=out.filter(r=>{const t=calculateTrendTransitionPriority(r);if(v==='WATCH')return t.score>=45;if(v==='PRE_BREAKDOWN')return t.score>=60;if(v==='HIGH')return t.score>=75;if(v==='CONFIRMED')return t.code==='CONFIRMED';return true;});
       return out;
@@ -8683,7 +8597,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
   }
 
   // If renderer wrapping above is bypassed by initialization order, listen for the result panes changing.
-  document.addEventListener('change',e=>{if(e.target?.id==='trendTransitionFilter')typeof renderActiveView==='function'&&renderActiveView(true);});
+  document.addEventListener('change',e=>{if(e.target?.id===)typeof renderActiveView==='function'&&renderActiveView(true);});
   // Initial render is owned by the main application lifecycle; do not schedule duplicate renders.
 
 })();
