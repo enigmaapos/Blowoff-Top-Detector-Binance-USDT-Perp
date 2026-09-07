@@ -843,8 +843,8 @@ body.authLocked{overflow:hidden}
             <option value="accum">Accum confidence</option>
             <option value="preCrash">Exhaustion Warning</option>
             <option value="rsi4h">RSI (4H)</option>
-            <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (00:00AM–00:00AM)</option>
-            <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (00:00AM–00:00AM)</option>
+            <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (8AM–8AM)</option>
+            <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (8AM–8AM)</option>
             <option value="rsi4h1wCount">📉 4H RSI &lt;50 candle count (1 Week)</option>
             <option value="rsi4h1wPct">📉 4H RSI &lt;50 percentage (1 Week)</option>
             <option value="rsi8h1mCount">🌐 8H RSI &lt;50 candle count (1 Month)</option>
@@ -1013,7 +1013,7 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">📉 15m RSI &lt;50 • 00:00AM–00:00AM</label>
+          <label class="controlLabel">📉 15m RSI &lt;50 • 8AM–8AM</label>
           <select id="rsi15SessionFilter">
             <option value="ALL">All</option>
             <option value="ANY">🔎 RSI &lt;50 Any</option>
@@ -1021,7 +1021,7 @@ body.authLocked{overflow:hidden}
             <option value="P50">🟠 ≥50% of candles</option>
             <option value="P75">🔴 ≥75% of candles</option>
           </select>
-          <div class="dashboardHint">Counts completed 15m candle closes with RSI &lt;50 in the current 00:00AM–00:00AM session. Max 96 candles.</div>
+          <div class="dashboardHint">Counts completed 15m candle closes with RSI &lt;50 in the current 8AM–8AM session. Max 96 candles.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📊 RSI &lt;50 Session Sort</label>
@@ -1030,10 +1030,10 @@ body.authLocked{overflow:hidden}
             <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
             <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
           </select>
-          <div class="dashboardHint">Overrides the normal sort while selected and ranks the current 00:00AM–00:00AM RSI weakness.</div>
+          <div class="dashboardHint">Overrides the normal sort while selected and ranks the current 8AM–8AM RSI weakness.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">📉 4H RSI &lt;50 • 1W • 00:00AM–00:00AM</label>
+          <label class="controlLabel">📉 4H RSI &lt;50 • 1W • 8AM–8AM</label>
           <select id="rsi4h1wFilter">
             <option value="ALL">All</option>
             <option value="ANY">🔎 RSI &lt;50 Any</option>
@@ -1041,7 +1041,7 @@ body.authLocked{overflow:hidden}
             <option value="P50">🟠 ≥50% of candles</option>
             <option value="P75">🔴 ≥75% of candles</option>
           </select>
-          <div class="dashboardHint">Counts completed 4H candle closes with RSI &lt;50 across the current 1W session (00:00AM–00:00AM anchor). Max 42 candles.</div>
+          <div class="dashboardHint">Counts completed 4H candle closes with RSI &lt;50 across the current 1W session (8AM–8AM anchor). Max 42 candles.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📊 4H RSI &lt;50 • 1W Sort</label>
@@ -1053,7 +1053,7 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Overrides the normal sort while selected and ranks persistent 4H RSI weakness over the current 1W session.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">🌐 8H RSI &lt;50 • 1M • 00:00AM–00:00AM</label>
+          <label class="controlLabel">🌐 8H RSI &lt;50 • 1M • 8AM–8AM</label>
           <select id="rsi8h1mFilter">
             <option value="ALL">All</option>
             <option value="ANY">🔎 RSI &lt;50 Any</option>
@@ -1061,7 +1061,7 @@ body.authLocked{overflow:hidden}
             <option value="P50">🟠 ≥50% of candles</option>
             <option value="P75">🔴 ≥75% of candles</option>
           </select>
-          <div class="dashboardHint">Counts completed 8H candle closes with RSI &lt;50 across the rolling 1M (30 days), anchored at local 00:00AM. Max 90 candles.</div>
+          <div class="dashboardHint">Counts completed 8H candle closes with RSI &lt;50 across the rolling 1M (30 days), anchored at local 8AM. Max 90 candles.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📊 8H RSI &lt;50 • 1M Sort</label>
@@ -2856,7 +2856,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // before the 1W window is filtered, so the first counted candle is not reset.
     function get4hRsi1WeekStats(klines, period=14){
       const arr = Array.isArray(klines) ? klines : [];
-      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:42,days:7,timezone:'local',session:'00:00–00:00',timeframe:'1W'};
+      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:42,days:7,timezone:'local',session:'8AM–8AM',timeframe:'1W'};
       if(arr.length < period + 1) return empty;
       const closes = arr.map(k=>Number(k?.[4]));
       if(!closes.every(Number.isFinite)) return empty;
@@ -2873,7 +2873,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         rsis[i]=r;
       }
       const now=Date.now();
-      const d=new Date(now); d.setHours(0,0,0,0);
+      const d=new Date(now); d.setHours(8,0,0,0);
       let sessionEnd=d.getTime();
       if(now < sessionEnd) sessionEnd-=24*60*60*1000;
       const end=sessionEnd;
@@ -2887,7 +2887,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         total++; if(rsis[i]<50) count++;
       }
       total=Math.min(total,42); count=Math.min(count,total);
-      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:42,days:7,timezone:'local',session:'00:00–00:00',timeframe:'1W'};
+      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:42,days:7,timezone:'local',session:'8AM–8AM',timeframe:'1W'};
     }
     const rsi4h1w = get4hRsi1WeekStats(k4hFull,14);
 
@@ -2896,7 +2896,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // 00:00 session boundary. Only completed 8H candles are counted. RSI is seeded from the full available 8H history.
     function get8hRsi1MonthStats(klines, period=14){
       const arr = Array.isArray(klines) ? klines : [];
-      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:90,days:30,timezone:'local',session:'00:00–00:00',timeframe:'1M',candleTimeframe:'8H'};
+      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:90,days:30,timezone:'local',session:'8AM–8AM',timeframe:'1M',candleTimeframe:'8H'};
       if(arr.length < period + 1) return empty;
       const closes = arr.map(k=>Number(k?.[4]));
       if(!closes.every(Number.isFinite)) return empty;
@@ -2913,7 +2913,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         rsis[i]=r;
       }
       const now=Date.now();
-      const d=new Date(now); d.setHours(0,0,0,0);
+      const d=new Date(now); d.setHours(8,0,0,0);
       let sessionEnd=d.getTime();
       if(now < sessionEnd) sessionEnd-=24*60*60*1000;
       const end=sessionEnd;
@@ -2927,7 +2927,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         total++; if(rsis[i]<50) count++;
       }
       total=Math.min(total,90); count=Math.min(count,total);
-      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:90,days:30,timezone:'local',session:'00:00–00:00',timeframe:'1M',candleTimeframe:'8H'};
+      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:90,days:30,timezone:'local',session:'8AM–8AM',timeframe:'1M',candleTimeframe:'8H'};
     }
     const rsi8h1m = get8hRsi1MonthStats(k8hFull,14);
 
@@ -6755,15 +6755,15 @@ function renderTraderDecisionBlock(r, compact=false){
   const rsi4h1wBelow50=Number(rsi4h1w.countBelow50||0);
   const rsi4h1wTotal=Number(rsi4h1w.total||0);
   const rsi4h1wPct=Number(rsi4h1w.pct||0);
-  const rsi4h1wText=rsi4h1wTotal ? ` • 4H RSI <50 (1W • 00:00AM–00:00AM): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 00:00AM–00:00AM): no completed data';
+  const rsi4h1wText=rsi4h1wTotal ? ` • 4H RSI <50 (1W • 8AM–8AM): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 8AM–8AM): no completed data';
   const rsi8h1m=item.rsi8h1m||{};
   const rsi8h1mBelow50=Number(rsi8h1m.countBelow50||0);
   const rsi8h1mTotal=Number(rsi8h1m.total||0);
   const rsi8h1mPct=Number(rsi8h1m.pct||0);
-  const rsi8h1mText=rsi8h1mTotal ? ` • 8H RSI <50 (1M • 00:00AM–00:00AM): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 00:00AM–00:00AM): no completed data';
+  const rsi8h1mText=rsi8h1mTotal ? ` • 8H RSI <50 (1M • 8AM–8AM): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 8AM–8AM): no completed data';
   const rsi15SessionText=rsi15SessionTotal
-    ? ` • 15m RSI <50 (00:00AM–00:00AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
-    : ' • 15m RSI <50 (00:00AM–00:00AM): no completed session data';
+    ? ` • 15m RSI <50 (8AM–8AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
+    : ' • 15m RSI <50 (8AM–8AM): no completed session data';
   const vol=Number(item.volSpike4||0);
   const ema70=Number(item.ema70DistPct||0);
   const cg=item.correctionGuide||{};
@@ -7008,9 +7008,9 @@ function renderTraderDecisionBlock(r, compact=false){
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
-    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • Session 00:00AM–00:00AM</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 00:00AM–00:00AM</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 00:00AM–00:00AM</div>
+    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • Session 8AM–8AM</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 8AM–8AM</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 8AM–8AM</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
@@ -7035,15 +7035,15 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const rsi4h1wBelow50 = Number(rsi4h1w.countBelow50 || 0);
   const rsi4h1wTotal = Number(rsi4h1w.total || 0);
   const rsi4h1wPct = Number(rsi4h1w.pct || 0);
-  const rsi4h1wText = rsi4h1wTotal ? ` • 4H RSI <50 (1W • 00:00AM–00:00AM): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 00:00AM–00:00AM): no completed data';
+  const rsi4h1wText = rsi4h1wTotal ? ` • 4H RSI <50 (1W • 8AM–8AM): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 8AM–8AM): no completed data';
   const rsi8h1m = r?.rsi8h1m || {};
   const rsi8h1mBelow50 = Number(rsi8h1m.countBelow50 || 0);
   const rsi8h1mTotal = Number(rsi8h1m.total || 0);
   const rsi8h1mPct = Number(rsi8h1m.pct || 0);
-  const rsi8h1mText = rsi8h1mTotal ? ` • 8H RSI <50 (1M • 00:00AM–00:00AM): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 00:00AM–00:00AM): no completed data';
+  const rsi8h1mText = rsi8h1mTotal ? ` • 8H RSI <50 (1M • 8AM–8AM): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 8AM–8AM): no completed data';
   const rsi15SessionText = rsi15SessionTotal
-    ? ` • 15m RSI <50 (00:00AM–00:00AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
-    : ' • 15m RSI <50 (00:00AM–00:00AM): no completed session data';
+    ? ` • 15m RSI <50 (8AM–8AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
+    : ' • 15m RSI <50 (8AM–8AM): no completed session data';
   const a15=Number((r.accumChecks||[]).find(t=>t.tf==='15m')?.result?.confidence??0);
   const a1h=Number((r.accumChecks||[]).find(t=>t.tf==='1h')?.result?.confidence??0);
   const a4h=Number((r.accumChecks||[]).find(t=>t.tf==='4h')?.result?.confidence??0);
