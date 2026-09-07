@@ -843,12 +843,12 @@ body.authLocked{overflow:hidden}
             <option value="accum">Accum confidence</option>
             <option value="preCrash">Exhaustion Warning</option>
             <option value="rsi4h">RSI (4H)</option>
-            <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (00:00AM–00:00AM)</option>
-            <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (00:00AM–00:00AM)</option>
-            <option value="rsi4h1wCount">📉 4H RSI &lt;50 candle count (1 Week)</option>
-            <option value="rsi4h1wPct">📉 4H RSI &lt;50 percentage (1 Week)</option>
-            <option value="rsi8h1mCount">🌐 8H RSI &lt;50 candle count (1 Month)</option>
-            <option value="rsi8h1mPct">🌐 8H RSI &lt;50 percentage (1 Month)</option>
+            <option value="rsi15SessionCount">📉 15m RSI &lt;50 candle count (1D • 24H)</option>
+            <option value="rsi15SessionPct">📉 15m RSI &lt;50 percentage (1D • 24H)</option>
+            <option value="rsi4h1wCount">📉 4H RSI &lt;50 candle count (1W • 7D)</option>
+            <option value="rsi4h1wPct">📉 4H RSI &lt;50 percentage (1W • 7D)</option>
+            <option value="rsi8h1mCount">🌐 8H RSI &lt;50 candle count (1M • 30D)</option>
+            <option value="rsi8h1mPct">🌐 8H RSI &lt;50 percentage (1M • 30D)</option>
             <option value="ema70DistPct">EMA70 stretch %</option>
             <option value="ema200Stretch15">15m EMA200 stretch %</option>
             <option value="last">Last price</option>
@@ -1013,7 +1013,7 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filter specifically by the market-exhaustion layer, independent of correction confirmation.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">📉 15m RSI &lt;50 • 00:00AM–00:00AM</label>
+          <label class="controlLabel">📉 15m RSI &lt;50 • 1D • 24H</label>
           <select id="rsi15SessionFilter">
             <option value="ALL">All</option>
             <option value="ANY">🔎 RSI &lt;50 Any</option>
@@ -1021,19 +1021,19 @@ body.authLocked{overflow:hidden}
             <option value="P50">🟠 ≥50% of candles</option>
             <option value="P75">🔴 ≥75% of candles</option>
           </select>
-          <div class="dashboardHint">Counts completed 15m candle closes with RSI &lt;50 in the current 00:00AM–00:00AM session. Max 96 candles.</div>
+          <div class="dashboardHint">Counts completed 15m candle closes with RSI &lt;50 in the latest 24 hours. Max 96 candles.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">📊 RSI &lt;50 Session Sort</label>
+          <label class="controlLabel">📊 RSI &lt;50 • 1D Sort</label>
           <select id="rsi15SessionSort">
             <option value="NONE">No dedicated sort</option>
             <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
             <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
           </select>
-          <div class="dashboardHint">Overrides the normal sort while selected and ranks the current 00:00AM–00:00AM RSI weakness.</div>
+          <div class="dashboardHint">Overrides the normal sort while selected and ranks the latest 24 hours of RSI weakness.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">📉 4H RSI &lt;50 • 1W • 00:00AM–00:00AM</label>
+          <label class="controlLabel">📉 4H RSI &lt;50 • 1W • 7D</label>
           <select id="rsi4h1wFilter">
             <option value="ALL">All</option>
             <option value="ANY">🔎 RSI &lt;50 Any</option>
@@ -1041,7 +1041,7 @@ body.authLocked{overflow:hidden}
             <option value="P50">🟠 ≥50% of candles</option>
             <option value="P75">🔴 ≥75% of candles</option>
           </select>
-          <div class="dashboardHint">Counts completed 4H candle closes with RSI &lt;50 across the current 1W session (00:00AM–00:00AM anchor). Max 42 candles.</div>
+          <div class="dashboardHint">Counts completed 4H candle closes with RSI &lt;50 across the latest 7 days. Max 42 candles.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📊 4H RSI &lt;50 • 1W Sort</label>
@@ -1050,10 +1050,10 @@ body.authLocked{overflow:hidden}
             <option value="COUNT_DESC">Sort by RSI &lt;50 candle count</option>
             <option value="PCT_DESC">Sort by RSI &lt;50 percentage</option>
           </select>
-          <div class="dashboardHint">Overrides the normal sort while selected and ranks persistent 4H RSI weakness over the current 1W session.</div>
+          <div class="dashboardHint">Overrides the normal sort while selected and ranks persistent 4H RSI weakness over the latest 7 days.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">🌐 8H RSI &lt;50 • 1M • 00:00AM–00:00AM</label>
+          <label class="controlLabel">🌐 8H RSI &lt;50 • 1M • 30D</label>
           <select id="rsi8h1mFilter">
             <option value="ALL">All</option>
             <option value="ANY">🔎 RSI &lt;50 Any</option>
@@ -1061,7 +1061,7 @@ body.authLocked{overflow:hidden}
             <option value="P50">🟠 ≥50% of candles</option>
             <option value="P75">🔴 ≥75% of candles</option>
           </select>
-          <div class="dashboardHint">Counts completed 8H candle closes with RSI &lt;50 across the rolling 1M (30 days), anchored at local 00:00AM. Max 90 candles.</div>
+          <div class="dashboardHint">Counts completed 8H candle closes with RSI &lt;50 over the latest 30 days. Max 90 candles.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📊 8H RSI &lt;50 • 1M Sort</label>
@@ -2806,128 +2806,69 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const rsi1h = rsiFromCloses(closes1h, 14);
     const rsi15 = rsiFromCloses(closes15, 14);
 
-    // ===== 15m RSI <50 SESSION STAT =====
-    // Session is 00:00 local browser time -> 00:00 next day. Only completed
-    // 15m candles are counted. RSI is calculated across the full available
-    // history first, so the session's first candles retain proper RSI seeding.
-    function get15mRsiSessionStats(klines, period=14){
-      const arr = Array.isArray(klines) ? klines : [];
-      if(arr.length < period + 1) return {countBelow50:0,total:0,pct:0,start:null,end:null,max:96};
-      const closes = arr.map(k=>Number(k?.[4]));
-      const valid = closes.every(Number.isFinite);
-      if(!valid) return {countBelow50:0,total:0,pct:0,start:null,end:null,max:96};
-      const rsis = [];
+    // ===== RSI <50 ROLLING WINDOW STATS =====
+    // Windows are rolling from the latest completed candle close:
+    // 15m = 24 hours (96 candles), 4H = 7 days (42 candles), 8H = 30 days (90 candles).
+    // RSI is calculated across the full available history first, so the first
+    // candle inside each window retains proper RSI seeding.
+    function calculateRsiSeries(closes, period=14){
+      const rsis=[];
+      if(!Array.isArray(closes) || closes.length < period + 1) return rsis;
       let gains=0, losses=0;
       for(let i=1;i<=period;i++){ const d=closes[i]-closes[i-1]; if(d>=0) gains+=d; else losses-=d; }
-      let r = losses===0 ? 100 : 100-(100/(1+(gains/losses)));
+      let r=losses===0?100:100-(100/(1+(gains/losses)));
       rsis[period]=r;
       for(let i=period+1;i<closes.length;i++){
-        const d=closes[i]-closes[i-1];
-        const g=Math.max(0,d), l=Math.max(0,-d);
+        const d=closes[i]-closes[i-1], g=Math.max(0,d), l=Math.max(0,-d);
         gains=(gains*(period-1)+g)/period;
         losses=(losses*(period-1)+l)/period;
         r=losses===0?100:100-(100/(1+(gains/losses)));
         rsis[i]=r;
       }
+      return rsis;
+    }
+
+    function getRollingRsiWeaknessStats(klines, candleMs, windowMs, maxCandles, period=14, timeframe='1D'){
+      const arr = Array.isArray(klines) ? klines : [];
+      const hours=windowMs/3600000;
+      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:maxCandles,days:windowMs/86400000,timezone:'local',session:`${hours}H rolling`,timeframe,candleTimeframe:`${candleMs/3600000}H`};
+      if(arr.length < period + 1) return empty;
+      const closes=arr.map(k=>Number(k?.[4]));
+      if(!closes.every(Number.isFinite)) return empty;
+      const rsis=calculateRsiSeries(closes,period);
       const now=Date.now();
-      const d=new Date(now);
-      d.setHours(8,0,0,0);
-      let start=d.getTime();
-      if(now < start) start-=24*60*60*1000;
-      const end=start+24*60*60*1000;
+      // End at the latest completed candle boundary. Partial candles never count.
+      const end=Math.floor(now/candleMs)*candleMs;
+      const start=end-windowMs;
       let total=0,count=0;
       for(let i=0;i<arr.length;i++){
         const open=Number(arr[i]?.[0]);
         if(!Number.isFinite(open) || open<start || open>=end) continue;
-        const closeTime=open+15*60*1000;
-        if(closeTime>now) continue;
+        if(open+candleMs>end || open+candleMs>now) continue;
         if(!Number.isFinite(rsis[i])) continue;
         total++;
-        if(rsis[i] < 50) count++;
+        if(rsis[i]<50) count++;
       }
-      const pct=total?Number(((count/total)*100).toFixed(2)):0;
-      return {countBelow50:count,total,pct,start,end,max:96,timezone:'local'};
+      total=Math.min(total,maxCandles);
+      count=Math.min(count,total);
+      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:maxCandles,days:windowMs/86400000,timezone:'local',session:`${hours}H rolling`,timeframe,candleTimeframe:`${candleMs/3600000}H`};
+    }
+
+    // 15m RSI <50 over the latest completed 24 hours = 96 completed 15m candles.
+    function get15mRsiSessionStats(klines, period=14){
+      return getRollingRsiWeaknessStats(klines,15*60*1000,24*60*60*1000,96,period,'1D');
     }
     const rsi15Session = get15mRsiSessionStats(k15,14);
 
-    // ===== 4H RSI <50 1-WEEK SESSION STAT =====
-    // Rolling completed 7-day history, bounded by the latest completed local
-    // 00:00 session boundary. Only completed 4H candles are counted. RSI is seeded from the full available 4H history
-    // before the 1W window is filtered, so the first counted candle is not reset.
+    // 4H RSI <50 over the latest completed 7 days = 42 completed 4H candles.
     function get4hRsi1WeekStats(klines, period=14){
-      const arr = Array.isArray(klines) ? klines : [];
-      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:42,days:7,timezone:'local',session:'00:00–00:00',timeframe:'1W'};
-      if(arr.length < period + 1) return empty;
-      const closes = arr.map(k=>Number(k?.[4]));
-      if(!closes.every(Number.isFinite)) return empty;
-      const rsis=[];
-      let gains=0, losses=0;
-      for(let i=1;i<=period;i++){ const d=closes[i]-closes[i-1]; if(d>=0) gains+=d; else losses-=d; }
-      let r=losses===0?100:100-(100/(1+(gains/losses)));
-      rsis[period]=r;
-      for(let i=period+1;i<closes.length;i++){
-        const d=closes[i]-closes[i-1], g=Math.max(0,d), l=Math.max(0,-d);
-        gains=(gains*(period-1)+g)/period;
-        losses=(losses*(period-1)+l)/period;
-        r=losses===0?100:100-(100/(1+(gains/losses)));
-        rsis[i]=r;
-      }
-      const now=Date.now();
-      const d=new Date(now); d.setHours(0,0,0,0);
-      let sessionEnd=d.getTime();
-      if(now < sessionEnd) sessionEnd-=24*60*60*1000;
-      const end=sessionEnd;
-      const start=end-(7*24*60*60*1000);
-      let total=0,count=0;
-      for(let i=0;i<arr.length;i++){
-        const open=Number(arr[i]?.[0]);
-        if(!Number.isFinite(open) || open<start || open>=end) continue;
-        if(open+(4*60*60*1000)>now) continue;
-        if(!Number.isFinite(rsis[i])) continue;
-        total++; if(rsis[i]<50) count++;
-      }
-      total=Math.min(total,42); count=Math.min(count,total);
-      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:42,days:7,timezone:'local',session:'00:00–00:00',timeframe:'1W'};
+      return getRollingRsiWeaknessStats(klines,4*60*60*1000,7*24*60*60*1000,42,period,'1W');
     }
     const rsi4h1w = get4hRsi1WeekStats(k4hFull,14);
 
-    // ===== 8H RSI <50 1-MONTH SESSION STAT =====
-    // Rolling completed 30-day history, bounded by the latest completed local
-    // 00:00 session boundary. Only completed 8H candles are counted. RSI is seeded from the full available 8H history.
+    // 8H RSI <50 over the latest completed 30 days = 90 completed 8H candles.
     function get8hRsi1MonthStats(klines, period=14){
-      const arr = Array.isArray(klines) ? klines : [];
-      const empty={countBelow50:0,total:0,pct:0,start:null,end:null,max:90,days:30,timezone:'local',session:'00:00–00:00',timeframe:'1M',candleTimeframe:'8H'};
-      if(arr.length < period + 1) return empty;
-      const closes = arr.map(k=>Number(k?.[4]));
-      if(!closes.every(Number.isFinite)) return empty;
-      const rsis=[];
-      let gains=0, losses=0;
-      for(let i=1;i<=period;i++){ const d=closes[i]-closes[i-1]; if(d>=0) gains+=d; else losses-=d; }
-      let r=losses===0?100:100-(100/(1+(gains/losses)));
-      rsis[period]=r;
-      for(let i=period+1;i<closes.length;i++){
-        const d=closes[i]-closes[i-1], g=Math.max(0,d), l=Math.max(0,-d);
-        gains=(gains*(period-1)+g)/period;
-        losses=(losses*(period-1)+l)/period;
-        r=losses===0?100:100-(100/(1+(gains/losses)));
-        rsis[i]=r;
-      }
-      const now=Date.now();
-      const d=new Date(now); d.setHours(0,0,0,0);
-      let sessionEnd=d.getTime();
-      if(now < sessionEnd) sessionEnd-=24*60*60*1000;
-      const end=sessionEnd;
-      const start=end-(30*24*60*60*1000);
-      let total=0,count=0;
-      for(let i=0;i<arr.length;i++){
-        const open=Number(arr[i]?.[0]);
-        if(!Number.isFinite(open) || open<start || open>=end) continue;
-        if(open+(8*60*60*1000)>now) continue;
-        if(!Number.isFinite(rsis[i])) continue;
-        total++; if(rsis[i]<50) count++;
-      }
-      total=Math.min(total,90); count=Math.min(count,total);
-      return {countBelow50:count,total,pct:total?Number(((count/total)*100).toFixed(2)):0,start,end,max:90,days:30,timezone:'local',session:'00:00–00:00',timeframe:'1M',candleTimeframe:'8H'};
+      return getRollingRsiWeaknessStats(klines,8*60*60*1000,30*24*60*60*1000,90,period,'1M');
     }
     const rsi8h1m = get8hRsi1MonthStats(k8hFull,14);
 
@@ -5607,7 +5548,18 @@ function sortResults(results) {
 let showOnlyDist = false;
 const distKeywords = ['distribution', 'breakdown'];
 
-function getDisplayTraderBias(r){ return String(getFinalDecision(r||{}).bias||'Neutral').trim(); }
+function getDisplayTraderBias(r){
+  // Keep filtering identical to the bias actually displayed by the Trader Decision.
+  const rec = getFinalRecommendation(r || {});
+  const rsi4h = Number(r?.rsi4h || 0);
+  const phase = String(r?.phase?.phase || r?.phase || '').toLowerCase();
+  const confirmed = isSignificantCorrectionConfirmed(r || {});
+  const dist = /distribution|breakdown/.test(phase);
+  let bias = rec?.tradeBias || 'Neutral';
+  if(confirmed) bias = 'Neutral / Cautious Bearish';
+  else if(dist || rsi4h >= 80) bias = 'Bearish / Cautious';
+  return String(bias).trim();
+}
 
 function traderBiasMatches(r, code){
   if(code === 'ALL') return true;
@@ -5648,57 +5600,85 @@ function traderBiasMatches(r, code){
 /* ---------- Entry-status intelligence ----------
    These helpers mirror the conditions printed in Trader Decision. They are
    deliberately status-based: filters never guess from bias alone. */
-// ===== AUTHORITATIVE FINAL DECISION ENGINE =====
-// Single source of truth for Trader Decision, entry filters and entry sorting.
-// Consumes already-calculated scanner evidence; performs no network requests.
-function getFinalDecision(r){
-  const item=r||{}, rec=getFinalRecommendation(item)||{};
-  const checks=Array.isArray(item.accumChecks)?item.accumChecks:[];
-  const tf=checks.reduce((o,x)=>{o[String(x?.tf||'').toLowerCase()]=Number(x?.result?.confidence||0);return o;},{});
-  const a15=Number(tf['15m']||0),a1h=Number(tf['1h']||0),a4h=Number(tf['4h']||0),a1d=Number(tf['1d']||0);
-  const accum=Number(item.accumCombined?.confidence ?? rec.accum ?? 0), rsi15=Number(item.rsi15||0), rsi4h=Number(item.rsi4h||0);
-  const rsi15w=Number(item.rsi15Session?.pct||0),rsi4hw=Number(item.rsi4h1w?.pct||0),rsi8hw=Number(item.rsi8h1m?.pct||0);
-  const vol=Number(item.volSpike4||0),volTrend=Number(item.volume1dTrendPct||0);
-  const phase=String(item.phase?.phase||item.phase||'Unknown'),phaseLc=phase.toLowerCase();
+function getEntryStatusSnapshot(r){
+  const item=r||{};
+  const rec=getFinalRecommendation(item);
+  const checks=item.accumChecks||[];
+  const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
+  const a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
+  const rsi4h=Number(item.rsi4h||0);
+  const vol=Number(item.volSpike4||0);
+  const phase=String(item.phase?.phase||item.phase||'Unknown');
+  const phaseLc=phase.toLowerCase();
   const reasons=(item.phase?.reasons||[]).map(String);
-  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x))||Number(item.higherLowCount||0)>0||item.hasHigherLow===true;
-  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x))||Number(item.lowerHighCount||0)>0||item.lowerHigh===true;
-  const distribution=/distribution|breakdown/i.test(phaseLc),recovery=/recovery|return-to-normal/i.test(phaseLc)||!!item.returnToNormal?.isReturn;
-  const overheated=rsi4h>=80,ema200=Number(item.correctionGuide?.ema200Stretch15),ema200Lost=Number.isFinite(ema200)&&ema200<0;
-  const correctionConfirmed=!!(rec.confirmed||ema200Lost||/significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
-  const drop=Math.abs(Number(item.dropPctFromPeak||0)),rtnScore=Number(item.returnToNormal?.score||0);
-  const postCorrection=correctionConfirmed&&(recovery||rsi4h<65||rtnScore>=3||(drop>=15&&!overheated));
-  const preCrash=Number(item.preCrash?.score ?? item.preCrash?.confidence ?? 0),blowoff=Number(item.score||0);
-  const liquidity=item.liquidity||detectLiquidityIntelligence(item)||{},liqScore=Number(liquidity.score||0),liqEvent=String(liquidity.event||'').toUpperCase();
-  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP'),liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
-  const liqAcceptance=/ACCEPTANCE/i.test(liqEvent),liqRejection=/REJECTION/i.test(liqEvent),liqPending=/PENDING|OUTCOME PENDING/i.test(liqEvent);
-  const liqAbove=liquidity.nearestAbove||null,liqBelow=liquidity.nearestBelow||null;
-  const liqNearBelow=!!liqBelow&&Number(liqBelow.strength||0)>=60&&Math.abs(Number(liqBelow.distancePct||999))<=1.5;
-  const liqNearAbove=!!liqAbove&&Number(liqAbove.strength||0)>=60&&Math.abs(Number(liqAbove.distancePct||999))<=1.5;
-  const smc=item.smcBreakerBlock||{},smcStage=Number(smc.stageRank||0),smcConf=Number(smc.confidence??smc.score??0);
-  const trend=Number(item.trendTransition?.score ?? item.trendTransitionScore ?? 0);
-  const strongHTF=a4h>=60&&a1d>=55,structureBear=hasLowerHigh||distribution||ema200Lost,correctionRisk=correctionConfirmed&&!postCorrection;
-  const weaknessPressure=(rsi15w>=50?1:0)+(rsi4hw>=50?1:0)+(rsi8hw>=50?1:0);
-  const recoveryEvidence=Math.round(Math.max(0,Math.min(100,(hasHigherLow?28:0)+(a4h>=55?18:a4h>=50?10:0)+(a1d>=50?20:a1d>=40?10:0)+(rsi4h>=40&&rsi4h<=70?12:0)+(recovery?12:0)+(vol>=1.2?5:0)+(!hasLowerHigh?5:0)+(rsi15w<35?3:0)+(rsi4hw<35?3:0)+(rsi8hw<35?3:0)+(smcStage>=4?4:0)+(trend>=60?4:0))));
-  const downsideEvidence=Math.round(Math.max(0,Math.min(100,(hasLowerHigh?25:0)+(distribution?20:0)+(ema200Lost?20:0)+(a4h<50?12:0)+(a1d<40?8:0)+(rsi4h<45?5:0)+(drop>=15&&!recovery?10:0)+(weaknessPressure*4)+(preCrash>=6?8:0)+(smcStage>=4&&smcConf<55?5:0))));
-  const evidence={a15,a1h,a4h,a1d,accum,rsi15,rsi4h,rsi15w,rsi4hw,rsi8hw,vol,volTrend,phase,hasHigherLow,hasLowerHigh,distribution,recovery,overheated,ema200,correctionConfirmed,postCorrection,drop,rtnScore,preCrash,blowoff,liquidity,liqScore,liqEvent,liqUpsideSweep,liqDownsideSweep,liqAcceptance,liqRejection,liqPending,liqNearBelow,liqNearAbove,smcStage,smcConf,trend,recoveryEvidence,downsideEvidence,strongHTF,structureBear,correctionRisk};
-  const missing=[],invalid=[],conditional=[];
-  const safetyOverride=overheated&&(distribution||preCrash>=6||blowoff>=8);
-  let primary='WAIT',long='WAIT',short='WAIT',longLabel='⏸ Wait — insufficient actionable evidence',shortLabel='⏸ Wait — insufficient actionable evidence',trigger='',currentState='⚪ NO CLEAR EDGE',bias='Neutral',readiness='⚪ No clear edge',bestAction='Wait for clearer structure and alignment rather than forcing a trade.',score=40;
-  if(safetyOverride){primary='DONT_CHASE';currentState='🟠 HIGH-RISK / TOPPING VULNERABLE';bias='Bearish / Cautious';readiness='🟠 High-risk / structurally vulnerable';long='DONT_CHASE';longLabel='❌ Don’t chase';short=hasLowerHigh?'CONDITIONAL':'WAIT';shortLabel=hasLowerHigh?'🟠 Conditional — rejection / lower-high':'⏸ Wait for rejection / lower-high';trigger=hasLowerHigh?'REJECTION / LOWER_HIGH':'REJECTION';bestAction='Do not chase the move. Wait for cooling plus confirmed rejection/lower-high for shorts, or a higher-low with stronger higher-timeframe accumulation for longs.';score=62;}
-  else if((liqUpsideSweep||liqDownsideSweep)&&!liqAcceptance&&!liqRejection){primary='CONDITIONAL';trigger=liqUpsideSweep?'RECLAIM / ACCEPTANCE ABOVE VS REJECTION':'RECLAIM / REJECTION VS ACCEPTANCE BELOW';currentState='🟡 LIQUIDITY DECISION PENDING';bias=strongHTF?'Neutral / Recovery Watch':'Neutral';readiness='🟡 Conditional trigger required';long=hasHigherLow?'CONDITIONAL':'WAIT';longLabel=hasHigherLow?'🟡 Conditional — liquidity outcome + higher-low':'❌ Not yet — higher-low still required';short=hasLowerHigh?'CONDITIONAL':'WAIT';shortLabel=hasLowerHigh?'🟠 Conditional — rejection / lower-high':'⏸ Wait for rejection / acceptance';missing.push('sweep outcome: acceptance/reclaim vs rejection');score=60;}
-  else if(correctionRisk){currentState='🔴 CORRECTION ACTIVE';bias=strongHTF&&hasHigherLow?'Recovery / Re-accumulation Watch':'Neutral / Cautious Bearish';if(strongHTF&&hasHigherLow){primary='STAGED';long='STAGED';longLabel='🟡 Recovery long — staged';readiness='🟡 Recovery developing';}else{primary='WAIT';long='WAIT';longLabel='❌ Wait — correction active';readiness='🔴 Correction active';}short=structureBear?'CONDITIONAL':'WAIT';shortLabel=structureBear?'🟠 Conditional — rejection / failed bounce':'⏸ Wait for rejection / structure';bestAction=strongHTF&&hasHigherLow?'Correction pressure remains, but recovery structure is improving. Use staged entries only while higher-lows and 4H/1D accumulation continue to improve.':'Correction is active. Wait for stabilization, a higher-low and improving 4H/1D accumulation.';score=Math.round(Math.max(30,Math.min(80,45+recoveryEvidence*.35-downsideEvidence*.2)));}
-  else if(postCorrection){currentState=recoveryEvidence>=70&&strongHTF&&hasHigherLow?'🟢 RECOVERY DEVELOPING':'🟣 POST-CORRECTION / RETURN-TO-NORMAL';bias=recoveryEvidence>=70&&strongHTF?'Neutral / Recovery Improving':'Neutral / Recovery Watch';const confirmed=strongHTF&&hasHigherLow&&recoveryEvidence>=70&&!overheated&&!distribution&&!liqPending;if(confirmed){primary='CONFIRMED';long='CONFIRMED';longLabel='🟢 Confirmed recovery structure';readiness='🟢 Confirmed recovery';}else if((strongHTF&&hasHigherLow)||(recoveryEvidence>=55&&!distribution)){primary='STAGED';long='STAGED';longLabel='🟡 Staged recovery entry — confirmation developing';readiness='🟡 Recovery developing';}else{primary='WAIT';long='WAIT';longLabel='❌ Wait — recovery evidence insufficient';readiness='🟣 Recovery watch';}short=hasLowerHigh?'CONDITIONAL':'WAIT';shortLabel=hasLowerHigh?'🟠 Conditional — failed bounce / lower-high':'⏸ Wait for downside structure';if(liqNearBelow)conditional.push('nearby downside liquidity decision level');bestAction=confirmed?'Recovery evidence is aligned. Favor controlled entries on higher-lows and add only while higher-timeframe accumulation and participation remain supportive.':'The correction has occurred, but recovery confirmation is incomplete. Wait for a higher-low and improving 4H/1D accumulation before treating it as confirmed.';if(!hasHigherLow)missing.push('confirmed higher-low');score=Math.round(Math.max(35,Math.min(96,45+recoveryEvidence*.35-downsideEvidence*.15)));}
-  else if(strongHTF&&hasHigherLow&&!distribution&&!overheated&&!correctionConfirmed){primary='CONFIRMED';long='CONFIRMED';longLabel='🟢 Confirmed structure — controlled entry';short='WAIT';shortLabel='⏸ Wait / low priority';currentState='🟢 CONTROLLED RECOVERY / CONTINUATION';bias='Bullish / Controlled';readiness='🟢 Confirmed';bestAction='Higher-low and higher-timeframe accumulation are aligned. Favor a controlled pullback/retest rather than chasing extension.';score=90;}
-  else if(distribution||structureBear){primary='WAIT';long='WAIT';longLabel='❌ Wait — structure weak';short=hasLowerHigh?'CONDITIONAL':'WAIT';shortLabel=hasLowerHigh?'🟠 Conditional — rejection / lower-high':'⏸ Wait for rejection / structure';currentState='🟠 STRUCTURE WEAKENING';bias='Bearish Risk / Neutral';readiness='🟠 Structure unresolved';bestAction='Structure is weakening. Do not chase the first breakdown; wait for a failed bounce/lower-high for shorts or a higher-low plus accumulation recovery for longs.';score=48;}
-  else if(recovery&&(recoveryEvidence>=45||accum>=55||a4h>=50)){primary='STAGED';long='STAGED';longLabel='🟡 Recovery setup developing';short=hasLowerHigh?'CONDITIONAL':'WAIT';shortLabel=hasLowerHigh?'🟠 Conditional — failed bounce / lower-high':'⏸ Wait for structure';currentState='🟣 RETURN-TO-NORMAL / RECOVERY WATCH';bias=accum>=60?'Neutral / Recovery Watch':'Neutral';readiness='🟡 Staged / developing';bestAction='Recovery evidence is developing but confirmation is incomplete. Wait for a stable higher-low and stronger higher-timeframe alignment before scaling.';score=55;}
-  else {primary='WAIT';long='WAIT';short='WAIT';longLabel='⏸ Wait — insufficient/ conflicting evidence';shortLabel='⏸ Wait — insufficient/ conflicting evidence';currentState=rec.state||'⚪ NO CLEAR EDGE';bias=rec.tradeBias||'Neutral';readiness='⚪ No clear edge';bestAction='Insufficient aligned evidence for an actionable setup. Wait for structure and higher-timeframe confirmation.';}
-  if(a4h<55)missing.push('4H accumulation improvement');if(a1d<50)missing.push('1D accumulation improvement');if(!hasHigherLow&&!missing.includes('confirmed higher-low'))missing.push('higher-low / stable base');if(hasLowerHigh)invalid.push('failed bounce / lower-high');invalid.push('new lower-low / support failure');if(overheated)invalid.push('RSI cooling required');if(distribution)invalid.push('distribution / breakdown');
-  const unique=a=>[...new Set(a.filter(Boolean))];
-  const evidenceSummary=[`4H Accum ${a4h}%`,`1D Accum ${a1d}%`,`Combined ${accum}%`,`4H RSI ${rsi4h.toFixed(1)}`,`15m RSI<50 ${rsi15w.toFixed(1)}%`,`4H RSI<50 ${rsi4hw.toFixed(1)}%`,`8H RSI<50 ${rsi8hw.toFixed(1)}%`,`Liquidity ${liqScore}/100`,`SMC ${smcStage}/${smcConf}`,`Trend transition ${trend}`,`Blowoff ${blowoff}`,`Pre-crash ${preCrash}`];
-  return {primary,long,short,longLabel,shortLabel,trigger,currentState,bias,readiness,bestAction,score:Math.round(Math.max(0,Math.min(100,score))),missing:unique(missing),invalid:unique(invalid),conditional:unique(conditional),evidence,evidenceSummary};
+  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
+  const distribution=/distribution|breakdown/i.test(phaseLc);
+  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!item.returnToNormal?.isReturn;
+  const accumulationPhase=/accumulation|re-accumulation/i.test(phaseLc);
+  const strongHTF=a4h>=60 && a1d>=55;
+  const structureBear=hasLowerHigh || distribution;
+  const overheated=rsi4h>=80;
+  const ema200=item.correctionGuide?.ema200Stretch15;
+  const correctionConfirmed=!!(rec.confirmed || (ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
+  const drop=Math.abs(Number(item.dropPctFromPeak||0));
+  const rtnScore=Number(item.returnToNormal?.score||0);
+  const postCorrection=correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const lr=Number(item.liquidity?.score||0);
+  const liqEvent=String(item.liquidity?.event||'').toUpperCase();
+  const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
+  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP');
+  const shortConditional=hasLowerHigh || structureBear || lr>=60;
+
+  // Priority mirrors Trader Decision's branch order closely enough that the
+  // filter follows the displayed entry condition rather than raw bias.
+  if(postCorrection){
+    const recoveryConfirmed=(strongHTF && hasHigherLow && !overheated);
+    if(liqUpsideSweep){
+      return {
+        long: hasHigherLow ? 'CONDITIONAL' : 'NOT_READY',
+        short: (hasLowerHigh || lr>=60) ? 'LOWER_HIGH' : 'WAIT',
+        longLabel: hasHigherLow ? '🟡 Conditional — higher-low + liquidity reclaim' : '❌ Not yet',
+        shortLabel: (hasLowerHigh || lr>=60) ? '🟠 Conditional — failed reclaim / lower-high' : '⏸ Wait'
+      };
+    }
+    if(liqDownsideSweep){
+      return {
+        long:'CONDITIONAL',
+        short: lr>=60 ? 'ACCEPTANCE' : 'WAIT',
+        longLabel:'🟡 Conditional — reclaim + higher-low',
+        shortLabel:lr>=60?'🟠 Conditional — acceptance + lower-high':'⏸ Wait'
+      };
+    }
+    return {
+      long: recoveryConfirmed ? 'CONFIRMED' : 'NOT_READY',
+      short: (Number(item.lowerHighCount||0)>0 || hasLowerHigh || Number(item.downsideStructureScore||0)>=35) ? 'LOWER_HIGH' : 'WAIT',
+      longLabel: recoveryConfirmed ? '🟢 Staged recovery entry' : '❌ Not yet',
+      shortLabel: (hasLowerHigh || shortConditional) ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait'
+    };
+  }
+  if(correctionConfirmed){
+    return {
+      long:(strongHTF && hasHigherLow)?'STAGED':'WAIT',
+      short:structureBear?'REJECTION':'WAIT',
+      longLabel:(strongHTF&&hasHigherLow)?'🟡 Recovery long — staged only':'❌ Wait — correction active',
+      shortLabel:structureBear?'🟠 Conditional — rejection / failed bounce':'⏸ Wait'
+    };
+  }
+  if(overheated && (distribution || Number(item.preCrash?.score||0)>=6)){
+    return {long:'DONT_CHASE', short:'REJECTION', longLabel:'❌ Don’t chase', shortLabel:'🟠 Wait for rejection / failed bounce'};
+  }
+  if(strongHTF && hasHigherLow && !distribution && !overheated){
+    return {long:'CONFIRMED', short:'WAIT', longLabel:'🟢 Confirmed structure — staged', shortLabel:'⏸ Wait / low priority'};
+  }
+  if(recovery){
+    return {long:'STAGED', short:hasLowerHigh?'LOWER_HIGH':'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:hasLowerHigh?'🟠 Conditional — failed bounce / lower-high':'⏸ Wait'};
+  }
+  if(distribution || structureBear){
+    return {long:'WAIT', short:'REJECTION', longLabel:'❌ Wait — structure weak', shortLabel:'⚠️ Conditional — rejection first'};
+  }
+  return {long:'STAGED', short:'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:'⏸ Wait for structure'};
 }
-function getEntryStatusSnapshot(r){const d=getFinalDecision(r);return {long:d.long,short:d.short,longLabel:d.longLabel,shortLabel:d.shortLabel,primary:d.primary,trigger:d.trigger,decision:d};}
 
 function getEntryStatusRank(r, side){
   const s=getEntryStatusSnapshot(r);
@@ -6701,28 +6681,285 @@ function professionalState(item, rec){
 }
 
 function renderTraderDecisionBlock(r, compact=false){
-  const d=getFinalDecision(r||{}),e=d.evidence||{},cg=r?.correctionGuide||{},liq=e.liquidity||{};
-  const s15=r?.rsi15Session||{},s4=r?.rsi4h1w||{},s8=r?.rsi8h1m||{};
-  const missingHtml=d.missing.length?d.missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
-  const invalidHtml=d.invalid.length?d.invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
-  const tone=d.primary==='CONFIRMED'?'#2dd4bf':d.primary==='STAGED'?'#ffd966':d.primary==='CONDITIONAL'?'#ff9f43':d.primary==='DONT_CHASE'?'#ff5c5c':'#cfe8ff';
-  const correctionText=e.postCorrection?'🟣 Confirmed — correction already occurred':e.correctionConfirmed?'🔴 Confirmed — correction still active':'🟢 Not confirmed';
-  const le=String(liq.event||e.liqEvent||'');
-  const ld=/REJECTION/i.test(le)?'Rejection confirmed at the mapped liquidity zone.':/ACCEPTANCE/i.test(le)?'Acceptance confirmed; respect continuation while price holds beyond the pool.':/SWEEP/i.test(le)?'Sweep detected; the outcome remains conditional until acceptance/rejection is confirmed.':'No dominant liquidity event is active; use mapped pools as decision/target zones.';
-  return `<div class="proDecision traderDecisionV2" style="${compact?'font-size:12px;':''}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${tone}">${d.readiness}</span></div>
-    <div style="margin-top:7px"><strong>Final status:</strong> ${d.primary}${d.trigger?` • ${d.trigger}`:''}</div>
-    <div><strong>Current state:</strong> ${d.currentState}</div><div><strong>Bias:</strong> ${d.bias}</div>
+  const item=r||{};
+  const rec=getFinalRecommendation(item);
+  const checks=item.accumChecks||[];
+  const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
+  const a15=Number(tf['15m']??0), a1h=Number(tf['1h']??0), a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
+  const accum=Number(item.accumCombined?.confidence??rec.accum??0);
+  const rsi4h=Number(item.rsi4h||0), rsi15=Number(item.rsi15||0);
+  const rsi15Session=item.rsi15Session||{};
+  const rsi15Below50=Number(rsi15Session.countBelow50||0);
+  const rsi15SessionTotal=Number(rsi15Session.total||0);
+  const rsi15Below50Pct=Number(rsi15Session.pct||0);
+  const rsi4h1w=item.rsi4h1w||{};
+  const rsi4h1wBelow50=Number(rsi4h1w.countBelow50||0);
+  const rsi4h1wTotal=Number(rsi4h1w.total||0);
+  const rsi4h1wPct=Number(rsi4h1w.pct||0);
+  const rsi4h1wText=rsi4h1wTotal ? ` • 4H RSI <50 (1W • 7D): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 7D): no completed data';
+  const rsi8h1m=item.rsi8h1m||{};
+  const rsi8h1mBelow50=Number(rsi8h1m.countBelow50||0);
+  const rsi8h1mTotal=Number(rsi8h1m.total||0);
+  const rsi8h1mPct=Number(rsi8h1m.pct||0);
+  const rsi8h1mText=rsi8h1mTotal ? ` • 8H RSI <50 (1M • 30D): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 30D): no completed data';
+  const rsi15SessionText=rsi15SessionTotal
+    ? ` • 15m RSI <50 (1D • 24H): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
+    : ' • 15m RSI <50 (1D • 24H): no completed data';
+  const vol=Number(item.volSpike4||0);
+  const ema70=Number(item.ema70DistPct||0);
+  const cg=item.correctionGuide||{};
+  const ema200=cg.ema200Stretch15;
+  const phase=String(item.phase?.phase||item.phase||'Unknown');
+  const phaseLc=phase.toLowerCase();
+  const reasons=(item.phase?.reasons||[]).map(String);
+  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
+  const distribution=/distribution|breakdown/i.test(phaseLc);
+  const returnObj=item.returnToNormal||{};
+  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!returnObj.isReturn;
+  const accumulationPhase=/accumulation|re-accumulation/i.test(phaseLc);
+  const strongHTF=a4h>=60 && a1d>=55;
+  const improvingHTF=a4h>=55 && a1d>=40;
+  const structureBull=hasHigherLow || accumulationPhase;
+  const structureBear=hasLowerHigh || distribution;
+  const overheated=rsi4h>=80;
+  const ema200Lost=ema200!=null && Number(ema200)<0;
+  const drop=Math.abs(Number(item.dropPctFromPeak||0));
+  const rtnScore=Number(returnObj.score||0);
+  const correctionConfirmed=!!(rec.confirmed || ema200Lost || /significant correction|correction confirmed/i.test(String(cg.label||'')));
+  const liq=item.liquidity || (typeof detectLiquidityIntelligence==='function' ? detectLiquidityIntelligence(item) : {});
+  const liqScore=Number(liq?.score||0);
+  const liqEvent=String(liq?.event||'NONE');
+  const liqState=String(liq?.state||'—');
+  const liqDecisionTone=/REJECTION/i.test(liqState)?'rejected':/ACCEPTANCE/i.test(liqState)?'accepted':/PENDING/i.test(liqState)?'pending':/APPROACHING/i.test(liqState)?'approaching':'';
+  const liqDecisionToneLabel=liqDecisionTone==='rejected'?'🔴 REJECTION':liqDecisionTone==='accepted'?'🟢 ACCEPTANCE':liqDecisionTone==='pending'?'🟡 OUTCOME PENDING':liqDecisionTone==='approaching'?'🟠 APPROACHING':'';
+  const liqAbove=liq?.nearestAbove;
+  const liqBelow=liq?.nearestBelow;
+  const liqDisplayFilter=getLiquidityDisplayFilter();
+  const liqAboveTxt=liqAbove ? `Above ${Number(liqAbove.distancePct)>=0?'+':''}${Number(liqAbove.distancePct).toFixed(2)}% • ${liqAbove.type} • ${liqAbove.tf} • ${liqAbove.strength}/100` : 'No mapped upside pool';
+  const liqBelowTxt=liqBelow ? `Below ${Number(liqBelow.distancePct)>=0?'+':''}${Number(liqBelow.distancePct).toFixed(2)}% • ${liqBelow.type} • ${liqBelow.tf} • ${liqBelow.strength}/100` : 'No mapped downside pool';
+  const liqContextTxt=liqDisplayFilter==='UPSIDE' ? liqAboveTxt : liqDisplayFilter==='DOWNSIDE' ? liqBelowTxt : `${liqAboveTxt}<br>${liqBelowTxt}`;
+  let liquidityDecision='No dominant liquidity event is active; use nearby pools as reaction/target zones rather than standalone trade signals.';
+  if(/UPSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent)) liquidityDecision='Upside liquidity sweep rejected: bearish reversal risk is elevated; wait for lower-high/structure confirmation before shorting.';
+  else if(/UPSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent)) liquidityDecision='Upside liquidity sweep accepted: continuation is favored while price holds above the pool; do not fade the breakout without rejection.';
+  else if(/DOWNSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent)) liquidityDecision='Downside liquidity sweep rejected: reclaim supports recovery/reversal; do not automatically short unless lower-high/acceptance below returns.';
+  else if(/DOWNSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent)) liquidityDecision='Downside liquidity sweep accepted: downside continuation is favored while price holds below the pool; do not automatically long.';
+  else if(liqEvent.includes('LIQUIDITY SWEEP')) liquidityDecision='Liquidity was swept, but the outcome is pending: wait for rejection/reclaim or acceptance before assigning directional bias.';
+  else if(liqEvent.includes('APPROACHING UPSIDE')) liquidityDecision='Price is approaching an upside liquidity pool; treat it as a decision/target zone and wait for breakout acceptance or rejection.';
+  else if(liqEvent.includes('APPROACHING DOWNSIDE')) liquidityDecision='Price is approaching a downside liquidity pool; treat it as a decision/target zone and wait for rejection or acceptance below support.';
+  const correctionEvidence=Math.max(
+    correctionConfirmed?45:0,
+    Math.min(35, drop>=15 ? 35 : drop*2.33),
+    rtnScore*8,
+    ema200Lost?30:0
+  );
+
+  /*
+   * State model: separate "correction happened" from "what happens next".
+   * A normalized RSI / Return-to-Normal phase after a large drawdown means
+   * the correction may already be mature or completed; it should not keep
+   * printing "Correction active" merely because the correctionGuide remains red.
+   */
+  const postCorrection = correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const recoveryScore=Math.max(0,Math.min(100,Math.round(
+    (hasHigherLow?28:0) +
+    (a4h>=55?18:a4h>=50?10:0) +
+    (a1d>=50?20:a1d>=40?10:0) +
+    (rsi4h>=40 && rsi4h<=70?12:0) +
+    (recovery?12:0) +
+    (vol>=1.2?5:0) +
+    (!hasLowerHigh?5:0)
+  )));
+  const downsideScore=Math.max(0,Math.min(100,Math.round(
+    (hasLowerHigh?25:0) +
+    (distribution?20:0) +
+    (ema200Lost?20:0) +
+    (a4h<50?12:0) +
+    (a1d<40?8:0) +
+    (rsi4h<45?5:0) +
+    (drop>=15 && !recovery?10:0)
+  )));
+  // Liquidity is a decision modifier, not a replacement for the authoritative EMA200 correction layer.
+  const liqStrength=Number(liqScore)||0;
+  const liqAboveDist=liqAbove?Math.abs(Number(liqAbove.distancePct)||999):999;
+  const liqBelowDist=liqBelow?Math.abs(Number(liqBelow.distancePct)||999):999;
+  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP');
+  const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
+  const liqApproachUp=liqEvent.includes('APPROACHING UPSIDE');
+  const liqApproachDown=liqEvent.includes('APPROACHING DOWNSIDE');
+  const liqStrongAbove=!!liqAbove && liqAbove.strength>=60;
+  const liqStrongBelow=!!liqBelow && liqBelow.strength>=60;
+  const liqNearAbove=liqStrongAbove && liqAboveDist<=1.5;
+  const liqNearBelow=liqStrongBelow && liqBelowDist<=1.5;
+
+  // Event-aware contribution: sweeps affect the *next action* differently from raw pool strength.
+  // A sweep is deliberately kept conditional until rejection/acceptance is confirmed.
+  let liquidityRecoveryAdj=0, liquidityDownsideAdj=0, liquidityConfidenceAdj=0;
+  if(liqUpsideSweep){
+    liquidityRecoveryAdj += (liqStrength>=75?8:5);
+    liquidityConfidenceAdj += 4;
+    if(liqNearAbove) liquidityRecoveryAdj += 3;
+  }
+  if(liqDownsideSweep){
+    liquidityRecoveryAdj += (liqStrength>=75?7:4);
+    liquidityDownsideAdj += (liqStrength>=75?8:5);
+    liquidityConfidenceAdj += 4;
+  }
+  if(liqApproachUp && liqNearAbove) liquidityDownsideAdj += 3;
+  if(liqApproachDown && liqNearBelow) liquidityDownsideAdj += 4;
+  if(liqStrongBelow && liqBelowDist<=0.75) liquidityDownsideAdj += 4;
+  if(liqStrongAbove && liqAboveDist<=0.75) liquidityConfidenceAdj += 2;
+
+  const rawRecoveryScore=recoveryScore;
+  const rawDownsideScore=downsideScore;
+  const liquidityRecoveryScore=Math.max(0,Math.min(100,Math.round(rawRecoveryScore+liquidityRecoveryAdj)));
+  const liquidityDownsideScore=Math.max(0,Math.min(100,Math.round(rawDownsideScore+liquidityDownsideAdj)));
+
+  const correctionCompletion=Math.max(0,Math.min(100,Math.round(
+    correctionEvidence +
+    (postCorrection?25:0) +
+    (recovery?15:0) +
+    (rsi4h>=40 && rsi4h<=65?10:0)
+  )));
+
+  let bias='Neutral', longEntry='⏸ Wait for structure', shortEntry='⏸ Wait for structure';
+  let bestAction='', readiness='🟡 Developing', missing=[], invalid=[];
+  let decisionScore=0, currentState='';
+
+  if(postCorrection){
+    currentState = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 RECOVERY DEVELOPING' : '🟣 POST-CORRECTION / RETURN-TO-NORMAL';
+    bias = recoveryScore>=70 && strongHTF ? 'Neutral / Recovery Improving' : 'Neutral / Cautious Bearish';
+    longEntry = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
+    shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high rejection' : '⏸ Wait for downside structure';
+    readiness = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
+    bestAction = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow
+      ? 'The major correction has already occurred and recovery structure is developing. Favor staged entries on higher-lows; add only while 4H/1D accumulation and volume continue to improve.'
+      : 'The major correction has already occurred. Do not chase the decline and do not wait for another correction. The market is now in a post-correction stabilization/recovery phase; wait for a higher-low and improving 4H/1D accumulation before treating it as a confirmed recovery entry.';
+    if(!hasHigherLow) missing.push('confirmed higher-low');
+    if(a4h<55) missing.push('4H accumulation ≥55%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    if(vol<1.2) missing.push('sustained volume participation');
+    invalid.push('new lower-low');
+    invalid.push('renewed EMA200 loss / support failure');
+    if(hasLowerHigh) invalid.push('failed bounce followed by lower-high');
+    // Liquidity-aware action layer: modify the recommendation only when the event has enough quality/distance to matter.
+  if(postCorrection && liqUpsideSweep){
+    bestAction='The major correction has already occurred and upside liquidity has been swept. Do not chase the move. Watch whether price rejects back below the swept pool or accepts/retests above it; the nearby downside liquidity pool is the next key reaction zone.';
+    shortEntry=(hasLowerHigh||liquidityDownsideScore>=60)?'🟠 Conditional — only on failed reclaim / lower-high rejection':'⏸ Wait for sweep outcome';
+    longEntry=hasHigherLow?'🟡 Conditional — higher-low plus reclaim/acceptance above swept liquidity':'❌ Not yet — recovery and liquidity acceptance not confirmed';
+    missing.unshift('sweep outcome: rejection vs acceptance/retest');
+  } else if(postCorrection && liqDownsideSweep){
+    bestAction='Downside liquidity has been swept. Do not automatically short or long: a reclaim/rejection of the swept pool favors recovery, while acceptance below it increases downside-continuation risk.';
+    longEntry='🟡 Conditional — reclaim of swept downside liquidity + higher-low';
+    shortEntry=liquidityDownsideScore>=60?'🟠 Conditional — acceptance below swept liquidity + lower-high':'⏸ Wait for acceptance/rejection';
+    missing.unshift('sweep outcome: reclaim/rejection vs acceptance below');
+  } else if(postCorrection && liqNearBelow){
+    bestAction='Post-correction stabilization remains the base case, but a strong downside liquidity pool is very close. Treat that pool as the next decision level: rejection/reclaim supports recovery; acceptance below raises downside-continuation risk.';
+  }
+    decisionScore=Math.round(Math.max(35,Math.min(96,45 + recoveryScore*0.35 - downsideScore*0.15 + (postCorrection?10:0))));
+  } else if(correctionConfirmed){
+    currentState='🔴 CORRECTION ACTIVE';
+    bias=strongHTF && structureBull ? 'Recovery / Re-accumulation Watch' : 'Neutral / Cautious Bearish';
+    longEntry=strongHTF && hasHigherLow ? '🟡 Recovery long — staged only' : '❌ Wait — correction still active';
+    shortEntry=structureBear ? '🟠 Conditional — rejection / failed bounce' : '⏸ Wait for rejection / structure';
+    bestAction=strongHTF && hasHigherLow
+      ? 'Correction pressure is still present, but recovery structure is beginning to improve. Use staged entries only after sustained higher-lows and continued 4H/1D accumulation.'
+      : 'Correction is still active. Do not chase the decline; wait for stabilization, a higher-low and improving 4H/1D accumulation.';
+    readiness=strongHTF && hasHigherLow ? '🟡 Recovery developing' : '🔴 Correction active';
+    if(!hasHigherLow) missing.push('confirmed higher-low');
+    if(a4h<55) missing.push('4H accumulation ≥55%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    invalid.push('new lower-low / renewed EMA200 loss');
+    decisionScore=Math.round(Math.max(25,Math.min(92,48 + recoveryScore*0.25 - downsideScore*0.2)));
+  } else if(overheated && (distribution || Number(item.preCrash?.score||0)>=6)) {
+    currentState='🟠 HIGH-RISK / TOPPING VULNERABLE';
+    bias='Bearish / Cautious';
+    longEntry='❌ Don’t chase';
+    shortEntry='🟠 Wait for rejection / failed bounce';
+    bestAction='Avoid chasing the move. Wait for cooling plus a confirmed rejection/lower-high for shorts, or a higher-low with stronger higher-timeframe accumulation for longs.';
+    readiness='🟠 High-risk / structurally vulnerable';
+    if(!hasLowerHigh) missing.push('lower-high or failed-bounce confirmation for short');
+    if(!hasHigherLow) missing.push('higher-low for long');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
+    invalid.push('breakdown below support');
+    decisionScore=62;
+  } else if(strongHTF && hasHigherLow && !distribution && !overheated) {
+    currentState='🟢 CONTROLLED RECOVERY / CONTINUATION';
+    bias='Bullish / Controlled';
+    longEntry='🟢 Confirmed structure — staged';
+    shortEntry='⏸ Wait / low priority';
+    bestAction='Higher-low and higher-timeframe accumulation are aligned. Favor a controlled pullback/retest rather than chasing extension.';
+    readiness='🟢 Long setup developing';
+    decisionScore=90;
+    if(vol<1.2) missing.push('sustained participation / green volume');
+    invalid.push('loss of higher-low or deterioration in 4H/1D accumulation');
+  } else if(recovery) {
+    currentState='🟣 RETURN-TO-NORMAL / RECOVERY WATCH';
+    bias=accum>=60 ? 'Neutral / Recovery Watch' : 'Neutral';
+    longEntry='⚠️ Staged / conditional';
+    shortEntry=hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait for structure';
+    bestAction='The market is normalizing after a move. Treat this as a recovery process, not an automatic bottom. Wait for a higher-low and improving 4H/1D accumulation before scaling into recovery.';
+    readiness='🟡 Recovery watch';
+    if(!hasHigherLow) missing.push('stable higher-low');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
+    invalid.push('new lower-low / renewed distribution');
+  } else if(distribution || structureBear) {
+    currentState='🟠 STRUCTURE WEAKENING';
+    bias='Bearish Risk / Neutral';
+    longEntry='❌ Wait — structure weak';
+    shortEntry='⚠️ Conditional — rejection first';
+    bestAction='Structure is weakening, but do not chase the first breakdown. Wait for a failed bounce/lower-high for shorts or a higher-low plus accumulation recovery for longs.';
+    readiness='🟠 Structure unresolved';
+    if(!hasLowerHigh) missing.push('defined lower-high / failed bounce');
+    if(a4h<50) missing.push('4H accumulation recovery');
+    if(a1d<50) missing.push('1D accumulation recovery');
+    invalid.push('breakdown confirmation / support failure');
+  } else {
+    currentState=rec.state||'⚪ NO CLEAR EDGE';
+    bias=rec.tradeBias||'Neutral';
+    longEntry='⚠️ Staged / conditional';
+    shortEntry='⏸ Wait for structure';
+    bestAction='Wait for clearer structure and alignment between accumulation, momentum and higher-timeframe direction rather than forcing a trade.';
+    readiness='⚪ No clear edge';
+    if(!hasHigherLow) missing.push('higher-low / stable base');
+    if(a4h<50) missing.push('4H accumulation ≥50%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    invalid.push('breakdown or deterioration in higher-timeframe support');
+  }
+
+  const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
+  const compactStyle=compact?'font-size:12px;':'';
+  const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
+  const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
+  const correctionText = postCorrection
+    ? `🟣 Confirmed — correction already occurred`
+    : correctionConfirmed
+      ? `🔴 Confirmed — correction still active`
+      : `🟢 Not confirmed`;
+
+  return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
+    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
+    <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
-    <div><strong>Long entry:</strong> ${d.longLabel}</div><div><strong>Short entry:</strong> ${d.shortLabel}</div>
-    <div style="margin-top:8px"><strong>Best action now:</strong><br>${d.bestAction}</div>
-    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> ${e.liqScore||0}/100 • ${le||'No active event'}<br><span class="small">${ld}</span></div>
-    <div style="margin-top:8px"><strong>Why this decision:</strong> ${d.evidenceSummary.join(' • ')}</div>
-    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${Number(s15.countBelow50||0)}/${Number(s15.total||96)} completed candles below RSI 50 • ${Number(s15.pct||0).toFixed(1)}%</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${Number(s4.countBelow50||0)}/${Number(s4.total||42)} completed 4H candles below RSI 50 • ${Number(s4.pct||0).toFixed(1)}% • 1W</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${Number(s8.countBelow50||0)}/${Number(s8.total||90)} completed 8H candles below RSI 50 • ${Number(s8.pct||0).toFixed(1)}% • 1M</div>
-    <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div><div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div></div>
-    <div class="small" style="margin-top:7px;color:var(--muted)">Final decision confidence ${d.score}% • Recovery evidence ${e.recoveryEvidence}% • Downside evidence ${e.downsideEvidence}% • Primary status ${d.primary}<br>Structure: ${e.hasHigherLow?'higher-low evidence present':e.hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${e.a15}% / 1H ${e.a1h}% / 4H ${e.a4h}% / 1D ${e.a1d}%</div>
+    <div><strong>Long entry:</strong> ${longEntry}</div>
+    <div><strong>Short entry:</strong> ${shortEntry}</div>
+    <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
+    <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
+    <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
+    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 30D</div>
+    <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
+      <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
+    </div>
+    <div class="small" style="margin-top:7px;color:var(--muted)">
+      Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
+      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}${rsi15SessionText}${rsi4h1wText}${rsi8h1mText}
+    </div>
   </div>`;
 }
 
@@ -6739,15 +6976,15 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const rsi4h1wBelow50 = Number(rsi4h1w.countBelow50 || 0);
   const rsi4h1wTotal = Number(rsi4h1w.total || 0);
   const rsi4h1wPct = Number(rsi4h1w.pct || 0);
-  const rsi4h1wText = rsi4h1wTotal ? ` • 4H RSI <50 (1W • 00:00AM–00:00AM): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 00:00AM–00:00AM): no completed data';
+  const rsi4h1wText = rsi4h1wTotal ? ` • 4H RSI <50 (1W • 7D): ${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)` : ' • 4H RSI <50 (1W • 7D): no completed data';
   const rsi8h1m = r?.rsi8h1m || {};
   const rsi8h1mBelow50 = Number(rsi8h1m.countBelow50 || 0);
   const rsi8h1mTotal = Number(rsi8h1m.total || 0);
   const rsi8h1mPct = Number(rsi8h1m.pct || 0);
-  const rsi8h1mText = rsi8h1mTotal ? ` • 8H RSI <50 (1M • 00:00AM–00:00AM): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 00:00AM–00:00AM): no completed data';
+  const rsi8h1mText = rsi8h1mTotal ? ` • 8H RSI <50 (1M • 30D): ${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)` : ' • 8H RSI <50 (1M • 30D): no completed data';
   const rsi15SessionText = rsi15SessionTotal
-    ? ` • 15m RSI <50 (00:00AM–00:00AM): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
-    : ' • 15m RSI <50 (00:00AM–00:00AM): no completed session data';
+    ? ` • 15m RSI <50 (1D • 24H): ${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`
+    : ' • 15m RSI <50 (1D • 24H): no completed data';
   const a15=Number((r.accumChecks||[]).find(t=>t.tf==='15m')?.result?.confidence??0);
   const a1h=Number((r.accumChecks||[]).find(t=>t.tf==='1h')?.result?.confidence??0);
   const a4h=Number((r.accumChecks||[]).find(t=>t.tf==='4h')?.result?.confidence??0);
