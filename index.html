@@ -902,6 +902,7 @@ body.authLocked{overflow:hidden}
           <label class="controlLabel">🔴 Short Entry Status</label>
           <select id="shortEntryFilter">
             <option value="ALL">All Short Entry States</option>
+            <option value="STAGED">⚠️ Staged / conditional</option>
             <option value="CONDITIONAL">🟠 Conditional</option>
             <option value="WAIT">⏸ Wait</option>
             <option value="REJECTION">🟠 Rejection / failed bounce</option>
@@ -1291,7 +1292,7 @@ function calculateTopDetectionStack(item){
     // Top Stack classification is independent from the correction score,
     // except for the authoritative post-top override:
     // 0–24 + confirmed correction => POST-TOP / CORRECTION PHASE
-    // 0–24 + no correction       => TREND HEALTHY
+    // 0–24 + no correction       => LOW TOP-RISK / TREND HEALTH WARNING
     // 25–44                      => TOP RISK INCREASING
     // 45–69                      => TOPPING DEVELOPING
     // 70+                        => HIGH TOP RISK
@@ -1301,7 +1302,7 @@ function calculateTopDetectionStack(item){
     else if(score>=45) level='🟠 TOPPING DEVELOPING';
     else if(score>=25) level='🟡 TOP RISK INCREASING';
     else if(ema200CorrectionConfirmed) level='🔵 POST-TOP / CORRECTION PHASE';
-    else level='🟢 TREND HEALTHY';
+    else level='🟢 LOW TOP-RISK / TREND HEALTH WARNING';
 
     const reasons=[];
     if(components.blowoff>=50) reasons.push('Blowoff/climax evidence');
@@ -1406,7 +1407,7 @@ function calculateTrendExhaustionState(item){
       explanation='Price is materially extended or overheated, while stronger structural deterioration is not yet established.';
     }else{
       code='TREND_HEALTHY';
-      label='🟢 TREND HEALTHY';
+      label='🟢 LOW TOP-RISK / TREND HEALTH WARNING';
       tone='good';
       explanation='No sufficient combination of extension, momentum deterioration and structural weakening is present.';
     }
@@ -1667,7 +1668,7 @@ function renderPhaseComparison(r){
   const confidence = p && typeof p === 'object' && p.confidence != null ? `${Math.round(Number(p.confidence)||0)}% confidence` : 'Structural classification';
   return `<div class="phaseCompare">
     <div class="phaseBox"><div class="phaseBoxLabel">Market Phase</div><div class="phaseBoxValue">${market}</div><div class="phaseBoxSub">${confidence}</div></div>
-    <div class="phaseBox cycle"><div class="phaseBoxLabel">Cycle Phase</div><div class="phaseBoxValue">${cycle.cyclePhase}</div><div class="phaseBoxSub">Similarity ${cycle.similarityPct}%</div></div>
+    <div class="phaseBox cycle"><div class="phaseBoxLabel">Cycle Resemblance</div><div class="phaseBoxValue">${cycle.cyclePhase}</div><div class="phaseBoxSub">Similarity ${cycle.similarityPct}% • context only, not confirmation</div></div>
   </div>`;
 }
 
@@ -1799,8 +1800,8 @@ function renderOverallMarketVerdict(r){
           <div class="unifiedSignalValue">${mspEscape(v.marketPhase)}</div>
         </div>
         <div class="unifiedSignal">
-          <div class="unifiedSignalLabel">Cycle Phase</div>
-          <div class="unifiedSignalValue">${mspEscape(v.cyclePhase)} • ${mspEscape(v.similarity)}%</div>
+          <div class="unifiedSignalLabel">Cycle Resemblance</div>
+          <div class="unifiedSignalValue">${mspEscape(v.cyclePhase)} • ${mspEscape(v.similarity)}% • context only</div>
         </div>
         <div class="unifiedSignal">
           <div class="unifiedSignalLabel">Structural Bias</div>
@@ -5380,7 +5381,7 @@ function traderBiasMatches(r, code){
 /* ---------- Entry-status intelligence ----------
    These helpers mirror the conditions printed in Trader Decision. They are
    deliberately status-based: filters never guess from bias alone. */
-function getEntryStatusSnapshot(r){
+function getEntryStatusSnapshotBase(r){
   const item=r||{};
   const rec=getFinalRecommendation(item);
   const checks=item.accumChecks||[];
@@ -5460,6 +5461,82 @@ function getEntryStatusSnapshot(r){
   return {long:'STAGED', short:'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:'⏸ Wait for structure'};
 }
 
+function getEntryStatusSnapshot(r){
+  const base=getEntryStatusSnapshotBase(r);
+  // The base Long engine is authoritative for the tested STAGED / CONDITIONAL
+  // entry-zone framework. Do not add a post-filter that converts STAGED to WAIT. 
+
+  // SHORT is a directional mirror of the proven LONG engine.  Evidence alone
+  // is not an entry zone: a short needs bearish confluence and a resolved
+  // liquidity outcome.  In particular, an OUTCOME PENDING sweep is WAIT.
+  const item=r||{};
+  const reasons=(item.phase?.reasons||[]).map(String);
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
+  const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
+  const phase=String(item.phase?.phase||item.phase||'Unknown').toLowerCase();
+  const distribution=/distribution|breakdown/.test(phase);
+  const recoveryPhase=/recovery|return-to-normal|weak bounce/.test(phase);
+  const downsideScore=Number(item.downsideStructureScore||0);
+  const rsi4h=Number(item.rsi4h||0);
+  const preCrash=Number(item.preCrash?.score||0);
+  const liqEvent=String(item.liquidity?.event||'').toUpperCase();
+  const liqScore=Number(item.liquidity?.score||0);
+  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP');
+  const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
+  const liqPending=/OUTCOME PENDING/.test(liqEvent);
+  const liqRejected=/REJECTION/.test(liqEvent);
+  const liqAccepted=/ACCEPTANCE/.test(liqEvent);
+
+  // A real SHORT entry zone requires more than a lower-high or a liquidity
+  // sweep by itself.  Pending liquidity cannot create an entry signal.
+  const shortConfluence =
+    (hasLowerHigh && (distribution || downsideScore>=35 || preCrash>=6 || (liqRejected && liqScore>=60))) ||
+    (distribution && (downsideScore>=35 || preCrash>=6 || hasLowerHigh)) ||
+    (downsideScore>=50 && (distribution || hasLowerHigh)) ||
+    (preCrash>=6 && rsi4h>=70 && liqScore>=40 && !recoveryPhase) ||
+    (liqUpsideSweep && liqRejected && liqScore>=60 && (hasLowerHigh || downsideScore>=35 || distribution));
+  const shortVeto =
+    liqPending ||
+    (recoveryPhase && !distribution && !liqAccepted && downsideScore<50) ||
+    (liqUpsideSweep && !liqRejected && !liqAccepted);
+  const shortStaged=shortConfluence && !shortVeto;
+
+  // PRESERVE THE TESTED LONG ENTRY ENGINE.
+  // STAGED / CONDITIONAL is the user's tested ENTRY ZONE and must not be
+  // downgraded to WAIT by a second validation layer. Additional evidence
+  // remains available elsewhere in the UI as context/quality information,
+  // but it cannot cancel the authoritative entry-status result.
+  const result={...base};
+  if(shortStaged){
+    const reasonsShort=[];
+    if(hasLowerHigh) reasonsShort.push('lower-high');
+    if(liqUpsideSweep && liqRejected) reasonsShort.push('upside liquidity rejection');
+    if(distribution) reasonsShort.push('distribution/breakdown');
+    if(downsideScore>=35) reasonsShort.push('downside structure');
+    if(preCrash>=6) reasonsShort.push('exhaustion/pre-crash');
+    result.short='STAGED';
+    result.shortLabel=`⚠️ Staged / conditional — short entry zone • ${reasonsShort.join(' + ')}`;
+  } else {
+    result.short='WAIT';
+    result.shortLabel=liqPending
+      ? '⏸ Wait — liquidity outcome pending'
+      : hasLowerHigh
+        ? '🟡 Bearish evidence developing — lower-high, but entry confirmation incomplete'
+        : '⏸ Wait for bearish structure';
+  }
+
+  // If both directions become actionable at the same time, do not silently
+  // choose one.  The market is conflicting until one side gains confirmation.
+  if(result.long==='STAGED' && result.short==='STAGED'){
+    result.conflict=true;
+    result.conflictLabel='⚠️ Conflicting entry zones — no clean directional edge';
+  } else {
+    result.conflict=false;
+    result.conflictLabel='';
+  }
+  return result;
+}
+
 function getEntryStatusRank(r, side){
   const s=getEntryStatusSnapshot(r);
   const code=side==='short'?s.short:s.long;
@@ -5471,7 +5548,8 @@ function entryStatusMatches(r, side, code){
   if(code==='ALL') return true;
   const s=getEntryStatusSnapshot(r);
   if(side==='long') return s.long===code;
-  if(code==='CONDITIONAL') return ['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE'].includes(s.short);
+  if(code==='STAGED') return s.short==='STAGED';
+  if(code==='CONDITIONAL') return ['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE','STAGED'].includes(s.short);
   return s.short===code;
 }
 
@@ -6507,12 +6585,45 @@ function renderEntryPathFramework(item, side, statusCode){
   return `<div class="entryPathFramework" style="margin-top:9px;padding:10px;border-radius:9px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.12)">
     <div style="font-weight:900">📐 ENTRY PATH / EXCURSION</div>
     <div style="margin-top:5px"><strong>${x.entryLabel}</strong> • ${x.sideLabel}</div>
-    <div style="margin-top:5px"><strong>📉 MAE framework:</strong> Below 15m EMA50 + above 15m EMA200 = <strong>Controlled MAE / normal pullback zone</strong>.</div>
+    <div style="margin-top:5px"><strong>📉 MAE framework:</strong> ${x.sideLabel==='LONG'?'Below 15m EMA50 + above 15m EMA200 = <strong>Controlled MAE / normal pullback zone</strong>.':'Above 15m EMA50 + below 15m EMA200 = <strong>Controlled MAE / normal pullback zone</strong>.'}</div>
     ${band}
     <div style="margin-top:7px"><strong>${x.stateIcon} Current path:</strong> ${x.state} — ${x.stateText}</div>
     ${mfe}
     <div style="margin-top:6px;font-size:11px;color:var(--muted)">MAE here is a structural path zone, not a promise of the exact future drawdown. EMA200 loss is treated as structural danger/invalidation according to the scanner's correction framework.</div>
   </div>`;
+}
+
+function buildFinalTraderRead(r){
+  const item=r||{};
+  const es=getEntryStatusSnapshot(item);
+  const phase=String(item.phase?.phaseName||item.phase?.phase||item.phase||'Unknown');
+  const phaseLc=phase.toLowerCase();
+  const ms=item.marketStructure||{};
+  const bias=String(ms.bias||item.structureBias||'MIXED').toUpperCase();
+  const cg=item.correctionGuide||{};
+  const ema200=Number(cg.ema200Stretch15);
+  const correctionConfirmed=Number.isFinite(ema200) && ema200<0;
+  const recovery=/recovery|return-to-normal|weak bounce/.test(phaseLc);
+  const distribution=/distribution|breakdown/.test(phaseLc);
+  const reasons=(item.phase?.reasons||[]).map(String);
+  const lh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
+  const hl=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
+  const checks=item.accumChecks||[];
+  const a4h=Number((checks.find(x=>x.tf==='4h')?.result?.confidence)||0);
+  const a1d=Number((checks.find(x=>x.tf==='1d')?.result?.confidence)||0);
+  const liq=item.liquidity||{};
+  const liqEvent=String(liq.event||'').toUpperCase();
+  const liqRejected=/REJECTION/.test(liqEvent);
+  const liqPending=/OUTCOME PENDING/.test(liqEvent);
+  if(es.conflict) return {title:'⚪ CONFLICTING ENTRY ZONES — NO CLEAR EDGE',action:'WAIT',detail:'Long and short staging are both active. Wait for one side to gain clear structure and liquidity confirmation.'};
+  if(es.long==='STAGED') return {title:'🟢 LONG ENTRY ZONE — STAGED / CONDITIONAL',action:'LONG',detail:'Long confirmation is active. Prefer the defined higher-low/reclaim path and keep EMA200 loss as structural invalidation.'};
+  if(es.short==='STAGED') return {title:'🔴 SHORT ENTRY ZONE — STAGED / CONDITIONAL',action:'SHORT',detail:'Short confirmation is active. Prefer rejection/failed-bounce plus bearish structure; do not short a pending liquidity outcome.'};
+  if(liqPending) return {title:'⏸ WAIT — LIQUIDITY OUTCOME PENDING',action:'WAIT',detail:'A liquidity sweep has occurred but rejection vs acceptance is unresolved. Do not treat the sweep itself as an entry zone.'};
+  if(correctionConfirmed) return {title:hl?'🟡 RECOVERY SETUP DEVELOPING — NOT YET STAGED':'⏸ CORRECTION CONFIRMED — WAIT FOR RECOVERY STRUCTURE',action:'WAIT',detail:'15m EMA200 stretch is below 0%, so significant correction is confirmed. Wait for a stable higher-low and improving 4H/1D accumulation before a recovery entry.'};
+  if((bias==='BEARISH' || distribution || lh) && recovery) return {title:'🟠 BEARISH RECOVERY — WAIT',action:'WAIT',detail:`Bearish structure remains dominant while price normalizes. ${lh?'Lower-high evidence is present, but it is not automatically an entry trigger. ':' '}Wait for confirmed rejection/downside structure for a short, or a higher-low with improving 4H/1D accumulation for a long.`};
+  if(distribution || lh) return {title:'🟠 BEARISH STRUCTURE DEVELOPING — WAIT',action:'WAIT',detail:`Bearish evidence is developing${lh?' via lower-high structure':''}. Wait for a resolved rejection/failed bounce before treating the area as a short entry zone.`};
+  if(recovery) return {title:'🟣 RECOVERY WATCH — BOTTOM NOT CONFIRMED',action:'WAIT',detail:`Market is normalizing, but recovery is not proof of a bottom. Current 4H accumulation ${a4h}% and 1D accumulation ${a1d}% must improve alongside higher-low structure.`};
+  return {title:'⚪ NO ACTIVE ENTRY ZONE',action:'WAIT',detail:'No directional staging threshold is currently satisfied. Use structure, liquidity outcome and higher-timeframe accumulation to wait for the next trigger.'};
 }
 
 function renderTraderDecisionBlock(r, compact=false){
@@ -6732,8 +6843,8 @@ function renderTraderDecisionBlock(r, compact=false){
   } else if(recovery) {
     currentState='🟣 RETURN-TO-NORMAL / RECOVERY WATCH';
     bias=accum>=60 ? 'Neutral / Recovery Watch' : 'Neutral';
-    longEntry='⚠️ Staged / conditional';
-    shortEntry=hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait for structure';
+    longEntry='⏸ Wait — entry confirmation incomplete';
+    shortEntry=hasLowerHigh ? '🟡 Bearish setup developing — entry confirmation incomplete' : '⏸ Wait for structure';
     bestAction='The market is normalizing after a move. Treat this as a recovery process, not an automatic bottom. Wait for a higher-low and improving 4H/1D accumulation before scaling into recovery.';
     readiness='🟡 Recovery watch';
     if(!hasHigherLow) missing.push('stable higher-low');
@@ -6754,7 +6865,7 @@ function renderTraderDecisionBlock(r, compact=false){
   } else {
     currentState=rec.state||'⚪ NO CLEAR EDGE';
     bias=rec.tradeBias||'Neutral';
-    longEntry='⚠️ Staged / conditional';
+    longEntry='⏸ Wait — entry confirmation incomplete';
     shortEntry='⏸ Wait for structure';
     bestAction='Wait for clearer structure and alignment between accumulation, momentum and higher-timeframe direction rather than forcing a trade.';
     readiness='⚪ No clear edge';
@@ -6762,6 +6873,21 @@ function renderTraderDecisionBlock(r, compact=false){
     if(a4h<50) missing.push('4H accumulation ≥50%');
     if(a1d<50) missing.push('1D accumulation ≥50%');
     invalid.push('breakdown or deterioration in higher-timeframe support');
+  }
+
+  // Display the same Short STAGED / CONDITIONAL mirror used by the filter.
+  // Long display/computation is intentionally left unchanged.
+  const entryMirror=getEntryStatusSnapshot(item);
+  if(entryMirror.conflict){
+    currentState='⚪ NO CLEAR EDGE — CONFLICTING ENTRY EVIDENCE';
+    bias='Neutral';
+    readiness='⚪ No clear edge';
+    bestAction='Both directional setups are developing at the same time. Do not force either side; wait for one side to gain clear structure/liquidity confirmation.';
+    longEntry='⚠️ Staged / conditional';
+    shortEntry='⚠️ Staged / conditional';
+  } else {
+    longEntry=entryMirror.long==='STAGED' ? entryMirror.longLabel : (entryMirror.long==='CONFIRMED' ? entryMirror.longLabel : '⏸ Wait — entry confirmation incomplete');
+    shortEntry=entryMirror.short==='STAGED' ? entryMirror.shortLabel : entryMirror.shortLabel;
   }
 
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
@@ -6774,20 +6900,28 @@ function renderTraderDecisionBlock(r, compact=false){
       ? `🔴 Confirmed — correction still active`
       : `🟢 Not confirmed`;
 
+  const finalRead=buildFinalTraderRead(item);
+  const finalReadTone=finalRead.action==='LONG'?'#2dd4bf':finalRead.action==='SHORT'?'#ff5c5c':finalRead.title.includes('WAIT')?'#ffd966':'#ff9f43';
+
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
+    <div style="margin-bottom:9px;padding:11px;border-radius:10px;background:rgba(255,255,255,.035);border:2px solid ${finalReadTone};box-shadow:0 0 0 1px rgba(255,255,255,.025) inset">
+      <div class="small" style="text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800">🎯 FINAL TRADER READ</div>
+      <div style="font-size:${compact?'17px':'19px'};font-weight:950;margin-top:3px;color:${finalReadTone}">${finalRead.title}</div>
+      <div style="margin-top:5px;line-height:1.45">${finalRead.detail}</div>
+    </div>
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
     <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
     <div><strong>Bias:</strong> ${bias}</div>
-    <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
-    <div><strong>Long entry:</strong> ${longEntry}</div>
-    <div><strong>Short entry:</strong> ${shortEntry}</div>
+    <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''} • Confirmation trigger: 15m EMA200 stretch < 0%</div>
+    <div><strong>Long setup:</strong> ${longEntry}</div>
+    <div><strong>Short setup:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
-    ${renderEntryPathFramework(item, ((getEntryStatusSnapshot(item)?.short && getEntryStatusSnapshot(item).short!=='WAIT' && getEntryStatusSnapshot(item).long==='WAIT')?'short':'long'), ((getEntryStatusSnapshot(item)||{}).long||''))}
-    <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
-    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 30D</div>
+    ${(() => { const es=getEntryStatusSnapshot(item); if(es.conflict) return `<div class="entryPathFramework" style="margin-top:9px;padding:10px;border-radius:9px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.18)"><div style="font-weight:900">📐 ENTRY PATH / EXCURSION</div><div style="margin-top:5px"><strong>⚠️ CONFLICTING ENTRY ZONES</strong> • LONG + SHORT</div><div style="margin-top:5px">Both sides meet the staging threshold, but neither has a clean directional advantage. <strong>Wait for confirmation.</strong></div></div>`; const side=es.short==='STAGED'?'short':es.long==='STAGED'?'long':null; if(!side) return `<div class="entryPathFramework" style="margin-top:9px;padding:10px;border-radius:9px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.12)"><div style="font-weight:900">📐 ENTRY PATH / EXCURSION</div><div style="margin-top:5px"><strong>⏸ NO ACTIVE ENTRY ZONE</strong></div><div style="margin-top:5px">Evidence is present, but entry confirmation is incomplete. Wait for the directional trigger before treating the area as an entry zone.</div></div>`; return renderEntryPathFramework(item, side, es[side]); })()}
+    <div style="margin-top:8px"><strong>Why this decision:</strong> Current 4H RSI ${rsi4h.toFixed(1)} • Historical RSI-below-50 counts are context only • 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
+    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness (historical):</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness (historical):</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
+    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness (historical):</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 30D</div>
     <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
@@ -8620,7 +8754,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
       if(confirmed) score+=8;
       score=clamp(score);
 
-      let state='🟢 TREND HEALTHY', code='HEALTHY';
+      let state='🟢 LOW TOP-RISK / TREND HEALTH WARNING', code='HEALTHY';
       if(correctionConfirmed && confirmed){state='🔴 BREAKDOWN CONFIRMED';code='CONFIRMED';}
       else if(confirmed || (bearishRank>=4 && score>=70)){state='🔴 BREAKDOWN DEVELOPING';code='BREAKDOWN';}
       else if(score>=75){state='🔴 HIGH PRIORITY TRANSITION';code='HIGH';}
