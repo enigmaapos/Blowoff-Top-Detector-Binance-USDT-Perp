@@ -663,6 +663,24 @@ body.authLocked{overflow:hidden}
 .ttPriorityPanel{margin:9px 0 2px;padding:12px;border-radius:12px;border:1px solid rgba(126,220,255,.18);background:linear-gradient(180deg,rgba(126,220,255,.055),rgba(255,255,255,.018));box-shadow:0 8px 22px rgba(0,0,0,.12)}
 .ttPriorityHeader{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.ttPriorityTitle{font-size:12px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#cfe8ff}.ttPriorityScore{font-size:22px;font-weight:950;line-height:1}.ttPriorityState{margin-top:3px;font-size:15px;font-weight:950}.ttPriorityReason{margin-top:6px;font-size:11px;line-height:1.45;color:#dbe8f5}.ttPriorityGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:9px}.ttMini{padding:7px 8px;border:1px solid rgba(255,255,255,.07);border-radius:8px;background:rgba(255,255,255,.025)}.ttMini b{display:block;font-size:10px;color:#9fb3cc;text-transform:uppercase;letter-spacing:.04em}.ttMini span{display:block;margin-top:3px;font-size:12px;font-weight:900}.ttTrigger{margin-top:8px;padding:8px 9px;border-radius:8px;border:1px solid rgba(255,217,102,.18);background:rgba(255,217,102,.035);font-size:11px;line-height:1.4}.ttQueue{margin:10px 0;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.018)}.ttQueueTitle{font-size:12px;font-weight:950;letter-spacing:.06em;text-transform:uppercase;color:#cfe8ff}.ttQueueRow{display:grid;grid-template-columns:28px 1fr 62px 110px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.055)}.ttQueueRow:last-child{border-bottom:0}.ttQueueRank{font-weight:950;color:#9fb3cc}.ttQueueSym{font-weight:950}.ttQueueState{font-size:10px;font-weight:900}.ttQueueScore{text-align:right;font-weight:950}.ttQueueHint{font-size:10px;color:#8195ad;margin-top:2px}.ttLegend{margin-top:8px;font-size:10px;color:#8195ad;line-height:1.4}@media(max-width:760px){.ttPriorityGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ttQueueRow{grid-template-columns:24px 1fr 58px}.ttQueueState{display:none}}
 </style>
+
+<style id="trader-zone-filter-visibility-css">
+/* Trader Decision Zone Filter — intentionally prominent in Result Filters */
+.filtersZone #traderZoneFilter{
+  width:100%;
+  min-height:42px;
+  font-weight:700;
+  font-size:14px;
+  border:1px solid rgba(126,220,255,.55);
+  box-shadow:0 0 0 1px rgba(126,220,255,.08), 0 4px 18px rgba(0,0,0,.18);
+}
+.filtersZone .zoneFilterHint{
+  margin-top:7px;
+  font-size:10px;
+  line-height:1.45;
+  color:var(--muted,#9fb3cc);
+}
+</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -874,22 +892,14 @@ body.authLocked{overflow:hidden}
             <option value="smcConfidence">🧩 SMC Confidence</option>
             <option value="smcStageRank">🧩 SMC Stage</option>
           </select>
-<select id="zoneFilter" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
-  <option value="all">All Zones</option>
-  <option value="buying">🟢 Buying Zone</option>
-  <option value="selling">🔴 Selling Zone</option>
-  <option value="actionable">⚡ Actionable Zone</option>
-  <option value="none">⚪ No Nearby Zone</option>
-</select>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Sort Direction</label>
           <button id="sortDir" class="alt" title="Toggle sort direction" style="width:100%">Desc</button>
         </div>
       </div>
-    </div>
       <div class="controlSectionTitle" style="margin-top:14px">
-        <span>🎯</span> Entry Filters
+        <span>🎯</span> 6 · Trader Decision & Entry Filters
       </div>
       <div class="controlGrid two">
         <div class="controlItem">
@@ -901,7 +911,7 @@ body.authLocked{overflow:hidden}
             <option value="ACTIONABLE">⚡ Actionable Zone</option>
             <option value="NO_ZONE">⚪ No Nearby Zone</option>
           </select>
-          <div class="dashboardHint">Filters by the same Trader Decision price zones shown in each result. Buying/Selling means the price is inside or approaching that zone.</div>
+          <div class="zoneFilterHint">Uses the same Trader Decision zones shown in the result cards. Buying/Selling = price is inside or approaching the zone; Actionable = confirmed nearby zone.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">🟢 Long Entry Status</label>
