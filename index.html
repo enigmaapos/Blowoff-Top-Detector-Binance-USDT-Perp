@@ -2026,6 +2026,8 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
   }
 
   // filter only USDT perpetuals and remove blacklist
+  const tickerPriceMap = new Map();
+  (tickers||[]).forEach(t=>{ if(t?.symbol) tickerPriceMap.set(String(t.symbol).toUpperCase(), Number(t.lastPrice)); });
   const symbols = (tickers || [])
     .filter(t => t.symbol && t.symbol.endsWith('USDT') && !blacklist.includes(t.symbol))
     .map(t => t.symbol.toUpperCase());
@@ -2048,7 +2050,10 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
     }
     const batch=symbols.slice(start,start+concurrency);
     const batchResults=await Promise.all(batch.map(async sym=>{
-      try{return await analyzeSymbol(sym,{allowIfNotRunning:true});}
+      try{
+        const lp=Number(tickerPriceMap.get(sym));
+        return await analyzeSymbol(sym,{allowIfNotRunning:true,livePrice:Number.isFinite(lp)&&lp>0?lp:undefined,livePriceSource:'Binance 24h ticker'});
+      }
       catch(err){return {error:err.message||String(err),symbol:sym};}
     }));
     for(let j=0;j<batchResults.length;j++){
@@ -2298,7 +2303,8 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
     try{
       if(session!==modeSession || activeViewMode!=='scan') return null;
       if (el.scanStatus) el.scanStatus.innerText=`Analyzing ${sym}...`;
-      const res=await analyzeSymbol(sym,{allowIfNotRunning:true,useCache:false});
+      const lp=(item&&typeof item==='object')?Number(item.lastPrice):NaN;
+      const res=await analyzeSymbol(sym,{allowIfNotRunning:true,useCache:false,livePrice:Number.isFinite(lp)&&lp>0?lp:undefined,livePriceSource:Number.isFinite(lp)&&lp>0?'Binance 24h ticker':undefined});
       const normalizePhaseField=(val)=>{
         if(!val)return '';
         if(typeof val==='string')return val.toLowerCase();
@@ -2478,6 +2484,18 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
   if(useCache){
     const cached = getCachedSymbol(sym);
     if(cached && Number(cached.ema200_15) > 0 && cached.hvd && cached.hvd.byTf) {
+      // Historical data stays cached, but current price is always refreshed.
+      try{
+        const lt=await safeFetch(`${API_BASE}/fapi/v1/ticker/price?symbol=${sym}`,{allowIfNotRunning:true});
+        const lp=Number(lt?.price);
+        if(Number.isFinite(lp)&&lp>0){
+          const prev=Number(cached.lastClosed4hClose||cached.closeNow);
+          cached.livePrice=lp; cached.closeNow=lp; cached.livePriceAt=Date.now();
+          cached.livePriceSource='Binance ticker price (cache refresh)';
+          cached.liveVsClosed4Pct=Number.isFinite(prev)&&prev>0?Number((((lp/prev)-1)*100).toFixed(4)):null;
+          cached.ema200Stretch15=calculateEmaStretch(lp,Number(cached.ema200_15));
+        }
+      }catch(e){ console.warn('Live ticker refresh failed for cached',sym,e.message); }
       cached.correctionGuide = getCorrectionGuide(cached);
       cached.accumulationReversal = Array.isArray(cached.k4h) ? detectAccumulationDoubleTopReversal({
         k4h:cached.k4h, closeNow:Number(cached.k4h.at(-1)?.[4]||cached.closeNow), accumConfidence:Number(cached.accum4h?.confidence||0)
@@ -2502,7 +2520,14 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         else if(cached.topDetection.score>=45) cached.topDetection.level='🟠 TOPPING DEVELOPING';
         else if(cached.topDetection.score>=25) cached.topDetection.level='🟡 TOP RISK INCREASING';
       }
-      el.symbolStatus.innerText = `Loaded ${sym} from cache (${Math.round((Date.now()-cached._cachedAt)/1000)}s ago)`;
+      try{
+        cached.correctionGuide=getCorrectionGuide(cached);
+        cached.liquidity=detectLiquidityIntelligence(cached);
+        cached.longTargets=getLongTermTargets(cached);
+        cached.finalRec=getFinalRecommendation(cached);
+        cached.shortRec=getShortTermRecommendation(cached);
+      }catch(e){ console.warn('Cached Trader Decision refresh failed',sym,e.message); }
+      el.symbolStatus.innerText = `Loaded ${sym} from cache • live price refreshed (${Math.round((Date.now()-cached._cachedAt)/1000)}s old)`;
       return cached;
     }
   }
@@ -2544,9 +2569,12 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1w&limit=20`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1W
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1M&limit=12`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1M
-      safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${sym}&limit=1`, { allowIfNotRunning: opts.allowIfNotRunning })
+      safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${sym}&limit=1`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      Number(opts.livePrice)>0
+        ? Promise.resolve({price:Number(opts.livePrice), source:String(opts.livePriceSource||'Binance 24h ticker')})
+        : safeFetch(`${API_BASE}/fapi/v1/ticker/price?symbol=${sym}`, { allowIfNotRunning: opts.allowIfNotRunning })
     ];
-    const [k4hFull, k8hFull, k1h, k15, k1d, k1w, k1m, f] = await Promise.all(promises);
+    const [k4hFull, k8hFull, k1h, k15, k1d, k1w, k1m, f, liveTicker] = await Promise.all(promises);
 
     // Keep the OLD version's 40-candle core calculations, while retaining
     // enough full 4H history to calculate the NEW authoritative EMA200 rule.
@@ -2575,6 +2603,20 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
 
     const last4 = (k4h && k4h.length) ? k4h[k4h.length-1] : null;
     if(!last4) throw new Error('No 4H candles returned');
+
+    // Canonical live Binance price snapshot. Historical indicators remain
+    // candle-derived; Trader Decision location uses this live price.
+    const livePriceRaw = Number(opts.livePrice)>0 ? Number(opts.livePrice) : Number(liveTicker?.price);
+    if(!Number.isFinite(livePriceRaw) || livePriceRaw<=0) throw new Error('Binance live price unavailable');
+    const livePrice = livePriceRaw;
+    const livePriceSource = String(opts.livePriceSource || liveTicker?.source || 'Binance ticker price');
+    const nowMs = Date.now();
+    const closed4 = [...(k4hFull||[])].reverse().find(k=>Number(k?.[6])<=nowMs) || last4;
+    const last4CloseTime = Number(last4?.[6]||0);
+    const last4OpenTime = Number(last4?.[0]||0);
+    const last4IsClosed = last4CloseTime>0 && last4CloseTime<=nowMs;
+    const closed4Close = Number(closed4?.[4]);
+    const liveVsClosed4Pct = Number.isFinite(closed4Close)&&closed4Close>0 ? ((livePrice/closed4Close)-1)*100 : null;
 
     const open4 = Number(last4[1]), high4 = Number(last4[2]), low4 = Number(last4[3]), close4 = Number(last4[4]);
     const body4 = Math.abs(close4 - open4) || 1e-9;
@@ -2771,7 +2813,17 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       lowerHigh,
       dropPctFromPeak,
       fundingRate,
-      closeNow: close4,
+      // closeNow is the canonical LIVE Binance price. Keep the last closed 4H
+      // close separately so candle-based signals remain auditable.
+      closeNow: livePrice,
+      livePrice,
+      livePriceAt: nowMs,
+      livePriceSource,
+      lastClosed4hClose: Number.isFinite(closed4Close)?closed4Close:null,
+      last4hOpenTime: last4OpenTime || null,
+      last4hCloseTime: last4CloseTime || null,
+      last4hCandleClosed: last4IsClosed,
+      liveVsClosed4Pct: Number.isFinite(liveVsClosed4Pct)?Number(liveVsClosed4Pct.toFixed(4)):null,
       k4h, k1h, k15m: k15, k1d, k1w, k1m,
       hvd,
       marketStructure: structure4h,
@@ -2804,6 +2856,10 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       }),
       returnToNormal: detectReturnToNormal({ k4h, rsi4h, closeNow: close4 }, { sensitivity: sens })
     };
+
+    // Authoritative correction distance uses the live Binance price.
+    // Candle-based 4H metrics above remain tied to the kline snapshot.
+    result.ema200Stretch15 = calculateEmaStretch(livePrice, ema200_15);
 
     // ===== local liquidity intelligence (no extra API calls) =====
     result.liquidity = detectLiquidityIntelligence(result);
@@ -6865,6 +6921,29 @@ function renderTraderDecisionZoneLine(z, price){
   return `${statusIcon} ${z.side==='BUY'?'Buying':'Selling'} zone: ${formatTraderZonePrice(z.low)} – ${formatTraderZonePrice(z.high)} • Quality ${z.quality}/100 • ${z.status}${inside}`;
 }
 
+function renderTraderDecisionAudit(r, compact=false){
+  const x=r||{};
+  const live=Number(x.livePrice ?? x.closeNow);
+  const closed=Number(x.lastClosed4hClose);
+  const delta=Number(x.liveVsClosed4Pct);
+  const liveTxt=Number.isFinite(live)&&live>0?formatTraderZonePrice(live):'—';
+  const closedTxt=Number.isFinite(closed)&&closed>0?formatTraderZonePrice(closed):'—';
+  const deltaTxt=Number.isFinite(delta)?`${delta>=0?'+':''}${delta.toFixed(2)}%`:'—';
+  const candleStatus=x.last4hCandleClosed?'CLOSED':'FORMING';
+  const statusIcon=x.last4hCandleClosed?'🟢':'🟡';
+  const source=String(x.livePriceSource||'Binance');
+  return `<div style="margin-top:8px;padding:9px 10px;border-radius:8px;background:rgba(126,220,255,.035);border:1px solid rgba(126,220,255,.10)">
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px"><span>🔎</span><strong style="font-size:12px">BINANCE DATA AUDIT</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Trader Decision source check</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;font-size:11px;line-height:1.45">
+      <div><strong>Live Binance price:</strong> ${liveTxt}</div>
+      <div><strong>Last 4H close:</strong> ${closedTxt}</div>
+      <div><strong>Live vs 4H close:</strong> ${deltaTxt}</div>
+      <div><strong>4H candle:</strong> ${statusIcon} ${candleStatus}</div>
+    </div>
+    <div class="small" style="margin-top:5px;color:var(--muted)">Live price source: ${source}. RSI/volume/structure signals remain candle-derived; zones, current location and execution context use the live Binance price.</div>
+  </div>`;
+}
+
 function renderTraderDecisionBlock(r, compact=false){
   const item=r||{};
   const rec=getFinalRecommendation(item);
@@ -7193,6 +7272,7 @@ function renderTraderDecisionBlock(r, compact=false){
     ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed on the execution timeframe.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     ${renderEntryPathFramework(item, (()=>{ const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); return /bearish|short/.test(tb)?'short':/bullish|controlled|recovery/.test(tb)?'long':'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
+    ${renderTraderDecisionAudit(item,compact)}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
     <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
