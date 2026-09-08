@@ -791,6 +791,10 @@ body.authLocked{overflow:hidden}
                   style="width:100%;min-height:44px;font-weight:950;font-size:14px">
             🧪 Open Trading Test
           </button>
+<button id="openStrategyDiscoveryBtn" type="button"
+  style="margin-left:8px;border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:9px 13px;cursor:pointer;">
+  🔎 Discover Best Strategy
+</button>
         </div>
       </div>
     </div>
@@ -8944,6 +8948,45 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 }
 #openTradingTestBtn{box-shadow:0 6px 18px rgba(0,0,0,.18)}
 </style>
+
+<style id="magmaStrategyDiscoveryStyles">
+#sdPanel{margin:18px 0;padding:18px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(8,14,24,.72);box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.sdHeader{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.sdHeader h2{margin:0 0 6px;font-size:1.15rem}
+.sdSub,.sdNote{color:var(--muted);line-height:1.5;font-size:.88rem}
+.sdGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.sdField{display:flex;flex-direction:column;gap:5px}
+.sdField label{font-size:.78rem;color:var(--muted)}
+.sdField input,.sdField select{width:100%;box-sizing:border-box}
+.sdWide{grid-column:span 2}
+.sdFeatureBox{margin-top:14px;padding:12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.025)}
+.sdFeatureTitle{font-weight:700;margin-bottom:8px}
+.sdFeatureList{display:flex;flex-wrap:wrap;gap:8px 14px}
+.sdFeatureList label{font-size:.8rem;color:var(--muted)}
+.sdActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.sdStatus{margin-top:10px;padding:9px 11px;border-radius:9px;background:rgba(255,255,255,.04);font-size:.84rem}
+.sdHeadline{margin-top:12px}
+.sdHero{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.sdMetric{padding:10px;border-radius:10px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08)}
+.sdMetric b{display:block;font-size:1.05rem;margin-top:2px}
+.sdMetric span{font-size:.72rem;color:var(--muted)}
+.sdTabs{display:flex;gap:6px;margin-top:14px;border-bottom:1px solid rgba(255,255,255,.1);padding-bottom:6px}
+.sdTab{border:1px solid rgba(255,255,255,.1);background:transparent;color:inherit;padding:7px 10px;border-radius:8px;cursor:pointer}
+.sdTab.active{background:rgba(255,255,255,.09)}
+.sdTableWrap{overflow:auto;margin-top:10px}
+.sdTable{width:100%;border-collapse:collapse;font-size:.78rem;min-width:1000px}
+.sdTable th,.sdTable td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top}
+.sdTable th{color:var(--muted);font-weight:600}
+.sdRank{font-weight:800}
+.sdCombo{font-weight:700}
+.sdGood{font-weight:800}
+.sdBad{font-weight:800}
+.sdMini{font-size:.7rem;color:var(--muted)}
+.sdPill{display:inline-block;padding:2px 6px;border-radius:999px;background:rgba(255,255,255,.07);margin:1px 2px}
+.sdNote{padding:12px;border:1px solid rgba(255,255,255,.09);border-radius:10px;margin-top:10px}
+@media(max-width:900px){.sdGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.sdWide{grid-column:span 2}.sdHero{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){.sdGrid{grid-template-columns:1fr}.sdWide{grid-column:span 1}.sdHero{grid-template-columns:repeat(2,minmax(0,1fr))}.sdHeader{flex-direction:column}}
+</style>
 <style id="magmaBacktestStyles">
 #btPanel{margin:18px 0;padding:16px;border:1px solid rgba(126,220,255,.22);border-radius:16px;background:rgba(8,18,30,.82);box-shadow:0 10px 30px rgba(0,0,0,.14)}
 #btPanel h2{margin:0 0 6px;font-size:18px}
@@ -9020,6 +9063,137 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
       (conservative intrabar rule). Results are expressed as R-multiples and net percentage after the configured fee/slippage.
     </div>
   </div>
+
+<section id="magmaStrategyDiscovery" hidden>
+  <div id="sdPanel">
+    <div class="sdHeader">
+      <div>
+        <h2>🧪 Scanner Strategy Discovery — Combination Optimizer</h2>
+        <div class="sdSub">
+          Find which combinations of the scanner's replayed data fields produce the strongest
+          historical LONG or SHORT results. The optimizer tests bounded 1–3 condition combinations,
+          uses the signal candle only after it closes, enters on the next candle open, and reports
+          out-of-sample performance separately to reduce overfitting.
+        </div>
+      </div>
+      <button id="sdClose" class="btBtn" type="button">Hide</button>
+    </div>
+
+    <div class="sdGrid">
+      <div class="sdField sdWide">
+        <label>Coins to test (comma separated)</label>
+        <input id="sdSymbols" value="BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT">
+      </div>
+      <div class="sdField">
+        <label>Lookback days</label>
+        <input id="sdDays" type="number" min="60" max="1000" value="365">
+      </div>
+      <div class="sdField">
+        <label>Signal timeframe</label>
+        <select id="sdTF"><option value="4h">4H</option><option value="1h">1H</option></select>
+      </div>
+      <div class="sdField">
+        <label>Direction</label>
+        <select id="sdSide"><option value="BOTH">LONG + SHORT</option><option value="LONG">LONG only</option><option value="SHORT">SHORT only</option></select>
+      </div>
+      <div class="sdField">
+        <label>Train / validation split</label>
+        <select id="sdSplit"><option value=".70">70% / 30%</option><option value=".60">60% / 40%</option><option value=".80">80% / 20%</option></select>
+      </div>
+      <div class="sdField">
+        <label>Minimum total trades</label>
+        <input id="sdMinTrades" type="number" min="5" max="500" value="20">
+      </div>
+      <div class="sdField">
+        <label>Minimum OOS trades</label>
+        <input id="sdMinOos" type="number" min="3" max="200" value="8">
+      </div>
+      <div class="sdField">
+        <label>Maximum conditions in a combination</label>
+        <select id="sdMaxCombo"><option value="2">2</option><option value="3" selected>3</option></select>
+      </div>
+      <div class="sdField">
+        <label>SL = ATR ×</label>
+        <input id="sdSL" type="number" min=".2" max="10" step=".1" value="1.5">
+      </div>
+      <div class="sdField">
+        <label>TP = R ×</label>
+        <input id="sdTP" type="number" min=".25" max="10" step=".25" value="2">
+      </div>
+      <div class="sdField">
+        <label>Max holding bars</label>
+        <input id="sdHold" type="number" min="1" max="500" value="30">
+      </div>
+      <div class="sdField">
+        <label>Fee per side %</label>
+        <input id="sdFee" type="number" min="0" max="1" step=".01" value=".05">
+      </div>
+      <div class="sdField">
+        <label>Slippage per side %</label>
+        <input id="sdSlip" type="number" min="0" max="1" step=".01" value=".02">
+      </div>
+      <div class="sdField">
+        <label>Minimum OOS profit factor</label>
+        <input id="sdMinPF" type="number" min="0" max="20" step=".05" value="1.05">
+      </div>
+    </div>
+
+    <div class="sdFeatureBox">
+      <div class="sdFeatureTitle">Feature library being searched</div>
+      <div class="sdFeatureList">
+        <label><input type="checkbox" class="sdFeature" value="acc4" checked> 4H Accumulation</label>
+        <label><input type="checkbox" class="sdFeature" value="acc1d" checked> 1D Accumulation</label>
+        <label><input type="checkbox" class="sdFeature" value="rsi" checked> 4H RSI</label>
+        <label><input type="checkbox" class="sdFeature" value="stretch" checked> EMA70 Extension</label>
+        <label><input type="checkbox" class="sdFeature" value="volume" checked> Volume Ratio</label>
+        <label><input type="checkbox" class="sdFeature" value="higherLow" checked> Higher-Low</label>
+        <label><input type="checkbox" class="sdFeature" value="lowerHigh" checked> Lower-High</label>
+        <label><input type="checkbox" class="sdFeature" value="correction" checked> Correction State</label>
+        <label><input type="checkbox" class="sdFeature" value="recovery" checked> Recovery State</label>
+        <label><input type="checkbox" class="sdFeature" value="distribution" checked> Distribution / Breakdown</label>
+        <label><input type="checkbox" class="sdFeature" value="entryStatus" checked> Scanner Entry Status</label>
+        <label><input type="checkbox" class="sdFeature" value="blowoff" checked> Blowoff / Exhaustion Proxy</label>
+      </div>
+    </div>
+
+    <div class="sdActions">
+      <button class="btBtn" id="sdRun" type="button">🔎 Discover Best Combinations</button>
+      <button class="btBtn" id="sdStop" type="button" disabled>■ Stop</button>
+      <button class="btBtn" id="sdClear" type="button">Clear Discovery</button>
+      <button class="btBtn" id="sdExport" type="button">Export CSV</button>
+    </div>
+
+    <div id="sdStatus" class="sdStatus">Ready. This will fetch historical candles in your browser from Binance Futures.</div>
+    <div id="sdHeadline" class="sdHeadline"></div>
+
+    <div class="sdTabs">
+      <button class="sdTab active" data-sdtab="ranked">🏆 Ranked combinations</button>
+      <button class="sdTab" data-sdtab="features">📐 Individual features</button>
+      <button class="sdTab" data-sdtab="details">📋 Method / details</button>
+    </div>
+
+    <div id="sdRanked" class="sdTabPane"></div>
+    <div id="sdFeatures" class="sdTabPane" hidden></div>
+    <div id="sdDetails" class="sdTabPane" hidden>
+      <div class="sdNote">
+        <b>How to read the result:</b> the top row is not automatically the “best live strategy.”
+        Prefer combinations with enough trades, positive expectancy, PF above 1, controlled drawdown,
+        and similar or better performance out-of-sample. The optimizer ranks by OOS quality first,
+        then stability and sample size. It is deliberately bounded to avoid an unrestricted
+        brute-force search.
+        <br><br>
+        <b>No look-ahead:</b> a condition is evaluated on a completed signal candle and the trade
+        enters on the following candle open. If SL and TP are both touched in one candle, SL is
+        assumed first. Fees and slippage are applied to each round trip.
+        <br><br>
+        <b>Data note:</b> this discovery engine uses the scanner's existing backtest/replay feature
+        vocabulary and the same historical replay calculations used by the Trading Test module.
+        It is not a claim that every live-only detector in the full scanner can be reconstructed
+        identically from OHLCV alone.
+      </div>
+    </div>
+  </div>
+</section>
 </section>
 
 <script id="magmaBacktestModule">
@@ -9676,3 +9850,364 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 </script>
 </body>
 </html>
+
+
+<script id="magmaStrategyDiscoveryModule">
+(function(){
+  'use strict';
+  const $=id=>document.getElementById(id);
+  const panel=$('magmaStrategyDiscovery');
+  const state={running:false,stop:false,rows:[],results:[],featureResults:[],symbolsDone:0,totalSymbols:0};
+
+  function n(id,d){const x=Number($(id)?.value);return Number.isFinite(x)?x:d}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function f(v,d=2){return Number.isFinite(Number(v))?Number(v).toFixed(d):'—'}
+  function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0}
+  function mean(a){return avg(a)}
+  function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
+  function ema(a,p){
+    const out=new Array(a.length).fill(null); if(a.length<p)return out;
+    let e=mean(a.slice(0,p)); out[p-1]=e; const k=2/(p+1);
+    for(let i=p;i<a.length;i++){e=a[i]*k+e*(1-k);out[i]=e} return out;
+  }
+  function rsi(a,p=14){
+    const out=new Array(a.length).fill(null); if(a.length<=p)return out;
+    let g=0,l=0;
+    for(let i=1;i<=p;i++){const d=a[i]-a[i-1];if(d>=0)g+=d;else l-=d}
+    g/=p;l/=p;out[p]=l===0?100:100-100/(1+g/l);
+    for(let i=p+1;i<a.length;i++){
+      const d=a[i]-a[i-1],gg=Math.max(0,d),ll=Math.max(0,-d);
+      g=(g*(p-1)+gg)/p;l=(l*(p-1)+ll)/p;
+      out[i]=l===0?100:100-100/(1+g/l);
+    } return out;
+  }
+  function atr(h,l,c,p=14){
+    const tr=new Array(c.length).fill(0),out=new Array(c.length).fill(null);
+    for(let i=0;i<c.length;i++)tr[i]=i?Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1])):h[i]-l[i];
+    if(c.length<=p)return out;
+    let a=mean(tr.slice(1,p+1));out[p]=a;
+    for(let i=p+1;i<c.length;i++){a=(a*(p-1)+tr[i])/p;out[i]=a} return out;
+  }
+  function volMean(v,i,p){return i<p-1?null:mean(v.slice(i-p+1,i+1))}
+  function accumulation(i,h,l,c,v,e20,e70,rs){
+    if(i<80||!e20[i]||!e70[i]||!rs[i])return null;
+    const stretch=((c[i]-e70[i])/e70[i])*100;
+    const trend=c[i]>=e20[i]?22:8;
+    const rsScore=rs[i]>=45&&rs[i]<=68?24:rs[i]<40?10:8;
+    const stScore=stretch<8?22:stretch<15?15:stretch<25?8:2;
+    const vm=volMean(v,i,20)||v[i]||1,vr=v[i]/Math.max(vm,1e-12);
+    const volScore=vr>=.8&&vr<=1.8?18:vr>2.5?5:10;
+    const range=Math.max(h[i]-l[i],1e-12),closePos=(c[i]-l[i])/range;
+    return Math.round(clamp(trend+rsScore+stScore+volScore+(closePos>=.45?14:5),0,100));
+  }
+  function structure(i,h,l){
+    const p=4;if(i<2*p+2)return {higherLow:false,lowerHigh:false,hh:0,hl:0,lh:0,ll:0};
+    let hh=0,hl=0,lh=0,ll=0;
+    for(let j=i-p*2;j<=i-p;j++){
+      const ah=h[j],bh=h[j+p],al=l[j],bl=l[j+p];
+      if(bh>ah)hh++;else if(bh<ah)lh++;
+      if(bl>al)hl++;else if(bl<al)ll++;
+    }
+    return {hh,hl,lh,ll,higherLow:hl>=2&&lh<=1,lowerHigh:lh>=2&&hh<=2};
+  }
+  function daily(rows){
+    const map=new Map();
+    for(const r of rows){
+      const key=new Date(r.t).toISOString().slice(0,10),x=map.get(key);
+      if(!x)map.set(key,{t:r.t,o:r.o,h:r.h,l:r.l,c:r.c,v:r.v});
+      else{x.h=Math.max(x.h,r.h);x.l=Math.min(x.l,r.l);x.c=r.c;x.v+=r.v}
+    }
+    return [...map.values()].sort((a,b)=>a.t-b.t);
+  }
+  async function fetchK(symbol,interval,start,end){
+    const out=[];let cur=start,guard=0;
+    while(cur<end&&guard++<40){
+      if(state.stop)throw new Error('Stopped');
+      const url=`https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=1500&startTime=${cur}&endTime=${end}`;
+      const r=await fetch(url);if(!r.ok)throw new Error(symbol+' HTTP '+r.status);
+      const data=await r.json();if(!Array.isArray(data))throw new Error(symbol+' invalid Binance response');
+      if(!data.length)break;
+      for(const k of data)out.push({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5],closeT:+k[6]});
+      cur=+data[data.length-1][6]+1;
+      if(data.length<1500)break;
+      await new Promise(r=>setTimeout(r,180));
+    }
+    const m=new Map();out.forEach(x=>m.set(x.t,x));
+    return [...m.values()].sort((a,b)=>a.t-b.t).filter(x=>x.closeT<Date.now()-1000);
+  }
+  function prepare(rows){
+    const o=rows.map(x=>x.o),h=rows.map(x=>x.h),l=rows.map(x=>x.l),c=rows.map(x=>x.c),v=rows.map(x=>x.v);
+    const e20=ema(c,20),e70=ema(c,70),e200=ema(c,200),rs=rsi(c),at=atr(h,l,c);
+    const d=daily(rows),dc=d.map(x=>x.c),de=ema(dc,20),dr=rsi(dc),dm=new Map(d.map((x,i)=>[new Date(x.t).toISOString().slice(0,10),i]));
+    const da=new Array(d.length).fill(null),a1d=new Array(rows.length).fill(null);
+    for(let i=0;i<d.length;i++){
+      if(i<25||!de[i]||!dr[i])continue;
+      const st=((dc[i]-de[i])/de[i])*100;
+      da[i]=Math.round(clamp((dc[i]>=de[i]?30:10)+(dr[i]>=45&&dr[i]<=68?30:10)+(st<15?25:st<25?12:4)+25,0,100));
+    }
+    for(let i=0;i<rows.length;i++){
+      const di=dm.get(new Date(rows[i].t).toISOString().slice(0,10));
+      a1d[i]=di!=null&&di>0?da[di-1]:null;
+    }
+    const sig=[];
+    for(let i=210;i<rows.length-1;i++){
+      if(!rs[i]||!at[i]||!a1d[i])continue;
+      const a4=accumulation(i,h,l,c,v,e20,e70,rs),vm=volMean(v,i,20)||v[i]||1,vr=v[i]/Math.max(vm,1e-12);
+      const range=Math.max(h[i]-l[i],1e-12),upper=(h[i]-Math.max(o[i],c[i]))/range;
+      const stretch=((c[i]-e70[i])/e70[i])*100;
+      const blowoff=(rs[i]>=72&&vr>=1.4&&upper>=.45)||(stretch>=25&&rs[i]>=70);
+      const overheated=rs[i]>=80,st=structure(i,h,l);
+      const distribution=blowoff;
+      const correction=!!e200[i]&&c[i]<e200[i]*.98;
+      const recovery=c[i]>e20[i]&&rs[i]>=45&&rs[i]<=68;
+      const strong=a4>=60&&a1d[i]>=55,bear=st.lowerHigh||distribution;
+      let longStatus='STAGED',shortStatus='WAIT';
+      if(correction&&!distribution&&recovery){
+        longStatus=strong&&st.higherLow&&!overheated?'CONFIRMED':'CONDITIONAL';
+        shortStatus=st.lowerHigh?'LOWER_HIGH':'WAIT';
+      }else if(correction){
+        longStatus=st.higherLow?'STAGED':'WAIT';shortStatus=st.lowerHigh?'LOWER_HIGH':'WAIT';
+      }else if(overheated&&distribution){
+        longStatus='DONT_CHASE';shortStatus='REJECTION';
+      }else if(strong&&st.higherLow&&!distribution&&!overheated){
+        longStatus='CONFIRMED';shortStatus='WAIT';
+      }else if(recovery){
+        longStatus='STAGED';shortStatus=st.lowerHigh?'LOWER_HIGH':'WAIT';
+      }else if(bear){
+        longStatus='WAIT';shortStatus=st.lowerHigh?'REJECTION':'CONDITIONAL';
+      }
+      sig.push({i,t:rows[i].t,acc4:a4,acc1d:a1d[i],rsi:rs[i],stretch,volume:vr,higherLow:st.higherLow,lowerHigh:st.lowerHigh,correction,recovery,distribution,blowoff,longStatus,shortStatus,atr:at[i]});
+    }
+    return {rows,sig};
+  }
+  function featureDefs(side){
+    const common=[
+      {key:'acc4',label:'4H Acc ≥60%',ok:s=>s.acc4>=60},
+      {key:'acc1d',label:'1D Acc ≥55%',ok:s=>s.acc1d>=55},
+      {key:'rsi',label:'RSI 50–68',ok:s=>s.rsi>=50&&s.rsi<=68},
+      {key:'stretch',label:'EMA70 Ext <15%',ok:s=>s.stretch<15},
+      {key:'volume',label:'Volume ×0.8–1.8',ok:s=>s.volume>=.8&&s.volume<=1.8},
+      {key:'higherLow',label:'Higher-Low',ok:s=>s.higherLow},
+      {key:'lowerHigh',label:'Lower-High',ok:s=>s.lowerHigh},
+      {key:'correction',label:'No correction',ok:s=>!s.correction},
+      {key:'recovery',label:'Recovery',ok:s=>s.recovery},
+      {key:'distribution',label:'No distribution',ok:s=>!s.distribution},
+      {key:'entryStatus',label:side==='LONG'?'Long CONFIRMED/STAGED':'Short REJECTION/LOWER_HIGH',ok:s=>side==='LONG'?['CONFIRMED','STAGED'].includes(s.longStatus):['REJECTION','LOWER_HIGH'].includes(s.shortStatus)},
+      {key:'blowoff',label:side==='LONG'?'No blowoff':'Blowoff / exhaustion proxy',ok:s=>side==='LONG'?!s.blowoff:s.blowoff}
+    ];
+    const wanted=new Set([...document.querySelectorAll('.sdFeature:checked')].map(x=>x.value));
+    return common.filter(x=>wanted.has(x.key));
+  }
+  function combinations(arr,k){
+    const out=[];
+    function rec(start,p){
+      if(p.length===k){out.push(p.slice());return}
+      for(let i=start;i<=arr.length-(k-p.length);i++){p.push(arr[i]);rec(i+1,p);p.pop()}
+    }
+    rec(0,[]);return out;
+  }
+  function tradeFor(signal,rows,side,cfg){
+    const ni=signal.i+1;if(ni>=rows.length)return null;
+    const entryRaw=rows[ni].o,slip=cfg.slip/100;
+    const entry=side==='LONG'?entryRaw*(1+slip):entryRaw*(1-slip);
+    const risk=Math.max(signal.atr*cfg.sl,entry*.002);
+    const stop=side==='LONG'?entry-risk:entry+risk,target=side==='LONG'?entry+risk*cfg.tp:entry-risk*cfg.tp;
+    const end=Math.min(ni+cfg.hold,rows.length-1);
+    let exit=rows[end].c,reason='TIME',exitIndex=end;
+    for(let j=ni;j<=end;j++){
+      const b=rows[j],hitSL=side==='LONG'?b.l<=stop:b.h>=stop,hitTP=side==='LONG'?b.h>=target:b.l<=target;
+      if(hitSL&&hitTP){exit=stop;exitIndex=j;reason='SL';break}
+      if(hitSL){exit=stop;exitIndex=j;reason='SL';break}
+      if(hitTP){exit=target;exitIndex=j;reason='TP';break}
+    }
+    const grossR=side==='LONG'?(exit-entry)/risk:(entry-exit)/risk;
+    const fee=cfg.fee/100*2,slipCost=cfg.slip/100*2;
+    const netR=grossR-(fee+slipCost)/(risk/entry);
+    const netPct=(side==='LONG'?(exit-entry)/entry:(entry-exit)/entry)*100-fee*100-slipCost*100;
+    return {symbol:cfg.symbol,side,signalTime:signal.t,entry,exit,r:grossR,netR,netPct,reason,exitIndex,signal};
+  }
+  function metrics(trades){
+    const wins=trades.filter(t=>t.netR>0),losses=trades.filter(t=>t.netR<=0);
+    const grossWin=wins.reduce((a,t)=>a+t.netR,0),grossLoss=Math.abs(losses.reduce((a,t)=>a+t.netR,0));
+    let eq=0,peak=0,maxDD=0;
+    for(const t of trades){eq+=t.netR;peak=Math.max(peak,eq);maxDD=Math.max(maxDD,peak-eq)}
+    return {trades:trades.length,wins:wins.length,winRate:trades.length?wins.length/trades.length*100:0,
+      pf:grossLoss?grossWin/grossLoss:(grossWin>0?Infinity:0),netR:eq,expectancy:trades.length?eq/trades.length:0,maxDD};
+  }
+  function evaluate(combo,allSignals,rowsBySymbol,side,split,cfg){
+    const trades=[];
+    for(const item of allSignals){
+      if(item.side!==side)continue;
+      const ok=combo.every(c=>c.ok(item.signal));
+      if(!ok)continue;
+      const tr=tradeFor(item.signal,rowsBySymbol.get(item.symbol),side,{...cfg,symbol:item.symbol});
+      if(tr)trades.push(tr);
+    }
+    trades.sort((a,b)=>a.signalTime-b.signalTime);
+    if(!trades.length)return null;
+    const cutoff=cfg.globalStart+(cfg.globalEnd-cfg.globalStart)*split;
+    const train=trades.filter(t=>t.signalTime<cutoff),oos=trades.filter(t=>t.signalTime>=cutoff);
+    const all=metrics(trades),trm=metrics(train),om=metrics(oos);
+    return {combo,side,all,train:trm,oos:om,trades};
+  }
+  function score(r){
+    if(!r||!r.oos.trades)return -1e9;
+    const pf=Math.min(r.oos.pf||0,5),dd=Math.max(r.oos.maxDD,0);
+    const stability=Math.max(0,1-Math.abs((r.train.expectancy||0)-(r.oos.expectancy||0))*2);
+    return pf*35+(r.oos.expectancy||0)*35+(r.oos.winRate||0)*.12+stability*15-Math.min(dd,20)*1.5+Math.log10(1+r.oos.trades)*8;
+  }
+  function aggregateFeatureStats(allSignals,defs,side,rowsBySymbol,cfg){
+    return defs.map(d=>{
+      const signals=allSignals.filter(x=>x.side===side&&d.ok(x.signal));
+      const trades=[];
+      for(const x of signals){const t=tradeFor(x.signal,rowsBySymbol.get(x.symbol),side,{...cfg,symbol:x.symbol});if(t)trades.push(t)}
+      const m=metrics(trades);
+      return {label:d.label,side,trades:m.trades,winRate:m.winRate,pf:m.pf,netR:m.netR,expectancy:m.expectancy,maxDD:m.maxDD};
+    }).sort((a,b)=>((b.pf||0)-(a.pf||0))||b.netR-a.netR);
+  }
+  function renderHeadline(){
+    const r=state.results[0];
+    if(!r){$('sdHeadline').innerHTML='';return}
+    $('sdHeadline').innerHTML=`<div class="sdHero">
+      <div class="sdMetric"><span>Best combination</span><b>${esc(r.combo.map(x=>x.label).join(' + '))}</b></div>
+      <div class="sdMetric"><span>OOS Profit Factor</span><b>${f(r.oos.pf,2)}</b></div>
+      <div class="sdMetric"><span>OOS Win Rate</span><b>${f(r.oos.winRate,1)}%</b></div>
+      <div class="sdMetric"><span>OOS Net R</span><b>${f(r.oos.netR,2)}R</b></div>
+      <div class="sdMetric"><span>OOS Trades</span><b>${r.oos.trades}</b></div>
+    </div>`;
+  }
+  function renderRanked(){
+    if(!state.results.length){$('sdRanked').innerHTML='<div class="sdNote">No qualifying combinations yet. Run the discovery test.</div>';return}
+    const rows=state.results.slice(0,100).map((r,i)=>{
+      const c=r.combo.map(x=>`<span class="sdPill">${esc(x.label)}</span>`).join('');
+      return `<tr><td class="sdRank">${i+1}</td><td>${r.side}</td><td class="sdCombo">${c}</td>
+        <td>${r.all.trades}</td><td>${f(r.all.winRate,1)}%</td><td>${f(r.all.pf,2)}</td><td>${f(r.all.netR,2)}R</td>
+        <td>${f(r.train.pf,2)} / ${f(r.train.netR,2)}R / ${r.train.trades}</td>
+        <td class="sdGood">${f(r.oos.pf,2)} / ${f(r.oos.netR,2)}R / ${r.oos.trades}</td>
+        <td>${f(r.oos.winRate,1)}%</td><td>${f(r.oos.maxDD,2)}R</td></tr>`;
+    }).join('');
+    $('sdRanked').innerHTML=`<div class="sdTableWrap"><table class="sdTable"><thead><tr>
+      <th>#</th><th>Side</th><th>Combination</th><th>Total</th><th>Win%</th><th>PF</th><th>Net R</th>
+      <th>Train PF / R / N</th><th>OOS PF / R / N</th><th>OOS Win%</th><th>OOS Max DD</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  function renderFeatures(){
+    const arr=state.featureResults;
+    if(!arr.length){$('sdFeatures').innerHTML='<div class="sdNote">No feature results yet.</div>';return}
+    const rows=arr.map((r,i)=>`<tr><td>${i+1}</td><td>${r.side}</td><td>${esc(r.label)}</td><td>${r.trades}</td><td>${f(r.winRate,1)}%</td><td>${f(r.pf,2)}</td><td>${f(r.netR,2)}R</td><td>${f(r.expectancy,3)}R</td><td>${f(r.maxDD,2)}R</td></tr>`).join('');
+    $('sdFeatures').innerHTML=`<div class="sdTableWrap"><table class="sdTable"><thead><tr><th>#</th><th>Side</th><th>Feature</th><th>Trades</th><th>Win%</th><th>PF</th><th>Net R</th><th>Exp.</th><th>Max DD</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+  function renderDetails(){
+    const symbols=$('sdSymbols').value.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+    $('sdDetails').innerHTML=`<div class="sdNote">
+      <b>Coins:</b> ${esc(symbols.join(', '))}<br>
+      <b>Lookback:</b> ${n('sdDays',365)} days • <b>TF:</b> ${esc($('sdTF').value)} • <b>Direction:</b> ${esc($('sdSide').value)}<br>
+      <b>Search:</b> selected scanner-replay features, combinations up to ${n('sdMaxCombo',3)} conditions.<br>
+      <b>Ranking:</b> OOS PF + OOS expectancy + OOS win rate + stability + sample size, penalized by OOS drawdown.
+    </div>`;
+  }
+  function setStatus(t){$('sdStatus').textContent=t}
+  function showPanel(){panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'})}
+  function hidePanel(){panel.hidden=true}
+  const launcher=$('openStrategyDiscoveryBtn');
+  if(launcher)launcher.addEventListener('click',showPanel);
+  $('sdClose').addEventListener('click',hidePanel);
+  document.querySelectorAll('.sdTab').forEach(b=>b.addEventListener('click',()=>{
+    document.querySelectorAll('.sdTab').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+    document.querySelectorAll('.sdTabPane').forEach(x=>x.hidden=true);
+    $(b.dataset.sdtab==='ranked'?'sdRanked':(b.dataset.sdtab==='features'?'sdFeatures':'sdDetails')).hidden=false;
+  }));
+  $('sdClear').addEventListener('click',()=>{
+    state.results=[];state.featureResults=[];state.rows=[];renderHeadline();renderRanked();renderFeatures();renderDetails();setStatus('Cleared.');
+  });
+  $('sdStop').addEventListener('click',()=>{state.stop=true;setStatus('Stopping after the current request…')});
+  $('sdExport').addEventListener('click',()=>{
+    if(!state.results.length){setStatus('Nothing to export yet.');return}
+    const head=['rank','side','combination','totalTrades','totalWinRate','totalPF','totalNetR','trainTrades','trainPF','trainNetR','oosTrades','oosWinRate','oosPF','oosNetR','oosMaxDD'];
+    const lines=[head.join(',')];
+    state.results.forEach((r,i)=>lines.push([
+      i+1,r.side,`"${r.combo.map(x=>x.label).join(' + ').replace(/"/g,'""')}"`,r.all.trades,r.all.winRate,r.all.pf,r.all.netR,
+      r.train.trades,r.train.pf,r.train.netR,r.oos.trades,r.oos.winRate,r.oos.pf,r.oos.netR,r.oos.maxDD
+    ].join(',')));
+    const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}),a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download='scanner_strategy_discovery.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  });
+
+  $('sdRun').addEventListener('click',async()=>{
+    if(state.running)return;
+    state.running=true;state.stop=false;state.results=[];state.featureResults=[];
+    $('sdRun').disabled=true;$('sdStop').disabled=false;
+    renderHeadline();renderRanked();renderFeatures();renderDetails();
+    try{
+      const symbols=[...new Set($('sdSymbols').value.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean))];
+      if(!symbols.length)throw new Error('Enter at least one symbol.');
+      const days=n('sdDays',365),tf=$('sdTF').value,interval=tf==='4h'?'4h':'1h',sideCfg=$('sdSide').value;
+      const split=n('sdSplit',.70),minTrades=n('sdMinTrades',20),minOos=n('sdMinOos',8),maxCombo=n('sdMaxCombo',3);
+      const cfg={sl:n('sdSL',1.5),tp:n('sdTP',2),hold:n('sdHold',30),fee:n('sdFee',.05),slip:n('sdSlip',.02)};
+      const end=Date.now(),start=end-days*86400000;
+      const allSignals=[],rowsBySymbol=new Map();state.totalSymbols=symbols.length;state.symbolsDone=0;
+      for(const symbol of symbols){
+        if(state.stop)break;
+        setStatus(`Downloading ${symbol} (${state.symbolsDone+1}/${symbols.length})…`);
+        try{
+          const rows=await fetchK(symbol,interval,start,end);
+          if(rows.length<230){setStatus(`${symbol}: insufficient completed candles (${rows.length}). Skipping.`);continue}
+          const p=prepare(rows);rowsBySymbol.set(symbol,p.rows);
+          for(const s of p.sig){
+            if(sideCfg!=='SHORT')allSignals.push({symbol,side:'LONG',signal:s});
+            if(sideCfg!=='LONG')allSignals.push({symbol,side:'SHORT',signal:s});
+          }
+        }catch(e){setStatus(`${symbol}: ${e.message}. Continuing…`)}
+        state.symbolsDone++;
+      }
+      if(!allSignals.length)throw new Error('No usable historical signals were created. Check symbols/network.');
+      const defsBySide=[];
+      if(sideCfg!=='SHORT')defsBySide.push(...featureDefs('LONG').map(x=>({...x,side:'LONG'})));
+      if(sideCfg!=='LONG')defsBySide.push(...featureDefs('SHORT').map(x=>({...x,side:'SHORT'})));
+      state.featureResults=aggregateFeatureStats(allSignals,defsBySide,sideCfg==='BOTH'?'LONG':sideCfg,rowsBySymbol,cfg);
+      if(sideCfg==='BOTH'){
+        state.featureResults=[
+          ...aggregateFeatureStats(allSignals,featureDefs('LONG'),'LONG',rowsBySymbol,cfg),
+          ...aggregateFeatureStats(allSignals,featureDefs('SHORT'),'SHORT',rowsBySymbol,cfg)
+        ];
+      }
+      for(const side of (sideCfg==='BOTH'?['LONG','SHORT']:[sideCfg])){
+        const defs=featureDefs(side);
+        for(let k=1;k<=maxCombo;k++)combinations.push(...combinations);
+        // bounded combinations; k=1..maxCombo
+      }
+      const candidates=[];
+      for(const side of (sideCfg==='BOTH'?['LONG','SHORT']:[sideCfg])){
+        const defs=featureDefs(side);
+        for(let k=1;k<=maxCombo;k++){
+          const cs=combinationsFor(defs,k);
+          for(const combo of cs){
+            const r=evaluate(combo,allSignals,rowsBySymbol,side,split,cfg);
+            if(r&&r.all.trades>=minTrades&&r.oos.trades>=minOos&&(r.oos.pf>=n('sdMinPF',1.05)||r.oos.netR>0))candidates.push({...r,score:score(r)});
+          }
+        }
+      }
+      candidates.sort((a,b)=>b.score-a.score);
+      state.results=candidates;
+      renderHeadline();renderRanked();renderFeatures();renderDetails();
+      setStatus(`Discovery complete: tested ${candidates.length} qualifying combinations from ${symbols.length} coin(s).`);
+    }catch(e){
+      setStatus(`Discovery error: ${e.message}`);
+    }finally{
+      state.running=false;$('sdRun').disabled=false;$('sdStop').disabled=true;
+    }
+  });
+
+  // Separate helper to avoid accidental name collision with the array above.
+  function combinationsFor(arr,k){
+    const out=[];
+    function rec(start,p){
+      if(p.length===k){out.push(p.slice());return}
+      for(let i=start;i<=arr.length-(k-p.length);i++){p.push(arr[i]);rec(i+1,p);p.pop()}
+    }
+    rec(0,[]);return out;
+  }
+
+  renderRanked();renderFeatures();renderDetails();
+})();
+</script>
