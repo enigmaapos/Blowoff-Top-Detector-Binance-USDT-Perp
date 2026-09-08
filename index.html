@@ -776,6 +776,25 @@ body.authLocked{overflow:hidden}
       </div>
     </div>
 
+    <div class="controlSection controlZone tradingTestLauncherZone" id="tradingTestLauncherZone">
+      <div class="controlSectionTitle"><span>🧪</span> 5 · Trading Test / Backtest</div>
+      <div class="controlGrid two">
+        <div class="controlItem">
+          <div style="font-weight:900;font-size:14px">Test the scanner against historical candles</div>
+          <div class="dashboardHint" style="margin-top:5px">
+            Replay scanner-style Long/Short entry signals and measure wins, losses, profit factor,
+            expectancy and drawdown.
+          </div>
+        </div>
+        <div class="controlItem" style="display:flex;align-items:center;justify-content:flex-end">
+          <button id="openTradingTestBtn" type="button"
+                  style="width:100%;min-height:44px;font-weight:950;font-size:14px">
+            🧪 Open Trading Test
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="controlSection controlZone scannerZone">
       <div class="controlSectionTitle"><span>🔎</span> 4 · Symbol Search & Scanner</div>
       <div class="controlGrid two">
@@ -8918,6 +8937,13 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 </script>
 
 
+<style id="trading-test-launcher-ui">
+#tradingTestLauncherZone{
+  border:1px solid rgba(126,220,255,.35);
+  background:linear-gradient(180deg,rgba(126,220,255,.07),rgba(255,255,255,.018));
+}
+#openTradingTestBtn{box-shadow:0 6px 18px rgba(0,0,0,.18)}
+</style>
 <style id="magmaBacktestStyles">
 #btPanel{margin:18px 0;padding:16px;border:1px solid rgba(126,220,255,.22);border-radius:16px;background:rgba(8,18,30,.82);box-shadow:0 10px 30px rgba(0,0,0,.14)}
 #btPanel h2{margin:0 0 6px;font-size:18px}
@@ -9003,23 +9029,19 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
   const panel = $('magmaBacktestModule');
   const state = {running:false, stop:false, trades:[]};
 
-  // Make the module available without disturbing the scanner's normal scan lifecycle.
+  // The launcher is a real control in the Scanner Controls dashboard.
   function exposePanel(){
     panel.hidden = false;
     if(!$('btStats').innerHTML) renderStats([]);
+    setTimeout(()=>panel.scrollIntoView({behavior:'smooth',block:'start'}),20);
   }
-  // Add a compact launcher beside existing scanner controls.
-  try{
-    const controls = document.querySelector('.controls') || document.querySelector('main') || panel.parentElement;
-    const btn = document.createElement('button');
-    btn.className='btBtn';
-    btn.id='btLauncher';
-    btn.type='button';
-    btn.textContent='📊 Trading Test';
-    btn.style.margin='8px 0';
-    btn.onclick=()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) panel.scrollIntoView({behavior:'smooth',block:'start'}); };
-    if(controls) controls.prepend(btn);
-  }catch(e){}
+  const openTradingTestBtn = $('openTradingTestBtn');
+  if(openTradingTestBtn){
+    openTradingTestBtn.addEventListener('click', ()=>{
+      if(panel.hidden) exposePanel();
+      else panel.hidden = true;
+    });
+  }
 
   function num(id,d){const v=Number($(id)?.value);return Number.isFinite(v)?v:d}
   function fmt(v,d=2){return Number.isFinite(v)?Number(v).toFixed(d):'—'}
@@ -9313,15 +9335,6 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
   $('btClear').onclick=()=>{state.stop=true;state.trades=[];renderStats([]);renderTrades([]);$('btStatus').textContent='Cleared.'};
   $('btExport').onclick=()=>state.trades.length?csv():alert('Run a trading test first.');
 
-  // If the scanner already has a filters/settings area, expose the module there too.
-  try{
-    const filterHost=document.querySelector('#resultsShell')||document.querySelector('.scanner-controls')||document.querySelector('main');
-    if(filterHost && !document.getElementById('btInlineLauncher')){
-      const b=document.createElement('button');b.id='btInlineLauncher';b.className='btBtn';b.type='button';b.textContent='📊 Open Backtest';
-      b.onclick=()=>{panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start')};};
-      filterHost.parentNode.insertBefore(b,filterHost);
-    }
-  }catch(e){}
   renderStats([]);
 })();
 </script>
