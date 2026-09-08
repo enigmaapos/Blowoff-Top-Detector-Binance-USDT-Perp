@@ -8917,6 +8917,415 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 
 </script>
 
+
+<style id="magmaBacktestStyles">
+#btPanel{margin:18px 0;padding:16px;border:1px solid rgba(126,220,255,.22);border-radius:16px;background:rgba(8,18,30,.82);box-shadow:0 10px 30px rgba(0,0,0,.14)}
+#btPanel h2{margin:0 0 6px;font-size:18px}
+#btPanel .btSub{color:var(--muted);font-size:12px;line-height:1.45;margin-bottom:14px}
+.btGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.btField{display:flex;flex-direction:column;gap:5px}
+.btField label{font-size:11px;color:var(--muted);font-weight:700}
+.btField input,.btField select{width:100%;box-sizing:border-box;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:#0b1625;color:inherit}
+.btActions{display:flex;gap:8px;flex-wrap:wrap;margin:13px 0}
+.btBtn{border:1px solid rgba(126,220,255,.28);border-radius:9px;padding:9px 13px;background:rgba(126,220,255,.08);color:inherit;font-weight:800;cursor:pointer}
+.btBtn:disabled{opacity:.45;cursor:not-allowed}
+#btStatus{font-size:12px;color:var(--muted);min-height:18px;margin:6px 0 10px}
+.btStats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:12px 0}
+.btStat{padding:10px;border:1px solid rgba(255,255,255,.09);border-radius:10px;background:rgba(255,255,255,.025)}
+.btStat small{display:block;color:var(--muted);font-size:10px}
+.btStat b{display:block;margin-top:3px;font-size:16px}
+.btGood{color:#8ff0b0}.btBad{color:#ff9b8e}.btWarn{color:#ffe58a}
+.btTableWrap{overflow:auto;max-height:430px;border:1px solid rgba(255,255,255,.08);border-radius:10px}
+#btTrades{width:100%;border-collapse:collapse;font-size:11px}
+#btTrades th,#btTrades td{padding:7px 8px;border-bottom:1px solid rgba(255,255,255,.06);white-space:nowrap;text-align:left}
+#btTrades th{position:sticky;top:0;background:#0b1625;z-index:1}
+.btNote{margin-top:10px;font-size:10px;color:var(--muted);line-height:1.5}
+@media(max-width:900px){.btGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.btStats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){.btGrid{grid-template-columns:1fr}.btStats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+
+<section id="magmaBacktestModule" hidden>
+  <div id="btPanel">
+    <h2>📊 Scanner Trading Test / Backtest</h2>
+    <div class="btSub">
+      Historical replay of the scanner's trading terminology. Signals are evaluated only on completed
+      4H candles, entries occur at the <b>next candle open</b>, and the engine does not use future candles
+      to create a signal. This is a research/backtest tool, not a guarantee of live profitability.
+    </div>
+
+    <div class="btGrid">
+      <div class="btField"><label>Symbols (comma separated)</label><input id="btSymbols" value="BTCUSDT,ETHUSDT"></div>
+      <div class="btField"><label>Lookback (days)</label><input id="btDays" type="number" min="30" max="1000" value="180"></div>
+      <div class="btField"><label>Signal / execution TF</label><select id="btTF"><option value="4h">4H</option><option value="1h">1H</option></select></div>
+      <div class="btField"><label>Side</label><select id="btSide"><option value="BOTH">LONG + SHORT</option><option value="LONG">LONG only</option><option value="SHORT">SHORT only</option></select></div>
+
+      <div class="btField"><label>Long status</label><select id="btLongStatus">
+        <option value="ALL">ALL</option><option value="CONFIRMED">CONFIRMED</option><option value="STAGED">STAGED</option><option value="CONDITIONAL">CONDITIONAL</option><option value="WAIT">WAIT</option><option value="NOT_READY">NOT_READY</option><option value="DONT_CHASE">DONT_CHASE</option>
+      </select></div>
+      <div class="btField"><label>Short status</label><select id="btShortStatus">
+        <option value="ALL">ALL</option><option value="CONDITIONAL">CONDITIONAL</option><option value="WAIT">WAIT</option><option value="REJECTION">REJECTION</option><option value="LOWER_HIGH">LOWER_HIGH</option><option value="ACCEPTANCE">ACCEPTANCE</option>
+      </select></div>
+      <div class="btField"><label>Minimum 4H accumulation %</label><input id="btAccum" type="number" min="0" max="100" value="50"></div>
+      <div class="btField"><label>Minimum 1D accumulation %</label><input id="btAccum1d" type="number" min="0" max="100" value="45"></div>
+
+      <div class="btField"><label>SL = ATR ×</label><input id="btSL" type="number" min=".2" max="10" step=".1" value="1.5"></div>
+      <div class="btField"><label>TP = R ×</label><input id="btTP" type="number" min=".25" max="10" step=".25" value="2"></div>
+      <div class="btField"><label>Max holding bars</label><input id="btHold" type="number" min="1" max="500" value="30"></div>
+      <div class="btField"><label>Fee per side %</label><input id="btFee" type="number" min="0" max="1" step=".01" value=".05"></div>
+      <div class="btField"><label>Slippage per side %</label><input id="btSlip" type="number" min="0" max="1" step=".01" value=".02"></div>
+      <div class="btField"><label>Max simultaneous positions / symbol</label><input id="btOne" type="number" min="1" max="10" value="1"></div>
+    </div>
+
+    <div class="btActions">
+      <button class="btBtn" id="btRun">▶ Run Trading Test</button>
+      <button class="btBtn" id="btStop" disabled>■ Stop</button>
+      <button class="btBtn" id="btClear">Clear Results</button>
+      <button class="btBtn" id="btExport">Export CSV</button>
+    </div>
+    <div id="btStatus">Ready.</div>
+    <div id="btStats" class="btStats"></div>
+    <div class="btTableWrap"><table id="btTrades"><thead><tr>
+      <th>Symbol</th><th>Side</th><th>Signal</th><th>Entry</th><th>Exit</th><th>R</th><th>P/L %</th><th>Reason</th><th>Accum</th><th>RSI</th>
+    </tr></thead><tbody></tbody></table></div>
+    <div class="btNote">
+      Method notes: the replay uses the scanner's existing entry-state vocabulary (CONFIRMED/STAGED/CONDITIONAL/WAIT,
+      REJECTION/LOWER_HIGH/ACCEPTANCE), plus RSI, EMA extension, volume participation, accumulation and HH/HL/LH/LL
+      structure proxies. When both SL and TP are touched inside the same 4H candle, the engine assumes the SL was hit first
+      (conservative intrabar rule). Results are expressed as R-multiples and net percentage after the configured fee/slippage.
+    </div>
+  </div>
+</section>
+
+<script id="magmaBacktestModule">
+(function(){
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const panel = $('magmaBacktestModule');
+  const state = {running:false, stop:false, trades:[]};
+
+  // Make the module available without disturbing the scanner's normal scan lifecycle.
+  function exposePanel(){
+    panel.hidden = false;
+    if(!$('btStats').innerHTML) renderStats([]);
+  }
+  // Add a compact launcher beside existing scanner controls.
+  try{
+    const controls = document.querySelector('.controls') || document.querySelector('main') || panel.parentElement;
+    const btn = document.createElement('button');
+    btn.className='btBtn';
+    btn.id='btLauncher';
+    btn.type='button';
+    btn.textContent='📊 Trading Test';
+    btn.style.margin='8px 0';
+    btn.onclick=()=>{ panel.hidden=!panel.hidden; if(!panel.hidden) panel.scrollIntoView({behavior:'smooth',block:'start'}); };
+    if(controls) controls.prepend(btn);
+  }catch(e){}
+
+  function num(id,d){const v=Number($(id)?.value);return Number.isFinite(v)?v:d}
+  function fmt(v,d=2){return Number.isFinite(v)?Number(v).toFixed(d):'—'}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function mean(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0}
+  function median(a){if(!a.length)return 0;const b=[...a].sort((x,y)=>x-y),m=Math.floor(b.length/2);return b.length%2?b[m]:(b[m-1]+b[m])/2}
+
+  function emaSeries(a,p){
+    const out=new Array(a.length).fill(null); if(a.length<p)return out;
+    let e=mean(a.slice(0,p)); out[p-1]=e; const k=2/(p+1);
+    for(let i=p;i<a.length;i++){e=a[i]*k+e*(1-k);out[i]=e} return out;
+  }
+  function rsiSeries(a,p=14){
+    const out=new Array(a.length).fill(null); if(a.length<=p)return out;
+    let gain=0,loss=0;
+    for(let i=1;i<=p;i++){const d=a[i]-a[i-1]; if(d>=0)gain+=d;else loss-=d}
+    gain/=p;loss/=p;out[p]=loss===0?100:100-100/(1+gain/loss);
+    for(let i=p+1;i<a.length;i++){
+      const d=a[i]-a[i-1],g=Math.max(0,d),l=Math.max(0,-d);
+      gain=(gain*(p-1)+g)/p; loss=(loss*(p-1)+l)/p;
+      out[i]=loss===0?100:100-100/(1+gain/loss);
+    }
+    return out;
+  }
+  function atrSeries(h,l,c,p=14){
+    const tr=new Array(c.length).fill(null),out=new Array(c.length).fill(null);
+    for(let i=0;i<c.length;i++) tr[i]=i?Math.max(h[i]-l[i],Math.abs(h[i]-c[i-1]),Math.abs(l[i]-c[i-1])):h[i]-l[i];
+    if(c.length<=p)return out;
+    let a=mean(tr.slice(1,p+1));out[p]=a;
+    for(let i=p+1;i<c.length;i++){a=(a*(p-1)+tr[i])/p;out[i]=a}
+    return out;
+  }
+  function volMean(v,i,n){if(i<n-1)return null;return mean(v.slice(i-n+1,i+1))}
+  function clamp(x,a,b){return Math.max(a,Math.min(b,x))}
+
+  // Accumulation proxy intentionally follows the scanner's vocabulary rather than inventing a
+  // new signal name: positive trend, healthy RSI, stable volume and non-overextended price raise it.
+  function accumulation(i,o,h,l,c,v,ema20,ema70,rsi,atr){
+    if(i<80 || !ema20[i] || !ema70[i] || !rsi[i] || !atr[i]) return null;
+    const base=ema70[i];
+    const stretch=((c[i]-base)/base)*100;
+    const trend=c[i]>=ema20[i] ? 22 : 8;
+    const rsiScore=rsi[i]>=45 && rsi[i]<=68 ? 24 : rsi[i]<40 ? 10 : 8;
+    const stretchScore=stretch<8 ? 22 : stretch<15 ? 15 : stretch<25 ? 8 : 2;
+    const vm=volMean(v,i,20)||v[i]||1;
+    const vr=v[i]/Math.max(vm,1e-12);
+    const volScore=vr>=.8 && vr<=1.8 ? 18 : vr>2.5 ? 5 : 10;
+    const range=Math.max(h[i]-l[i],1e-12);
+    const closePos=(c[i]-l[i])/range;
+    const stability=closePos>=.45 ? 14 : 5;
+    return Math.round(clamp(trend+rsiScore+stretchScore+volScore+stability,0,100));
+  }
+
+  function structure(i,h,l,c){
+    const n=4;
+    if(i<2*n+2)return {hh:0,hl:0,lh:0,ll:0,higherLow:false,lowerHigh:false};
+    let hh=0,hl=0,lh=0,ll=0;
+    for(let j=i-n*2;j<=i-n;j++){
+      const aH=h[j],bH=h[j+n],aL=l[j],bL=l[j+n];
+      if(bH>aH)hh++; else if(bH<aH)lh++;
+      if(bL>aL)hl++; else if(bL<aL)ll++;
+    }
+    return {hh,hl,lh,ll,higherLow:hl>=2 && lh<=1,lowerHigh:lh>=2 && hh<=2};
+  }
+
+  function statusSnapshot(x){
+    const {acc4,acc1d,rsi,dist,st,overheated,recovery,correction}=x;
+    const strongHTF=acc4>=60 && acc1d>=55;
+    const structureBear=st.lowerHigh||dist;
+    if(correction && !dist && recovery){
+      return {
+        long: strongHTF && st.higherLow && !overheated ? 'CONFIRMED' : 'CONDITIONAL',
+        short: st.lowerHigh ? 'LOWER_HIGH' : 'WAIT'
+      };
+    }
+    if(correction){
+      return {long:st.higherLow?'STAGED':'WAIT',short:st.lowerHigh?'LOWER_HIGH':'WAIT'};
+    }
+    if(overheated && dist){
+      return {long:'DONT_CHASE',short:'REJECTION'};
+    }
+    if(strongHTF && st.higherLow && !dist && !overheated){
+      return {long:'CONFIRMED',short:'WAIT'};
+    }
+    if(recovery){
+      return {long:'STAGED',short:st.lowerHigh?'LOWER_HIGH':'WAIT'};
+    }
+    if(structureBear){
+      return {long:'WAIT',short:st.lowerHigh?'REJECTION':'CONDITIONAL'};
+    }
+    return {long:'STAGED',short:'WAIT'};
+  }
+
+  function dailyFrom4h(rows){
+    const map=new Map();
+    for(const r of rows){
+      const d=new Date(r.t).toISOString().slice(0,10);
+      const x=map.get(d);
+      if(!x) map.set(d,{t:r.t,o:r.o,h:r.h,l:r.l,c:r.c,v:r.v});
+      else{x.h=Math.max(x.h,r.h);x.l=Math.min(x.l,r.l);x.c=r.c;x.v+=r.v}
+    }
+    return [...map.values()].sort((a,b)=>a.t-b.t);
+  }
+
+  async function fetchKlines(symbol,interval,start,end){
+    const out=[]; let cursor=start, guard=0;
+    while(cursor<end && guard++<30){
+      if(state.stop) throw new Error('Stopped');
+      const url=`https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=1500&startTime=${cursor}&endTime=${end}`;
+      const r=await fetch(url); if(!r.ok) throw new Error(symbol+' HTTP '+r.status);
+      const data=await r.json(); if(!Array.isArray(data)) throw new Error(symbol+' invalid Binance response');
+      if(!data.length) break;
+      for(const k of data){
+        out.push({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5],closeT:+k[6]});
+      }
+      const last=data[data.length-1];
+      cursor=+last[6]+1;
+      if(data.length<1500)break;
+      await new Promise(r=>setTimeout(r,250));
+    }
+    const seen=new Map();out.forEach(x=>seen.set(x.t,x));
+    return [...seen.values()].sort((a,b)=>a.t-b.t);
+  }
+
+  function prepare(rows){
+    // Remove the currently forming candle; only completed bars may generate signals.
+    const now=Date.now();
+    rows=rows.filter(x=>x.closeT<=now-1000);
+    const o=rows.map(x=>x.o),h=rows.map(x=>x.h),l=rows.map(x=>x.l),c=rows.map(x=>x.c),v=rows.map(x=>x.v);
+    const e20=emaSeries(c,20),e70=emaSeries(c,70),e200=emaSeries(c,200),rsi=rsiSeries(c,14),atr=atrSeries(h,l,c,14);
+    const daily=dailyFrom4h(rows);
+    const dc=daily.map(x=>x.c),dE20=emaSeries(dc,20),dR=rsiSeries(dc,14);
+    const dMap=new Map(daily.map((x,i)=>[new Date(x.t).toISOString().slice(0,10),i]));
+    const acc1d=new Array(rows.length).fill(null);
+    const dailyAccum=new Array(daily.length).fill(null);
+    for(let i=0;i<daily.length;i++){
+      if(i<25||!dE20[i]||!dR[i])continue;
+      const stretch=((dc[i]-dE20[i])/dE20[i])*100;
+      dailyAccum[i]=Math.round(clamp((dc[i]>=dE20[i]?30:10)+(dR[i]>=45&&dR[i]<=68?30:10)+(stretch<15?25:stretch<25?12:4)+25,0,100));
+    }
+    for(let i=0;i<rows.length;i++){
+      const di=dMap.get(new Date(rows[i].t).toISOString().slice(0,10));
+      // The daily candle containing the 4H signal bar is still incomplete. Use the previous completed day.
+      const use=di==null?null:di-1;
+      acc1d[i]=use!=null&&use>=0?dailyAccum[use]:null;
+    }
+    return {rows,o,h,l,c,v,e20,e70,e200,rsi,atr,acc1d};
+  }
+
+  function makeSignals(d){
+    const {rows,o,h,l,c,v,e20,e70,e200,rsi,atr,acc1d}=d, signals=[];
+    for(let i=210;i<rows.length-1;i++){
+      if(!rsi[i]||!atr[i]||!acc1d[i])continue;
+      const acc4=accumulation(i,o,h,l,c,v,e20,e70,rsi,atr[i]);
+      if(acc4==null)continue;
+      const vm=volMean(v,i,20)||v[i]||1,vr=v[i]/Math.max(vm,1e-12);
+      const range=Math.max(h[i]-l[i],1e-12),upper=(h[i]-Math.max(o[i],c[i]))/range;
+      const stretch=((c[i]-e70[i])/e70[i])*100;
+      const dist=(rsi[i]>=72&&vr>=1.4&&upper>=.45)||(stretch>=25&&rsi[i]>=70);
+      const overheated=rsi[i]>=80;
+      const st=structure(i,h,l,c);
+      const correction=!!e200[i] && c[i] < e200[i]*.98;
+      const recovery=c[i]>e20[i] && rsi[i]>=45 && rsi[i]<=68;
+      const status=statusSnapshot({acc4,acc1d:acc1d[i],rsi:rsi[i],dist,st,overheated,recovery,correction});
+      signals.push({i,t:rows[i].t,acc4,acc1d:acc1d[i],rsi:rsi[i],status,dist,st,correction,recovery});
+    }
+    return signals;
+  }
+
+  function matches(status, wanted){
+    return wanted==='ALL'||status===wanted;
+  }
+
+  function execute(symbol,d,signals,cfg){
+    const rows=d.rows,trades=[];
+    let openCount=0;
+    for(const s of signals){
+      if(state.stop)break;
+      const next=s.i+1;
+      if(next>=rows.length)continue;
+      const sideWanted=cfg.side;
+      const canLong=(sideWanted!=='SHORT'&&matches(s.status.long,cfg.longStatus)&&s.acc4>=cfg.accum4&&s.acc1d>=cfg.accum1d);
+      const canShort=(sideWanted!=='LONG'&&matches(s.status.short,cfg.shortStatus)&&s.acc4>=cfg.accum4&&s.acc1d>=cfg.accum1d);
+      let side=canLong?'LONG':canShort?'SHORT':null;
+      if(canLong&&canShort){
+        // Prefer the more specific/ranked state.
+        const rank={WAIT:10,NOT_READY:20,DONT_CHASE:30,STAGED:50,CONDITIONAL:65,REJECTION:65,LOWER_HIGH:80,ACCEPTANCE:85,CONFIRMED:100};
+        side=(rank[s.status.long]||0)>=(rank[s.status.short]||0)?'LONG':'SHORT';
+      }
+      if(!side || s._skip)continue;
+      if(openCount>=cfg.maxPositions)continue;
+
+      const entryRaw=rows[next].o;
+      const slip=cfg.slip/100;
+      const entry=side==='LONG'?entryRaw*(1+slip):entryRaw*(1-slip);
+      const risk=Math.max(d.atr[s.i]*cfg.sl,entry*0.002);
+      const stop=side==='LONG'?entry-risk:entry+risk;
+      const target=side==='LONG'?entry+risk*cfg.tp:entry-risk*cfg.tp;
+      let exit=rows[Math.min(next+cfg.hold,rows.length-1)].c,reason='TIME';
+      let exitIndex=Math.min(next+cfg.hold,rows.length-1);
+
+      for(let j=next;j<=Math.min(next+cfg.hold,rows.length-1);j++){
+        const bar=rows[j],hitSL=side==='LONG'?bar.l<=stop:bar.h>=stop,hitTP=side==='LONG'?bar.h>=target:bar.l<=target;
+        if(hitSL&&hitTP){exit=stop;exitIndex=j;reason='SL (same-bar conflict)';break}
+        if(hitSL){exit=stop;exitIndex=j;reason='SL';break}
+        if(hitTP){exit=target;exitIndex=j;reason='TP';break}
+      }
+      const grossR=side==='LONG'?(exit-entry)/risk:(entry-exit)/risk;
+      const roundTripCost=(cfg.fee+cfg.slip)*2/100;
+      const netPct=(side==='LONG'?((exit-entry)/entry):((entry-exit)/entry))*100-roundTripCost*100;
+      const netR=grossR-(roundTripCost*entry/risk);
+      trades.push({
+        symbol,side,signalTime:new Date(s.t).toISOString(),entryTime:new Date(rows[next].t).toISOString(),
+        exitTime:new Date(rows[exitIndex].t).toISOString(),entry,exit,r:netR,pct:netPct,reason,
+        acc4:s.acc4,acc1d:s.acc1d,rsi:s.rsi,status:side==='LONG'?s.status.long:s.status.short
+      });
+      openCount++;
+      // Positions are sequential per symbol; next signal is ignored until this trade's holding window ends.
+      const nextAllowed=exitIndex;
+      for(let z=signals.indexOf(s)+1;z<signals.length;z++){
+        if(signals[z].i<=nextAllowed) signals[z]._skip=true; else break;
+      }
+    }
+    return trades.filter(t=>t);
+  }
+
+  function renderStats(trades){
+    const box=$('btStats');
+    if(!trades.length){box.innerHTML='<div class="btStat"><small>Trades</small><b>0</b></div>';return}
+    const wins=trades.filter(t=>t.r>0),loss=trades.filter(t=>t.r<=0);
+    const grossWin=wins.reduce((a,t)=>a+t.r,0),grossLoss=Math.abs(loss.reduce((a,t)=>a+t.r,0));
+    const pf=grossLoss?grossWin/grossLoss:(grossWin?Infinity:0);
+    const totalR=trades.reduce((a,t)=>a+t.r,0);
+    let eq=0,peak=0,dd=0;for(const t of trades){eq+=t.r;peak=Math.max(peak,eq);dd=Math.max(dd,peak-eq)}
+    const wr=wins.length/trades.length*100, avg=mean(trades.map(t=>t.r)), med=median(trades.map(t=>t.r));
+    box.innerHTML=[
+      ['Trades',trades.length],['Win rate',fmt(wr)+'%'],['Profit factor',pf===Infinity?'∞':fmt(pf)],['Net R',fmt(totalR)],
+      ['Expectancy',fmt(avg)+' R'],['Max DD',fmt(dd)+' R'],['Median R',fmt(med)+' R'],['Long',trades.filter(t=>t.side==='LONG').length],
+      ['Short',trades.filter(t=>t.side==='SHORT').length],['TP exits',trades.filter(t=>t.reason==='TP').length],['SL exits',trades.filter(t=>t.reason.startsWith('SL')).length],['Time exits',trades.filter(t=>t.reason==='TIME').length]
+    ].map(([k,v])=>`<div class="btStat"><small>${esc(k)}</small><b class="${k==='Win rate'?(wr>=50?'btGood':'btBad'):k==='Profit factor'?(pf>=1?'btGood':'btBad'):k==='Net R'?(totalR>=0?'btGood':'btBad'):''}">${esc(v)}</b></div>`).join('');
+  }
+
+  function renderTrades(trades){
+    const body=$('btTrades').querySelector('tbody');
+    body.innerHTML=trades.slice().reverse().map(t=>`<tr>
+      <td>${esc(t.symbol)}</td><td>${esc(t.side)}</td><td>${esc(t.status)}</td>
+      <td>${fmt(t.entry,8)}</td><td>${fmt(t.exit,8)}</td>
+      <td class="${t.r>0?'btGood':'btBad'}">${fmt(t.r,2)}</td><td class="${t.pct>0?'btGood':'btBad'}">${fmt(t.pct,3)}%</td>
+      <td>${esc(t.reason)}</td><td>${fmt(t.acc4,0)} / ${fmt(t.acc1d,0)}</td><td>${fmt(t.rsi,1)}</td>
+    </tr>`).join('');
+  }
+
+  function csv(){
+    const cols=['symbol','side','status','signalTime','entryTime','exitTime','entry','exit','r','pct','reason','acc4','acc1d','rsi'];
+    const lines=[cols.join(',')];
+    state.trades.forEach(t=>lines.push(cols.map(k=>`"${String(t[k]??'').replace(/"/g,'""')}"`).join(',')));
+    const blob=new Blob([lines.join('\\n')],{type:'text/csv'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='scanner_backtest_trades.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+
+  async function run(){
+    if(state.running)return;
+    state.running=true;state.stop=false;$('btRun').disabled=true;$('btStop').disabled=false;
+    state.trades=[];renderStats([]);renderTrades([]);
+    const symbols=$('btSymbols').value.split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+    const days=Math.max(30,num('btDays',180)),tf=$('btTF').value,side=$('btSide').value;
+    const intervalMs=tf==='4h'?4*3600e3:3600e3, start=Date.now()-days*86400e3-220*intervalMs;
+    const cfg={side,longStatus:$('btLongStatus').value,shortStatus:$('btShortStatus').value,accum4:num('btAccum',50),accum1d:num('btAccum1d',45),sl:num('btSL',1.5),tp:num('btTP',2),hold:Math.max(1,num('btHold',30)),fee:num('btFee',.05),slip:num('btSlip',.02),maxPositions:Math.max(1,num('btOne',1))};
+    try{
+      for(let n=0;n<symbols.length;n++){
+        if(state.stop)break;
+        const sym=symbols[n];
+        $('btStatus').textContent=`Downloading ${sym} (${n+1}/${symbols.length})…`;
+        const rows=await fetchKlines(sym,tf,start,Date.now());
+        if(rows.length<250){$('btStatus').textContent+=` insufficient history (${rows.length} bars).`;continue}
+        $('btStatus').textContent=`Replaying ${sym}: ${rows.length} completed ${tf.toUpperCase()} candles…`;
+        const d=prepare(rows),signals=makeSignals(d).filter(x=>!x._skip);
+        const trades=execute(sym,d,signals,cfg);
+        state.trades.push(...trades);
+        renderStats(state.trades);renderTrades(state.trades);
+      }
+      $('btStatus').textContent=state.stop?`Stopped. ${state.trades.length} trades retained.`:`Complete. ${state.trades.length} trades generated.`;
+    }catch(e){
+      console.error('Backtest error',e);
+      $('btStatus').textContent='Backtest error: '+(e?.message||e);
+    }finally{state.running=false;$('btRun').disabled=false;$('btStop').disabled=true}
+  }
+
+  $('btRun').onclick=run;
+  $('btStop').onclick=()=>{state.stop=true;$('btStatus').textContent='Stopping after the current request…'};
+  $('btClear').onclick=()=>{state.stop=true;state.trades=[];renderStats([]);renderTrades([]);$('btStatus').textContent='Cleared.'};
+  $('btExport').onclick=()=>state.trades.length?csv():alert('Run a trading test first.');
+
+  // If the scanner already has a filters/settings area, expose the module there too.
+  try{
+    const filterHost=document.querySelector('#resultsShell')||document.querySelector('.scanner-controls')||document.querySelector('main');
+    if(filterHost && !document.getElementById('btInlineLauncher')){
+      const b=document.createElement('button');b.id='btInlineLauncher';b.className='btBtn';b.type='button';b.textContent='📊 Open Backtest';
+      b.onclick=()=>{panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start')};};
+      filterHost.parentNode.insertBefore(b,filterHost);
+    }
+  }catch(e){}
+  renderStats([]);
+})();
+</script>
+
 <footer class="small">Multi-TF accumulation detector + sensitivity + conditional alerts + long-term AI recommendation + short-term trade guidance. Long-term targets (upside) + safety levels included. Run from a local server to avoid CORS.</footer>
 <script id="anti-flicker-resize-fix">
 (function(){
