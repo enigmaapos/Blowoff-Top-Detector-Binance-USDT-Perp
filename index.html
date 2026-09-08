@@ -6616,7 +6616,7 @@ function buildFinalTraderRead(r){
   const liqRejected=/REJECTION/.test(liqEvent);
   const liqPending=/OUTCOME PENDING/.test(liqEvent);
   if(es.conflict) return {title:'⚪ CONFLICTING ENTRY ZONES — NO CLEAR EDGE',action:'WAIT',detail:'Long and short staging are both active. Wait for one side to gain clear structure and liquidity confirmation.'};
-  if(es.long==='STAGED') return {title:'🟢 LONG ENTRY ZONE — STAGED / CONDITIONAL',action:'LONG',detail:'Long confirmation is active. Prefer the defined higher-low/reclaim path and keep EMA200 loss as structural invalidation.'};
+  if(es.long==='STAGED') return {title:'🟢 LONG ENTRY ZONE — STAGED / CONDITIONAL',action:'LONG',detail:'Your tested long entry zone is active. Structural confirmation is still developing; prefer the defined higher-low/reclaim path and keep EMA200 loss as structural invalidation.'};
   if(es.short==='STAGED') return {title:'🔴 SHORT ENTRY ZONE — STAGED / CONDITIONAL',action:'SHORT',detail:'Short confirmation is active. Prefer rejection/failed-bounce plus bearish structure; do not short a pending liquidity outcome.'};
   if(liqPending) return {title:'⏸ WAIT — LIQUIDITY OUTCOME PENDING',action:'WAIT',detail:'A liquidity sweep has occurred but rejection vs acceptance is unresolved. Do not treat the sweep itself as an entry zone.'};
   if(correctionConfirmed) return {title:hl?'🟡 RECOVERY SETUP DEVELOPING — NOT YET STAGED':'⏸ CORRECTION CONFIRMED — WAIT FOR RECOVERY STRUCTURE',action:'WAIT',detail:'15m EMA200 stretch is below 0%, so significant correction is confirmed. Wait for a stable higher-low and improving 4H/1D accumulation before a recovery entry.'};
