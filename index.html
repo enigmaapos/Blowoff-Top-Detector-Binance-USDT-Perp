@@ -6538,7 +6538,53 @@ function calculateEntryPathFramework(item, side, statusCode){
   const ema200=Number(r.ema200_15??r.ema200_15m??(emaFn&&closes.length>=200?emaFn(closes,200):0));
   const valid=Number.isFinite(price)&&price>0&&ema50>0&&ema200>0;
   const long=side!=='short';
-  const entryZone=(statusCode==='STAGED'||statusCode==='CONDITIONAL'||statusCode==='CONFIRMED');
+
+  /*
+   * ENTRY PATH FIX:
+   * MAE/MFE must be anchored to the same validated Trader Decision zone
+   * shown immediately above this panel. The previous implementation used
+   * current price + nearest raw liquidity, which could make MFE unrelated to
+   * the confirmed selling/buying zone and could even choose the wrong side
+   * when Long = DONT_CHASE but Short = REJECTION.
+   */
+  let zones={buy:null,sell:null,active:null,contested:false};
+  try{
+    if(typeof getTraderDecisionZones==='function') zones=getTraderDecisionZones(r)||zones;
+  }catch(e){ /* keep EMA-only fallback */ }
+
+  const entryZoneObj=long ? zones.buy : zones.sell;
+  const targetZoneObj=long ? zones.sell : zones.buy;
+  const zoneUsable=!!entryZoneObj && Number.isFinite(Number(entryZoneObj.low))
+    && Number.isFinite(Number(entryZoneObj.high)) && Number(entryZoneObj.high)>Number(entryZoneObj.low);
+
+  // Use the zone midpoint as the reference entry whenever a Trader Decision
+  // zone exists. This keeps MAE/MFE mathematically tied to the displayed zone.
+  const referenceEntry=zoneUsable
+    ? (Number(entryZoneObj.low)+Number(entryZoneObj.high))/2
+    : price;
+
+  // For long: adverse excursion is below the buying zone.
+  // For short: adverse excursion is above the selling zone.
+  const maeBoundary=zoneUsable
+    ? (long ? Number(entryZoneObj.low) : Number(entryZoneObj.high))
+    : (long ? ema200 : ema200);
+
+  const targetZoneUsable=!!targetZoneObj && Number.isFinite(Number(targetZoneObj.low))
+    && Number.isFinite(Number(targetZoneObj.high)) && Number(targetZoneObj.high)>Number(targetZoneObj.low);
+
+  // Expected target is the midpoint of the opposing mapped zone. The full
+  // opposing zone is also returned so the UI can show the target range.
+  const expectedTarget=targetZoneUsable
+    ? (Number(targetZoneObj.low)+Number(targetZoneObj.high))/2
+    : 0;
+
+  const maePct=Number.isFinite(referenceEntry)&&referenceEntry>0&&Number.isFinite(maeBoundary)
+    ? Math.abs((maeBoundary/referenceEntry-1)*100) : null;
+
+  // MFE is always reported as a positive favorable excursion.
+  const mfePct=targetZoneUsable&&expectedTarget>0&&referenceEntry>0
+    ? Math.abs((expectedTarget/referenceEntry-1)*100) : null;
+
   let state='DATA UNAVAILABLE', stateIcon='⚪', stateText='Need enough 15m EMA data';
   if(valid){
     if(long){
@@ -6551,37 +6597,75 @@ function calculateEntryPathFramework(item, side, statusCode){
       else {state='ENTRY / BELOW EMA50';stateIcon='🟢';stateText='Price is below EMA50; EMA50→EMA200 is the controlled pullback zone';}
     }
   }
-  const pct=(a,b)=>valid?((a/b-1)*100):null;
-  const zoneA=long?ema50:ema200, zoneB=long?ema200:ema50;
-  const upper=Math.max(zoneA,zoneB), lower=Math.min(zoneA,zoneB);
-  const zoneLow=long?ema200:ema50, zoneHigh=long?ema50:ema200;
-  const fromEntryTo50=pct(ema50,price), fromEntryTo200=pct(ema200,price);
-  const abovePool= r.liquidity?.nearestAbove;
-  const belowPool= r.liquidity?.nearestBelow;
-  const mfePool=long?abovePool:belowPool;
-  const mfePrice=Number(mfePool?.price||mfePool?.level||0);
-  const mfePct=valid&&mfePrice>0?((mfePrice/price-1)*100):null;
+
+  const fromEntryTo50=valid?((ema50/referenceEntry-1)*100):null;
+  const fromEntryTo200=valid?((ema200/referenceEntry-1)*100):null;
   const sideLabel=long?'LONG':'SHORT';
-  const entryLabel=entryZone?'🟡 STAGED / CONDITIONAL = ENTRY ZONE':'Entry status is not staged/conditional';
+  const entryLabel=zoneUsable
+    ? `🟡 ${entryZoneObj.confirmed?'VALIDATED':'MAPPED'} ${long?'BUYING':'SELLING'} ZONE`
+    : 'Entry zone not mapped';
+
   const fmt=(v)=>Number.isFinite(v)?(v<1?Number(v).toPrecision(7):Number(v).toFixed(6)): '—';
   const fp=(v)=>Number.isFinite(v)?`${v>=0?'+':''}${v.toFixed(2)}%`:'—';
-  return {valid,price,ema50,ema200,state,stateIcon,stateText,entryZone,entryLabel,sideLabel,zoneLow,zoneHigh,fromEntryTo50,fromEntryTo200,mfePrice,mfePct,mfePool,fmt,fp};
+
+  return {
+    valid,price,ema50,ema200,state,stateIcon,stateText,
+    entryZone:zoneUsable,entryLabel,sideLabel,
+    zoneLow:zoneUsable?Number(entryZoneObj.low):0,
+    zoneHigh:zoneUsable?Number(entryZoneObj.high):0,
+    referenceEntry,maeBoundary,maePct,
+    targetZone:targetZoneObj,expectedTarget,mfePct,
+    targetLow:targetZoneUsable?Number(targetZoneObj.low):0,
+    targetHigh:targetZoneUsable?Number(targetZoneObj.high):0,
+    fromEntryTo50,fromEntryTo200,fmt,fp
+  };
 }
 
 function renderEntryPathFramework(item, side, statusCode){
   const x=calculateEntryPathFramework(item,side,statusCode);
-  const band=x.valid?`<div style="margin-top:7px;display:grid;grid-template-columns:1fr 1fr;gap:7px"><div><strong>EMA50:</strong> ${x.fmt(x.ema50)} <span class="small">(${x.fp(x.fromEntryTo50)} from reference entry)</span></div><div><strong>EMA200:</strong> ${x.fmt(x.ema200)} <span class="small">(${x.fp(x.fromEntryTo200)} from reference entry)</span></div></div>`:'';
-  const mfe=x.mfePrice>0?`<div><strong>📈 MFE / favorable path:</strong> ${x.fmt(x.mfePrice)} <span class="small">(${x.fp(x.mfePct)})${x.mfePool?.type?` • ${x.mfePool.type}`:''}</span></div>`:'<div><strong>📈 MFE / favorable path:</strong> nearest target/liquidity not mapped</div>';
+
+  const band=x.valid
+    ? `<div style="margin-top:7px;display:grid;grid-template-columns:1fr 1fr;gap:7px">
+         <div><strong>EMA50:</strong> ${x.fmt(x.ema50)} <span class="small">(${x.fp(x.fromEntryTo50)} from reference)</span></div>
+         <div><strong>EMA200:</strong> ${x.fmt(x.ema200)} <span class="small">(${x.fp(x.fromEntryTo200)} from reference)</span></div>
+       </div>`
+    : '';
+
+  const zoneLine=x.entryZone
+    ? `<div style="margin-top:6px"><strong>📍 Reference entry:</strong> ${x.fmt(x.referenceEntry)}
+       <span class="small">• ${x.fmt(x.zoneLow)}–${x.fmt(x.zoneHigh)} ${x.sideLabel==='SHORT'?'selling':'buying'} zone</span></div>`
+    : `<div style="margin-top:6px"><strong>📍 Reference entry:</strong> ${x.fmt(x.referenceEntry)} <span class="small">• current price fallback</span></div>`;
+
+  const maeLine=Number.isFinite(x.maeBoundary)&&x.maeBoundary>0
+    ? `<div style="margin-top:7px"><strong>📉 MAE boundary:</strong> ${x.fmt(x.maeBoundary)}
+       <span class="small">(+${Number(x.maePct||0).toFixed(2)}% adverse)</span>
+       <span class="small"> • ${x.sideLabel==='SHORT'?'above selling-zone high':'below buying-zone low'}</span></div>`
+    : `<div style="margin-top:7px"><strong>📉 MAE boundary:</strong> not mapped</div>`;
+
+  const targetLine=x.expectedTarget>0
+    ? `<div style="margin-top:7px"><strong>🎯 Expected target:</strong> ${x.fmt(x.expectedTarget)}
+       <span class="small"> • target zone ${x.fmt(x.targetLow)}–${x.fmt(x.targetHigh)}</span></div>`
+    : `<div style="margin-top:7px"><strong>🎯 Expected target:</strong> opposing liquidity/zone not mapped</div>`;
+
+  const mfeLine=x.expectedTarget>0
+    ? `<div style="margin-top:7px"><strong>📈 MFE / favorable path:</strong> +${Number(x.mfePct||0).toFixed(2)}%
+       <span class="small"> → ${x.fmt(x.expectedTarget)} expected target</span></div>`
+    : `<div style="margin-top:7px"><strong>📈 MFE / favorable path:</strong> target zone not mapped</div>`;
+
   return `<div class="entryPathFramework" style="margin-top:9px;padding:10px;border-radius:9px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.12)">
     <div style="font-weight:900">📐 ENTRY PATH / EXCURSION</div>
     <div style="margin-top:5px"><strong>${x.entryLabel}</strong> • ${x.sideLabel}</div>
-    <div style="margin-top:5px"><strong>📉 MAE framework:</strong> Below 15m EMA50 + above 15m EMA200 = <strong>Controlled MAE / normal pullback zone</strong>.</div>
+    ${zoneLine}
+    <div style="margin-top:5px"><strong>📉 MAE framework:</strong> Zone-based adverse path. The entry zone and its adverse edge are the MAE reference; EMA levels remain structural context.</div>
+    ${maeLine}
+    ${targetLine}
+    ${mfeLine}
     ${band}
     <div style="margin-top:7px"><strong>${x.stateIcon} Current path:</strong> ${x.state} — ${x.stateText}</div>
-    ${mfe}
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">MAE here is a structural path zone, not a promise of the exact future drawdown. EMA200 loss is treated as structural danger/invalidation according to the scanner's correction framework.</div>
+    <div style="margin-top:6px;font-size:11px;color:var(--muted)">MAE/MFE are now tied to the Trader Decision price zones. MAE is the adverse edge of the active entry zone; MFE/Expected Target is the midpoint of the opposing mapped zone. EMA200 remains structural danger/invalidation, not the profit target.</div>
   </div>`;
 }
+
 
 
 /* ---------- Trader Decision Buy/Sell Zone Intelligence ----------
@@ -7141,7 +7225,7 @@ function renderTraderDecisionBlock(r, compact=false){
     </div>` : ''}
     ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed on the execution timeframe.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
-    ${renderEntryPathFramework(item, ((getEntryStatusSnapshot(item)?.short && getEntryStatusSnapshot(item).short!=='WAIT' && getEntryStatusSnapshot(item).long==='WAIT')?'short':'long'), ((getEntryStatusSnapshot(item)||{}).long||''))}
+    ${renderEntryPathFramework(item, traderZones?.active?.side==='SELL' ? 'short' : 'long', ((getEntryStatusSnapshot(item)||{})[traderZones?.active?.side==='SELL' ? 'short' : 'long']||''))}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
     <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
