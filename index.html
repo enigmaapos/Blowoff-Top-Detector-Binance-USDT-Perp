@@ -6910,7 +6910,9 @@ function renderTraderDecisionBlock(r, compact=false){
       const buyStatus=buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH';
       zoneParts.push(`${buyLabel}: ${formatTraderZonePrice(buyZone.low)}–${formatTraderZonePrice(buyZone.high)} • ${buyStatus} • Quality ${buyZone.quality}/100`);
     }
-    if(zoneParts.length) bestAction += ` Zone map — ${zoneParts.join(' | ')}.`;
+    // Zone details are rendered as a dedicated PRICE ZONES panel below the action card.
+    // Keep Best Action focused on the actual decision and execution condition.
+
   }
 
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
@@ -6930,8 +6932,17 @@ function renderTraderDecisionBlock(r, compact=false){
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
-    <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
-    ${activeTraderZone ? `<div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:${activeTraderZone.side==='BUY'?'rgba(45,212,191,.06)':'rgba(255,92,92,.06)'};border:1px solid ${activeTraderZone.side==='BUY'?'rgba(45,212,191,.14)':'rgba(255,92,92,.14)'}"><strong>${activeTraderZone.side==='BUY'?'🟢 BUYING ZONE':'🔴 SELLING ZONE'}:</strong> ${renderTraderDecisionZoneLine(activeTraderZone, Number(item.closeNow))}<br><span class="small">Price ${formatTraderZonePrice(Number(item.closeNow))} • Zone ${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)} • ${activeTraderZone.type} • ${activeTraderZone.tf}</span></div>` : ''}
+    <div style="margin-top:10px;padding:12px 13px;border-radius:10px;background:linear-gradient(180deg,rgba(126,220,255,.065),rgba(126,220,255,.025));border:1px solid rgba(126,220,255,.16);box-shadow:0 2px 10px rgba(0,0,0,.08)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:15px">⚡</span><strong style="font-size:13px;letter-spacing:.02em">BEST ACTION NOW</strong><span style="margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--muted);text-transform:uppercase">Execution guidance</span></div>
+      <div style="font-size:13px;line-height:1.55">${bestAction}</div>
+    </div>
+    ${(buyZone || sellZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(20,24,32,.22);border:1px solid rgba(255,255,255,.08)">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px"><span>📍</span><strong style="font-size:12px;letter-spacing:.03em">PRICE ZONES</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Mapped liquidity areas</span></div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+        ${sellZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(255,92,92,.055);border:1px solid rgba(255,92,92,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🔴 SELLING ZONE</strong><span style="font-size:10px;font-weight:800;color:${sellZone.confirmed?'#ff5c5c':'#ffb454'}">${sellZone.confirmed?'CONFIRMED':sellZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(sellZone.low)} – ${formatTraderZonePrice(sellZone.high)}</div><div class="small" style="margin-top:4px">Quality ${sellZone.quality}/100${liqUpsideSweep?' • Swept / rejection':''}</div></div>` : ''}
+        ${buyZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(45,212,191,.055);border:1px solid rgba(45,212,191,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🟢 BUYING ZONE</strong><span style="font-size:10px;font-weight:800;color:${buyZone.confirmed?'#2dd4bf':'#ffb454'}">${buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(buyZone.low)} – ${formatTraderZonePrice(buyZone.high)}</div><div class="small" style="margin-top:4px">Quality ${buyZone.quality}/100${liqDownsideSweep?' • Swept / reclaim':''}</div></div>` : ''}
+      </div>
+    </div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     ${renderEntryPathFramework(item, ((getEntryStatusSnapshot(item)?.short && getEntryStatusSnapshot(item).short!=='WAIT' && getEntryStatusSnapshot(item).long==='WAIT')?'short':'long'), ((getEntryStatusSnapshot(item)||{}).long||''))}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
