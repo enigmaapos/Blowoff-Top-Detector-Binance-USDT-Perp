@@ -5463,12 +5463,46 @@ function getEntryStatusSnapshotBase(r){
 
 function getEntryStatusSnapshot(r){
   const base=getEntryStatusSnapshotBase(r);
-  // LONG computation is intentionally untouched. This is a Short-only mirror
-  // layer that turns the existing actionable bearish states into one clear
-  // STAGED / CONDITIONAL entry-zone state for Bullish -> Short scanning.
-  const shortActionable=['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE'].includes(base.short);
-  if(shortActionable){
-    return {...base, short:'STAGED', shortLabel:'⚠️ Staged / conditional — short entry zone'};
+
+  // IMPORTANT: The proven LONG computation above is untouched.
+  // SHORT is an independent directional mirror: it asks whether bearish
+  // evidence is developing strongly enough to define a SHORT entry zone.
+  // It does NOT wait for the old granular Short status to become actionable.
+  const item=r||{};
+  const reasons=(item.phase?.reasons||[]).map(String);
+  const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
+  const phase=String(item.phase?.phase||item.phase||'Unknown').toLowerCase();
+  const distribution=/distribution|breakdown/.test(phase);
+  const downsideScore=Number(item.downsideStructureScore||0);
+  const rsi4h=Number(item.rsi4h||0);
+  const preCrash=Number(item.preCrash?.score||0);
+  const liqEvent=String(item.liquidity?.event||'').toUpperCase();
+  const liqScore=Number(item.liquidity?.score||0);
+  const liqUpsideSweep=liqEvent.includes('UPSIDE LIQUIDITY SWEEP');
+
+  // A Short STAGED / CONDITIONAL setup is a developing short entry zone:
+  // rejection/lower-high, distribution/breakdown structure, meaningful
+  // downside structure, or an upside-liquidity sweep with enough liquidity
+  // strength. High RSI alone is deliberately NOT sufficient.
+  const shortStaged =
+    hasLowerHigh ||
+    liqUpsideSweep ||
+    distribution ||
+    downsideScore>=35 ||
+    (preCrash>=6 && rsi4h>=70 && liqScore>=40);
+
+  if(shortStaged){
+    const reasonsShort=[];
+    if(hasLowerHigh) reasonsShort.push('lower-high');
+    if(liqUpsideSweep) reasonsShort.push('upside liquidity rejection/sweep');
+    if(distribution) reasonsShort.push('distribution/breakdown');
+    if(downsideScore>=35) reasonsShort.push('downside structure');
+    if(!reasonsShort.length) reasonsShort.push('bearish transition');
+    return {
+      ...base,
+      short:'STAGED',
+      shortLabel:`⚠️ Staged / conditional — short entry zone${reasonsShort.length?' • '+reasonsShort.join(' + '):''}`
+    };
   }
   return base;
 }
@@ -6780,6 +6814,11 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('breakdown or deterioration in higher-timeframe support');
   }
 
+  // Display the same Short STAGED / CONDITIONAL mirror used by the filter.
+  // Long display/computation is intentionally left unchanged.
+  const entryMirror=getEntryStatusSnapshot(item);
+  if(entryMirror.short==='STAGED') shortEntry=entryMirror.shortLabel;
+
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
   const compactStyle=compact?'font-size:12px;':'';
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
@@ -6799,7 +6838,7 @@ function renderTraderDecisionBlock(r, compact=false){
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
-    ${renderEntryPathFramework(item, ((getEntryStatusSnapshot(item)?.short && getEntryStatusSnapshot(item).short!=='WAIT' && getEntryStatusSnapshot(item).long==='WAIT')?'short':'long'), ((getEntryStatusSnapshot(item)||{}).long||''))}
+    ${(() => { const es=getEntryStatusSnapshot(item); const side=(es.short && es.short!=='WAIT' && es.long==='WAIT')?'short':'long'; const code=side==='short'?es.short:es.long; return renderEntryPathFramework(item, side, code); })()}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
     <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
