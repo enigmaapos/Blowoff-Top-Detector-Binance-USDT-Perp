@@ -6613,6 +6613,52 @@ function getTraderDecisionZones(r){
   return {buy,sell,active};
 }
 
+function getTraderExecutionTimeframe(r, zone){
+  const item=r||{};
+  const z=zone||{};
+  const phase=String(item.phase?.phase||item.phase||'').toLowerCase();
+  const rsi15=Number(item.rsi15||0);
+  const rsi1h=Number(item.rsi1h||0);
+  const rsi4h=Number(item.rsi4h||0);
+  const hasLH=!!item.hasLowerHigh || Number(item.lowerHighCount||0)>0 || (item.phase?.reasons||[]).some(x=>/lower[- ]?high/i.test(String(x)));
+  const hasHL=!!item.hasHigherLow || Number(item.higherLowCount||0)>0 || (item.phase?.reasons||[]).some(x=>/higher[- ]?low/i.test(String(x)));
+  const liqEvent=String(item.liquidity?.event||'').toUpperCase();
+  const inside=!!z.inside;
+  const confirmed=!!z.confirmed;
+  const side=z.side;
+
+  // Execution TF is deliberately separate from the liquidity-source TF.
+  // Higher TFs define context; 15m is the default execution layer because
+  // the scanner already has 15m structure/RSI/EMA confirmation data.
+  let tf='15m', trigger='', rationale='';
+  if(side==='SELL'){
+    if(hasLH || /REJECTION/.test(liqEvent) || rsi15>=70){
+      trigger='15m rejection + lower-high confirmation';
+      rationale='Use 4H/1H for context and 15m for the actual short trigger.';
+    }else if(rsi1h>=70 || rsi4h>=72){
+      tf='1H';
+      trigger='1H rejection; refine entry on 15m';
+      rationale='Higher-timeframe rejection is present; use 15m to refine the entry.';
+    }else{
+      trigger='15m rejection or lower-high confirmation';
+      rationale='Wait for 15m structure confirmation before execution.';
+    }
+  }else if(side==='BUY'){
+    if(hasHL || /DOWNSIDE.*REJECTION|RECLAIM/.test(liqEvent) || (rsi15>=40 && rsi15<=65)){
+      trigger='15m reclaim + higher-low confirmation';
+      rationale='Use 4H/1H for context and 15m for the actual long trigger.';
+    }else if(rsi1h>=40 && rsi1h<=68 && rsi4h>=40 && rsi4h<=68){
+      tf='1H';
+      trigger='1H reclaim; refine entry on 15m';
+      rationale='Recovery evidence is developing; use 15m for precise execution.';
+    }else{
+      trigger='15m reclaim or higher-low confirmation';
+      rationale='Wait for 15m structure confirmation before execution.';
+    }
+  }
+  return {tf,trigger,rationale,inside,confirmed};
+}
+
 function formatTraderZonePrice(v){
   const n=Number(v);
   if(!Number.isFinite(n)) return '—';
@@ -6744,6 +6790,9 @@ function renderTraderDecisionBlock(r, compact=false){
   const buyZone=traderZones.buy;
   const sellZone=traderZones.sell;
   const activeTraderZone=traderZones.active;
+  const sellExecution=getTraderExecutionTimeframe(item, sellZone);
+  const buyExecution=getTraderExecutionTimeframe(item, buyZone);
+  const activeExecution=getTraderExecutionTimeframe(item, activeTraderZone);
 
   // Event-aware contribution: sweeps affect the *next action* differently from raw pool strength.
   // A sweep is deliberately kept conditional until rejection/acceptance is confirmed.
@@ -6939,10 +6988,11 @@ function renderTraderDecisionBlock(r, compact=false){
     ${(buyZone || sellZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(20,24,32,.22);border:1px solid rgba(255,255,255,.08)">
       <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px"><span>📍</span><strong style="font-size:12px;letter-spacing:.03em">PRICE ZONES</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Mapped liquidity areas</span></div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
-        ${sellZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(255,92,92,.055);border:1px solid rgba(255,92,92,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🔴 SELLING ZONE</strong><span style="font-size:10px;font-weight:800;color:${sellZone.confirmed?'#ff5c5c':'#ffb454'}">${sellZone.confirmed?'CONFIRMED':sellZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(sellZone.low)} – ${formatTraderZonePrice(sellZone.high)}</div><div class="small" style="margin-top:4px">Quality ${sellZone.quality}/100${liqUpsideSweep?' • Swept / rejection':''}</div></div>` : ''}
-        ${buyZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(45,212,191,.055);border:1px solid rgba(45,212,191,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🟢 BUYING ZONE</strong><span style="font-size:10px;font-weight:800;color:${buyZone.confirmed?'#2dd4bf':'#ffb454'}">${buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(buyZone.low)} – ${formatTraderZonePrice(buyZone.high)}</div><div class="small" style="margin-top:4px">Quality ${buyZone.quality}/100${liqDownsideSweep?' • Swept / reclaim':''}</div></div>` : ''}
+        ${sellZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(255,92,92,.055);border:1px solid rgba(255,92,92,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🔴 SELLING ZONE</strong><span style="font-size:10px;font-weight:800;color:${sellZone.confirmed?'#ff5c5c':'#ffb454'}">${sellZone.confirmed?'CONFIRMED':sellZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(sellZone.low)} – ${formatTraderZonePrice(sellZone.high)}</div><div class="small" style="margin-top:4px">Quality ${sellZone.quality}/100${liqUpsideSweep?' • Swept / rejection':''}</div><div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,92,92,.10);font-size:10px;line-height:1.45"><strong>Execution TF:</strong> ${sellExecution.tf} <span style="color:var(--muted)">• ${sellExecution.trigger}</span></div></div>` : ''}
+        ${buyZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(45,212,191,.055);border:1px solid rgba(45,212,191,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🟢 BUYING ZONE</strong><span style="font-size:10px;font-weight:800;color:${buyZone.confirmed?'#2dd4bf':'#ffb454'}">${buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(buyZone.low)} – ${formatTraderZonePrice(buyZone.high)}</div><div class="small" style="margin-top:4px">Quality ${buyZone.quality}/100${liqDownsideSweep?' • Swept / reclaim':''}</div><div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(45,212,191,.10);font-size:10px;line-height:1.45"><strong>Execution TF:</strong> ${buyExecution.tf} <span style="color:var(--muted)">• ${buyExecution.trigger}</span></div></div>` : ''}
       </div>
     </div>` : ''}
+    ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf)}</span><span style="font-size:11px;line-height:1.45">${activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger}</span></div><div class="small" style="margin-top:6px">4H / 1H provide directional context and setup validation. Execute only after the ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed on the execution timeframe.</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     ${renderEntryPathFramework(item, ((getEntryStatusSnapshot(item)?.short && getEntryStatusSnapshot(item).short!=='WAIT' && getEntryStatusSnapshot(item).long==='WAIT')?'short':'long'), ((getEntryStatusSnapshot(item)||{}).long||''))}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
