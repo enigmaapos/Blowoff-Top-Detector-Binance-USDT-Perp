@@ -902,6 +902,7 @@ body.authLocked{overflow:hidden}
           <label class="controlLabel">🔴 Short Entry Status</label>
           <select id="shortEntryFilter">
             <option value="ALL">All Short Entry States</option>
+            <option value="STAGED">⚠️ Staged / conditional</option>
             <option value="CONDITIONAL">🟠 Conditional</option>
             <option value="WAIT">⏸ Wait</option>
             <option value="REJECTION">🟠 Rejection / failed bounce</option>
@@ -5380,7 +5381,7 @@ function traderBiasMatches(r, code){
 /* ---------- Entry-status intelligence ----------
    These helpers mirror the conditions printed in Trader Decision. They are
    deliberately status-based: filters never guess from bias alone. */
-function getEntryStatusSnapshot(r){
+function getEntryStatusSnapshotBase(r){
   const item=r||{};
   const rec=getFinalRecommendation(item);
   const checks=item.accumChecks||[];
@@ -5460,6 +5461,18 @@ function getEntryStatusSnapshot(r){
   return {long:'STAGED', short:'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:'⏸ Wait for structure'};
 }
 
+function getEntryStatusSnapshot(r){
+  const base=getEntryStatusSnapshotBase(r);
+  // LONG computation is intentionally untouched. This is a Short-only mirror
+  // layer that turns the existing actionable bearish states into one clear
+  // STAGED / CONDITIONAL entry-zone state for Bullish -> Short scanning.
+  const shortActionable=['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE'].includes(base.short);
+  if(shortActionable){
+    return {...base, short:'STAGED', shortLabel:'⚠️ Staged / conditional — short entry zone'};
+  }
+  return base;
+}
+
 function getEntryStatusRank(r, side){
   const s=getEntryStatusSnapshot(r);
   const code=side==='short'?s.short:s.long;
@@ -5471,8 +5484,11 @@ function entryStatusMatches(r, side, code){
   if(code==='ALL') return true;
   const s=getEntryStatusSnapshot(r);
   if(side==='long') return s.long===code;
-  if(code==='CONDITIONAL') return ['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE'].includes(s.short);
-  return s.short===code;
+  if(code==='STAGED') return s.short==='STAGED';
+  // Preserve the existing granular Short filters using the original Short computation.
+  const base=getEntryStatusSnapshotBase(r);
+  if(code==='CONDITIONAL') return ['CONDITIONAL','REJECTION','LOWER_HIGH','ACCEPTANCE'].includes(base.short);
+  return base.short===code;
 }
 
 function filterResultsForDist(results) {
