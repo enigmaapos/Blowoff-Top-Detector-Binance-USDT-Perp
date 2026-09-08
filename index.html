@@ -6882,8 +6882,10 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('breakdown or deterioration in higher-timeframe support');
   }
 
-  // Zone-aware action overlay: only changes the Best action line when a
-  // validated buy/sell zone is present, inside price, or close enough to watch.
+  // Zone-aware action overlay.
+  // IMPORTANT: always expose the mapped zones in Best action when liquidity
+  // exists. Previously this layer only appended a zone when it was already
+  // confirmed/near, so many valid liquidity pools produced no visible change.
   if(activeTraderZone){
     if(activeTraderZone.side==='BUY'){
       bestAction = activeTraderZone.confirmed
@@ -6894,10 +6896,21 @@ function renderTraderDecisionBlock(r, compact=false){
         ? `🔴 SELLING ZONE CONFIRMED — price is inside the validated selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Avoid chasing longs; favor profit-taking or wait for rejection/lower-high confirmation before considering shorts. Confirmation quality ${activeTraderZone.quality}/100.`
         : `🟠 SELLING ZONE PRESENT — price is inside a potential selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}), but confirmation is incomplete. Wait for rejection/lower-high evidence before treating it as an actionable sell zone.`;
     }
-  } else if(buyZone?.near && buyZone.confirmed){
-    bestAction += ` 🟢 Buying zone below: ${formatTraderZonePrice(buyZone.low)}–${formatTraderZonePrice(buyZone.high)} (Quality ${buyZone.quality}/100).`;
-  } else if(sellZone?.near && sellZone.confirmed){
-    bestAction += ` 🔴 Selling zone above: ${formatTraderZonePrice(sellZone.low)}–${formatTraderZonePrice(sellZone.high)} (Quality ${sellZone.quality}/100).`;
+  } else if(buyZone || sellZone){
+    // Show non-active zones too. A zone can be important even when price is
+    // outside the fixed 0.60% reaction band, especially after a liquidity sweep.
+    const zoneParts=[];
+    if(sellZone){
+      const sellLabel=liqUpsideSweep ? '🔴 SELLING / SWEPT-REJECTION ZONE' : '🔴 SELLING ZONE';
+      const sellStatus=sellZone.confirmed?'CONFIRMED':sellZone.near?'APPROACHING':'WATCH';
+      zoneParts.push(`${sellLabel}: ${formatTraderZonePrice(sellZone.low)}–${formatTraderZonePrice(sellZone.high)} • ${sellStatus} • Quality ${sellZone.quality}/100`);
+    }
+    if(buyZone){
+      const buyLabel=liqDownsideSweep ? '🟢 BUYING / SWEPT-RECLAIM ZONE' : '🟢 BUYING ZONE';
+      const buyStatus=buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH';
+      zoneParts.push(`${buyLabel}: ${formatTraderZonePrice(buyZone.low)}–${formatTraderZonePrice(buyZone.high)} • ${buyStatus} • Quality ${buyZone.quality}/100`);
+    }
+    if(zoneParts.length) bestAction += ` Zone map: ${zoneParts.join(' | ')}.`;
   }
 
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
