@@ -6515,6 +6515,120 @@ function renderEntryPathFramework(item, side, statusCode){
   </div>`;
 }
 
+
+/* ---------- Trader Decision Buy/Sell Zone Intelligence ----------
+   Converts the scanner's existing liquidity pools + structure/accumulation/
+   correction/exhaustion evidence into actionable price zones.
+   Zones are ranges, not exact entry prices. This layer does NOT override
+   the authoritative correction logic; it only tells Trader Decision whether
+   price is inside, approaching, or outside a validated zone.
+*/
+function getTraderDecisionZones(r){
+  const item=r||{};
+  const price=Number(item.closeNow);
+  const liq=item.liquidity || (typeof detectLiquidityIntelligence==='function' ? detectLiquidityIntelligence(item) : {});
+  if(!Number.isFinite(price)||price<=0) return {buy:null,sell:null,active:null};
+
+  const checks=item.accumChecks||[];
+  const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
+  const a15=Number(tf['15m']??0), a1h=Number(tf['1h']??0), a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
+  const accum=Number(item.accumCombined?.confidence||0);
+  const rsi4h=Number(item.rsi4h||0);
+  const vol=Number(item.volSpike4||0);
+  const phase=String(item.phase?.phase||item.phase||'').toLowerCase();
+  const correction=!!(item.finalRec?.confirmed || item.correctionGuide?.ema200Stretch15<0 || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
+  const recovery=/recovery|return-to-normal|re-accumulation/.test(phase) || !!item.returnToNormal?.isReturn;
+  const distribution=/distribution|breakdown/.test(phase);
+  const lowerHigh=!!item.hasLowerHigh || Number(item.lowerHighCount||0)>0 || (item.phase?.reasons||[]).some(x=>/lower[- ]?high/i.test(String(x)));
+  const higherLow=!!item.hasHigherLow || Number(item.higherLowCount||0)>0 || (item.phase?.reasons||[]).some(x=>/higher[- ]?low/i.test(String(x)));
+  const ema70=Number(item.ema70DistPct||0);
+  const blow=Number(item.score||0);
+  const warning=Number(item.preCrash?.score||0);
+  const correctionRecovery=correction && (recovery || rsi4h<70 || Number(item.returnToNormal?.score||0)>=3);
+
+  const makeZone=(level,side)=>{
+    if(!level || !Number.isFinite(Number(level.price)) || Number(level.price)<=0) return null;
+    const center=Number(level.price);
+    // 0.60% half-width gives a practical reaction area around a mapped pool.
+    const halfPct=0.60;
+    const low=center*(1-halfPct/100), high=center*(1+halfPct/100);
+    const distance=Math.abs((center-price)/price)*100;
+    const inside=price>=low && price<=high;
+    const near=distance<=1.50;
+    return {side,center,low,high,distance,inside,near,strength:Number(level.strength||0),type:String(level.type||'LIQUIDITY POOL'),tf:String(level.tf||'')};
+  };
+
+  const buy=makeZone(liq?.nearestBelow,'BUY');
+  const sell=makeZone(liq?.nearestAbove,'SELL');
+
+  if(!buy && !sell) return {buy:null,sell:null,active:null};
+
+  // Zone quality is deliberately evidence-based. A mapped level alone is not
+  // enough to call a confirmed trading zone.
+  if(buy){
+    let score=0;
+    score += Math.min(25,buy.strength*0.25);
+    score += Math.min(20,Math.max(0,(accum-45)*0.40));
+    score += a4h>=55?12:a4h>=50?7:0;
+    score += a1d>=50?12:a1d>=40?6:0;
+    score += correctionRecovery?12:0;
+    score += higherLow?10:0;
+    score += recovery?5:0;
+    score += rsi4h>=40 && rsi4h<=68?5:0;
+    score += /DOWNSIDE LIQUIDITY SWEEP.*REJECTION/i.test(String(liq?.event||''))?8:0;
+    score -= distribution?15:0;
+    score -= rsi4h>=78?12:0;
+    score -= warning>=6?8:0;
+    score -= blow>=20?8:0;
+    buy.quality=Math.max(0,Math.min(100,Math.round(score)));
+    buy.confirmed=buy.quality>=65 && buy.strength>=55 && (accum>=55 || a4h>=55) && !distribution;
+    buy.status=buy.inside ? (buy.confirmed?'CONFIRMED':'PRESENT — VALIDATION NEEDED') : buy.near ? 'APPROACHING' : 'BELOW PRICE';
+  }
+
+  if(sell){
+    let score=0;
+    score += Math.min(25,sell.strength*0.25);
+    score += distribution?18:0;
+    score += lowerHigh?12:0;
+    score += rsi4h>=78?18:rsi4h>=72?10:0;
+    score += ema70>=20?12:ema70>=12?7:0;
+    score += vol>=2?8:vol>=1.5?4:0;
+    score += blow>=20?8:blow>=10?4:0;
+    score += warning>=6?7:0;
+    score += /UPSIDE LIQUIDITY SWEEP.*REJECTION/i.test(String(liq?.event||''))?10:0;
+    score -= correctionRecovery && accum>=60?8:0;
+    sell.quality=Math.max(0,Math.min(100,Math.round(score)));
+    sell.confirmed=sell.quality>=65 && sell.strength>=55 && (distribution || rsi4h>=72 || lowerHigh || blow>=10);
+    sell.status=sell.inside ? (sell.confirmed?'CONFIRMED':'PRESENT — VALIDATION NEEDED') : sell.near ? 'APPROACHING' : 'ABOVE PRICE';
+  }
+
+  // Prefer the zone the price is actually inside. If both somehow overlap,
+  // prefer the higher-quality confirmed zone.
+  let active=null;
+  if(buy?.inside && buy.confirmed) active=buy;
+  if(sell?.inside && sell.confirmed && (!active || sell.quality>active.quality)) active=sell;
+  if(!active && buy?.inside && buy.quality>=55) active=buy;
+  if(!active && sell?.inside && sell.quality>=55) active=sell;
+
+  return {buy,sell,active};
+}
+
+function formatTraderZonePrice(v){
+  const n=Number(v);
+  if(!Number.isFinite(n)) return '—';
+  if(n>=1000) return n.toLocaleString(undefined,{maximumFractionDigits:2});
+  if(n>=1) return n.toFixed(4);
+  if(n>=0.01) return n.toFixed(6);
+  return n.toPrecision(5);
+}
+
+function renderTraderDecisionZoneLine(z, price){
+  if(!z) return '';
+  const statusIcon=z.status==='CONFIRMED'?'🟢':z.status==='PRESENT — VALIDATION NEEDED'?'🟡':z.status==='APPROACHING'?'🟠':'⚪';
+  const inside=z.inside?' • PRICE INSIDE ZONE':'';
+  return `${statusIcon} ${z.side==='BUY'?'Buying':'Selling'} zone: ${formatTraderZonePrice(z.low)} – ${formatTraderZonePrice(z.high)} • Quality ${z.quality}/100 • ${z.status}${inside}`;
+}
+
 function renderTraderDecisionBlock(r, compact=false){
   const item=r||{};
   const rec=getFinalRecommendation(item);
@@ -6626,6 +6740,10 @@ function renderTraderDecisionBlock(r, compact=false){
   const liqStrongBelow=!!liqBelow && liqBelow.strength>=60;
   const liqNearAbove=liqStrongAbove && liqAboveDist<=1.5;
   const liqNearBelow=liqStrongBelow && liqBelowDist<=1.5;
+  const traderZones=getTraderDecisionZones(item);
+  const buyZone=traderZones.buy;
+  const sellZone=traderZones.sell;
+  const activeTraderZone=traderZones.active;
 
   // Event-aware contribution: sweeps affect the *next action* differently from raw pool strength.
   // A sweep is deliberately kept conditional until rejection/acceptance is confirmed.
@@ -6764,6 +6882,24 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('breakdown or deterioration in higher-timeframe support');
   }
 
+  // Zone-aware action overlay: only changes the Best action line when a
+  // validated buy/sell zone is present, inside price, or close enough to watch.
+  if(activeTraderZone){
+    if(activeTraderZone.side==='BUY'){
+      bestAction = activeTraderZone.confirmed
+        ? `🟢 BUYING ZONE CONFIRMED — price is inside the validated buying zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Favor staged/retest entries only while the zone holds; confirmation quality ${activeTraderZone.quality}/100.`
+        : `🟡 BUYING ZONE PRESENT — price is inside a potential buying zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}), but confirmation is incomplete. Wait for rejection/reclaim and stronger structure before treating it as an actionable long zone.`;
+    }else{
+      bestAction = activeTraderZone.confirmed
+        ? `🔴 SELLING ZONE CONFIRMED — price is inside the validated selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Avoid chasing longs; favor profit-taking or wait for rejection/lower-high confirmation before considering shorts. Confirmation quality ${activeTraderZone.quality}/100.`
+        : `🟠 SELLING ZONE PRESENT — price is inside a potential selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZone.high?formatTraderZonePrice(activeTraderZone.high):'—'}), but confirmation is incomplete. Wait for rejection/lower-high evidence before treating it as an actionable sell zone.`;
+    }
+  } else if(buyZone?.near && buyZone.confirmed){
+    bestAction += ` 🟢 Buying zone below: ${formatTraderZonePrice(buyZone.low)}–${formatTraderZonePrice(buyZone.high)} (Quality ${buyZone.quality}/100).`;
+  } else if(sellZone?.near && sellZone.confirmed){
+    bestAction += ` 🔴 Selling zone above: ${formatTraderZonePrice(sellZone.low)}–${formatTraderZonePrice(sellZone.high)} (Quality ${sellZone.quality}/100).`;
+  }
+
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
   const compactStyle=compact?'font-size:12px;':'';
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
@@ -6782,6 +6918,7 @@ function renderTraderDecisionBlock(r, compact=false){
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:8px"><strong>Best action now:</strong><br>${bestAction}</div>
+    ${activeTraderZone ? `<div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:${activeTraderZone.side==='BUY'?'rgba(45,212,191,.06)':'rgba(255,92,92,.06)'};border:1px solid ${activeTraderZone.side==='BUY'?'rgba(45,212,191,.14)':'rgba(255,92,92,.14)'}"><strong>${activeTraderZone.side==='BUY'?'🟢 BUYING ZONE':'🔴 SELLING ZONE'}:</strong> ${renderTraderDecisionZoneLine(activeTraderZone, Number(item.closeNow))}<br><span class="small">Price ${formatTraderZonePrice(Number(item.closeNow))} • Zone ${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)} • ${activeTraderZone.type} • ${activeTraderZone.tf}</span></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     ${renderEntryPathFramework(item, ((getEntryStatusSnapshot(item)?.short && getEntryStatusSnapshot(item).short!=='WAIT' && getEntryStatusSnapshot(item).long==='WAIT')?'short':'long'), ((getEntryStatusSnapshot(item)||{}).long||''))}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
