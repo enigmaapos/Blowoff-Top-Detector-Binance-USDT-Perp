@@ -6889,12 +6889,12 @@ function renderTraderDecisionBlock(r, compact=false){
   if(activeTraderZone){
     if(activeTraderZone.side==='BUY'){
       bestAction = activeTraderZone.confirmed
-        ? `🟢 BUYING ZONE CONFIRMED — price is inside the validated buying zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Favor staged/retest entries only while the zone holds; confirmation quality ${activeTraderZone.quality}/100.`
-        : `🟡 BUYING ZONE PRESENT — price is inside a potential buying zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}), but confirmation is incomplete. Wait for rejection/reclaim and stronger structure before treating it as an actionable long zone.`;
+        ? `🟢 BUYING ZONE CONFIRMED — price is within the validated buying zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Favor staged or retest entries only while the zone holds. Confirmation quality: ${activeTraderZone.quality}/100.`
+        : `🟡 BUYING ZONE IDENTIFIED — price is within a potential buying zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}), but confirmation remains insufficient. Wait for a clear rejection/reclaim and improving structure before treating the zone as an actionable long setup.`;
     }else{
       bestAction = activeTraderZone.confirmed
-        ? `🔴 SELLING ZONE CONFIRMED — price is inside the validated selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Avoid chasing longs; favor profit-taking or wait for rejection/lower-high confirmation before considering shorts. Confirmation quality ${activeTraderZone.quality}/100.`
-        : `🟠 SELLING ZONE PRESENT — price is inside a potential selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}), but confirmation is incomplete. Wait for rejection/lower-high evidence before treating it as an actionable sell zone.`;
+        ? `🔴 SELLING ZONE CONFIRMED — price is within the validated selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}). Avoid chasing longs. Favor profit-taking or wait for rejection and lower-high confirmation before considering a short setup. Confirmation quality: ${activeTraderZone.quality}/100.`
+        : `🟠 SELLING ZONE IDENTIFIED — price is within a potential selling zone (${formatTraderZonePrice(activeTraderZone.low)}–${formatTraderZonePrice(activeTraderZone.high)}), but confirmation remains insufficient. Wait for clear rejection and lower-high evidence before treating the zone as an actionable short setup.`;
     }
   } else if(buyZone || sellZone){
     // Show non-active zones too. A zone can be important even when price is
@@ -6910,7 +6910,7 @@ function renderTraderDecisionBlock(r, compact=false){
       const buyStatus=buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH';
       zoneParts.push(`${buyLabel}: ${formatTraderZonePrice(buyZone.low)}–${formatTraderZonePrice(buyZone.high)} • ${buyStatus} • Quality ${buyZone.quality}/100`);
     }
-    if(zoneParts.length) bestAction += ` Zone map: ${zoneParts.join(' | ')}.`;
+    if(zoneParts.length) bestAction += ` Zone map — ${zoneParts.join(' | ')}.`;
   }
 
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
