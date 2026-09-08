@@ -10161,15 +10161,16 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
         state.symbolsDone++;
       }
       if(!allSignals.length)throw new Error('No usable historical signals were created. Check symbols/network.');
-      const defsBySide=[];
-      if(sideCfg!=='SHORT')defsBySide.push(...featureDefs('LONG').map(x=>({...x,side:'LONG'})));
-      if(sideCfg!=='LONG')defsBySide.push(...featureDefs('SHORT').map(x=>({...x,side:'SHORT'})));
-      state.featureResults=aggregateFeatureStats(allSignals,defsBySide,sideCfg==='BOTH'?'LONG':sideCfg,rowsBySymbol,cfg);
-      if(sideCfg==='BOTH'){
-        state.featureResults=[
-          ...aggregateFeatureStats(allSignals,featureDefs('LONG'),'LONG',rowsBySymbol,cfg),
+      state.featureResults=[];
+      if(sideCfg!=='SHORT'){
+        state.featureResults.push(
+          ...aggregateFeatureStats(allSignals,featureDefs('LONG'),'LONG',rowsBySymbol,cfg)
+        );
+      }
+      if(sideCfg!=='LONG'){
+        state.featureResults.push(
           ...aggregateFeatureStats(allSignals,featureDefs('SHORT'),'SHORT',rowsBySymbol,cfg)
-        ];
+        );
       }
       for(const side of (sideCfg==='BOTH'?['LONG','SHORT']:[sideCfg])){
         const defs=featureDefs(side);
