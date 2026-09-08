@@ -874,6 +874,13 @@ body.authLocked{overflow:hidden}
             <option value="smcConfidence">🧩 SMC Confidence</option>
             <option value="smcStageRank">🧩 SMC Stage</option>
           </select>
+<select id="zoneFilter" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+  <option value="all">All Zones</option>
+  <option value="buying">🟢 Buying Zone</option>
+  <option value="selling">🔴 Selling Zone</option>
+  <option value="actionable">⚡ Actionable Zone</option>
+  <option value="none">⚪ No Nearby Zone</option>
+</select>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Sort Direction</label>
@@ -885,6 +892,17 @@ body.authLocked{overflow:hidden}
         <span>🎯</span> Entry Filters
       </div>
       <div class="controlGrid two">
+        <div class="controlItem">
+          <label class="controlLabel">📍 Zone Filter</label>
+          <select id="traderZoneFilter">
+            <option value="ALL">All Zones</option>
+            <option value="BUYING">🟢 Buying Zone</option>
+            <option value="SELLING">🔴 Selling Zone</option>
+            <option value="ACTIONABLE">⚡ Actionable Zone</option>
+            <option value="NO_ZONE">⚪ No Nearby Zone</option>
+          </select>
+          <div class="dashboardHint">Filters by the same Trader Decision price zones shown in each result. Buying/Selling means the price is inside or approaching that zone.</div>
+        </div>
         <div class="controlItem">
           <label class="controlLabel">🟢 Long Entry Status</label>
           <select id="longEntryFilter">
@@ -982,6 +1000,7 @@ const el = {
   correctionFilter: document.getElementById('correctionFilter'),
   biasFilter: document.getElementById('biasFilter'),
   longEntryFilter: document.getElementById('longEntryFilter'),
+  traderZoneFilter: document.getElementById('traderZoneFilter'),
   shortEntryFilter: document.getElementById('shortEntryFilter'),
   entryStatusSort: document.getElementById('entryStatusSort'),
   fundingFilter: document.getElementById('fundingFilter'),
@@ -5475,6 +5494,35 @@ function entryStatusMatches(r, side, code){
   return s.short===code;
 }
 
+function getTraderZoneFilterState(r){
+  const z = (typeof getTraderDecisionZones === 'function')
+    ? getTraderDecisionZones(r || {})
+    : {buy:null,sell:null,active:null};
+  const buyNear = !!z?.buy && !!(z.buy.inside || z.buy.near);
+  const sellNear = !!z?.sell && !!(z.sell.inside || z.sell.near);
+  const buyConfirmed = buyNear && !!z.buy.confirmed;
+  const sellConfirmed = sellNear && !!z.sell.confirmed;
+  return {
+    buy: buyNear,
+    sell: sellNear,
+    actionable: buyConfirmed || sellConfirmed,
+    none: !buyNear && !sellNear,
+    buyConfirmed,
+    sellConfirmed,
+    zones: z
+  };
+}
+
+function traderZoneFilterMatches(r, filter){
+  if(filter==='ALL') return true;
+  const state=getTraderZoneFilterState(r);
+  if(filter==='BUYING') return state.buy;
+  if(filter==='SELLING') return state.sell;
+  if(filter==='ACTIONABLE') return state.actionable;
+  if(filter==='NO_ZONE') return state.none;
+  return true;
+}
+
 function filterResultsForDist(results) {
   // When Favorites mode is active, include the persistent favorite snapshots
   // in addition to the current scan. This makes favorites discoverable even
@@ -5513,6 +5561,15 @@ function filterResultsForDist(results) {
   const shortEntryFilter = el.shortEntryFilter ? el.shortEntryFilter.value : 'ALL';
   if (shortEntryFilter !== 'ALL') {
     filtered = filtered.filter(r => entryStatusMatches(r, 'short', shortEntryFilter));
+  }
+
+  // Dedicated Trader Decision price-zone filter. This uses the exact same
+  // getTraderDecisionZones() logic rendered in the result cards.
+  // BUYING/SELLING are proximity filters (inside OR approaching), while
+  // ACTIONABLE requires a confirmed nearby zone.
+  const traderZoneFilter = el.traderZoneFilter ? el.traderZoneFilter.value : 'ALL';
+  if (traderZoneFilter !== 'ALL') {
+    filtered = filtered.filter(r => traderZoneFilterMatches(r, traderZoneFilter));
   }
 
   const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
@@ -5945,6 +6002,14 @@ if (el.longEntryFilter) {
 }
 if (el.shortEntryFilter) {
   el.shortEntryFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.traderZoneFilter) {
+  el.traderZoneFilter.addEventListener('change', () => {
+    const v=el.traderZoneFilter.value;
+    // Zone filtering is decision-first: keep the current sort unless the user
+    // explicitly chooses a different sort. No network request is required.
+    renderActiveView(true);
+  });
 }
 if (el.entryStatusSort) {
   el.entryStatusSort.addEventListener('change', () => {
@@ -8160,7 +8225,7 @@ function commitMarketScanResults(nextResults){
   const activeFilterState = (() => {
     try {
       const ids = [
-        'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','fundingFilter','marketExhaustionFilter',
+        'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
         'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','bearishStructureFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
