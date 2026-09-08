@@ -5452,6 +5452,10 @@ function getEntryStatusSnapshotBase(r){
   if(strongHTF && hasHigherLow && !distribution && !overheated){
     return {long:'CONFIRMED', short:'WAIT', longLabel:'🟢 Confirmed structure — staged', shortLabel:'⏸ Wait / low priority'};
   }
+  // TESTED LONG ENTRY-ZONE PATH — preserve exactly:
+  // recovery / return-to-normal => Long STAGED / CONDITIONAL.
+  // Higher-low + improving 4H/1D accumulation are confirmation guidance,
+  // not prerequisites for this tested recovery entry-zone status.
   if(recovery){
     return {long:'STAGED', short:hasLowerHigh?'LOWER_HIGH':'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:hasLowerHigh?'🟠 Conditional — failed bounce / lower-high':'⏸ Wait'};
   }
@@ -5528,7 +5532,9 @@ function getEntryStatusSnapshot(r){
 
   // If both directions become actionable at the same time, do not silently
   // choose one.  The market is conflicting until one side gains confirmation.
-  if(result.long==='STAGED' && result.short==='STAGED'){
+  const longEntryZone = result.long==='STAGED' || result.long==='CONDITIONAL';
+  const shortEntryZone = result.short==='STAGED' || result.short==='CONDITIONAL';
+  if(longEntryZone && shortEntryZone){
     result.conflict=true;
     result.conflictLabel='⚠️ Conflicting entry zones — no clean directional edge';
   } else {
@@ -6616,9 +6622,11 @@ function buildFinalTraderRead(r){
   const liqEvent=String(liq.event||'').toUpperCase();
   const liqRejected=/REJECTION/.test(liqEvent);
   const liqPending=/OUTCOME PENDING/.test(liqEvent);
-  if(es.conflict) return {title:'⚪ CONFLICTING ENTRY ZONES — NO CLEAR EDGE',action:'WAIT',detail:'Long and short staging are both active. Wait for one side to gain clear structure and liquidity confirmation.'};
-  if(es.long==='STAGED') return {title:'🟢 LONG ENTRY ZONE — STAGED / CONDITIONAL',action:'LONG',detail:'Your tested long entry zone is active. Structural confirmation is still developing; prefer the defined higher-low/reclaim path and keep EMA200 loss as structural invalidation.'};
-  if(es.short==='STAGED') return {title:'🔴 SHORT ENTRY ZONE — STAGED / CONDITIONAL',action:'SHORT',detail:'Your tested short entry zone is active. Structural confirmation is still developing; prefer the defined lower-high/rejection path and keep EMA200 recovery/reclaim as structural invalidation.'};
+  const longEntryZone = es.long==='STAGED' || es.long==='CONDITIONAL';
+  const shortEntryZone = es.short==='STAGED' || es.short==='CONDITIONAL';
+  if((longEntryZone && shortEntryZone) || es.conflict) return {title:'⚪ CONFLICTING ENTRY ZONES — NO CLEAR EDGE',action:'WAIT',detail:'Long and short entry zones are both active. Wait for one side to gain clear directional structure and liquidity confirmation.'};
+  if(longEntryZone) return {title:'🟢 LONG ENTRY ZONE — STAGED / CONDITIONAL',action:'LONG',detail:'Your tested long entry zone is active. STAGED and CONDITIONAL are both treated as the entry-zone state; structural confirmation can continue developing through the defined higher-low/reclaim path, with EMA200 loss as structural invalidation.'};
+  if(shortEntryZone) return {title:'🔴 SHORT ENTRY ZONE — STAGED / CONDITIONAL',action:'SHORT',detail:'The short entry-zone state is active. STAGED and CONDITIONAL are treated as the entry-zone state; structural confirmation can continue developing through the defined lower-high/rejection path, with EMA200 recovery/reclaim as structural invalidation.'};
   if(liqPending) return {title:'⏸ WAIT — LIQUIDITY OUTCOME PENDING',action:'WAIT',detail:'A liquidity sweep has occurred but rejection vs acceptance is unresolved. Do not treat the sweep itself as an entry zone.'};
   if(correctionConfirmed) return {title:hl?'🟡 RECOVERY SETUP DEVELOPING — NOT YET STAGED':'⏸ CORRECTION CONFIRMED — WAIT FOR RECOVERY STRUCTURE',action:'WAIT',detail:'15m EMA200 stretch is below 0%, so significant correction is confirmed. Wait for a stable higher-low and improving 4H/1D accumulation before a recovery entry.'};
   if((bias==='BEARISH' || distribution || lh) && recovery) return {title:'🟠 BEARISH RECOVERY — WAIT',action:'WAIT',detail:`Bearish structure remains dominant while price normalizes. ${lh?'Lower-high evidence is present, but it is not automatically an entry trigger. ':' '}Wait for confirmed rejection/downside structure for a short, or a higher-low with improving 4H/1D accumulation for a long.`};
