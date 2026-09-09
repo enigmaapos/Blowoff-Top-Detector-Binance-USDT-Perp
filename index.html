@@ -2600,6 +2600,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       opts.prefetchedK15
         ? Promise.resolve(opts.prefetchedK15)
         : safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1w&limit=20`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1W
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1M&limit=12`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1M
@@ -2608,7 +2609,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         ? Promise.resolve({price:Number(opts.livePrice), source:String(opts.livePriceSource||'Binance 24h ticker')})
         : safeFetch(`${API_BASE}/fapi/v1/ticker/price?symbol=${sym}`, { allowIfNotRunning: opts.allowIfNotRunning })
     ];
-    const [k4hFull, k8hFull, k1h, k15, k1d, k1w, k1m, f, liveTicker] = await Promise.all(promises);
+    const [k4hFull, k8hFull, k1h, k15, k1mEntry, k1d, k1w, k1m, f, liveTicker] = await Promise.all(promises);
 
     // Keep the OLD version's 40-candle core calculations, while retaining
     // enough full 4H history to calculate the NEW authoritative EMA200 rule.
@@ -2858,7 +2859,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       last4hCloseTime: last4CloseTime || null,
       last4hCandleClosed: last4IsClosed,
       liveVsClosed4Pct: Number.isFinite(liveVsClosed4Pct)?Number(liveVsClosed4Pct.toFixed(4)):null,
-      k4h, k1h, k15m: k15, k1d, k1w, k1m,
+      k4h, k1h, k15m: k15, k1mEntry, k1d, k1w, k1m,
       hvd,
       marketStructure: structure4h,
       bearishStructure,
@@ -6629,7 +6630,7 @@ function professionalState(item, rec){
 
 function calculateEntryPathFramework(item, side, statusCode){
   const r=item||{};
-  const candles=Array.isArray(r.k15m)?r.k15m:[];
+  const candles=Array.isArray(r.k1mEntry)?r.k1mEntry:[];
   const closes=candles.map(k=>Number(k?.[4])).filter(Number.isFinite);
   const price=Number(r.closeNow ?? closes[closes.length-1]);
   const emaFn=typeof ema==='function'?ema:null;
@@ -6688,16 +6689,16 @@ function calculateEntryPathFramework(item, side, statusCode){
     state=confirmed&&inside?'SHORT ZONE CONFIRMED':'WAIT FOR SHORT CONFIRMATION';
     stateIcon=confirmed&&inside?'🔴':'🟠';
     stateText=confirmed&&inside
-      ? 'Selling zone is active; execute only after 15m rejection + lower-high confirmation.'
-      : 'Bearish/short path is the primary scenario, but wait for price into the selling zone and rejection + lower-high confirmation.';
+      ? 'Selling zone is active; execute only after 1m rejection + lower-high confirmation.'
+      : 'Bearish/short path is the primary scenario, but wait for price into the selling zone and the 1m rejection + lower-high entry trigger.';
   } else if(primarySide==='long'){
     const confirmed=!!entryZoneObj?.confirmed;
     const inside=!!entryZoneObj?.inside;
     state=confirmed&&inside?'LONG ZONE CONFIRMED':'WAIT FOR LONG CONFIRMATION';
     stateIcon=confirmed&&inside?'🟢':'🟡';
     stateText=confirmed&&inside
-      ? 'Buying zone is active; execute only after 15m reclaim + higher-low confirmation.'
-      : 'Long path is the primary scenario, but wait for price into the buying zone and reclaim + higher-low confirmation.';
+      ? 'Buying zone is active; execute only after 1m reclaim + higher-low confirmation.'
+      : 'Long path is the primary scenario, but wait for price into the buying zone and the 1m reclaim + higher-low entry trigger.';
   }
 
   const pct=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&b>0?((a/b-1)*100):null;
@@ -6712,7 +6713,7 @@ function calculateEntryPathFramework(item, side, statusCode){
 
 function calculateTimingFramework(item, side){
   const r=item||{};
-  const candles=Array.isArray(r.k15m)?r.k15m:[];
+  const candles=Array.isArray(r.k1mEntry)?r.k1mEntry:[];
   const price=Number(r.closeNow ?? candles.at(-1)?.[4] ?? 0);
   const requested=String(side||'').toLowerCase();
   const zones=(()=>{try{return getTraderDecisionZones(r)||{};}catch(e){return {};}})();
@@ -6725,7 +6726,7 @@ function calculateTimingFramework(item, side){
   const setupShort = dist || rsi4h>=78 || ema70>=12 || blow>=10 || !!r.lowerHigh || String(cg.code||'').includes('RISK') || String(cg.code||'').includes('DEVELOPING');
   const setupLong = !setupShort && (accum>=55 || /accumulation|re-accumulation|recovery/i.test(phase));
 
-  // Confirmed 15m structure from completed candles only. The latest candle is
+  // Confirmed 1m entry structure from completed candles only. The latest candle is
   // treated as the current bar and is not used as a confirmed pivot.
   const bars=candles.slice(-80);
   const pivH=[], pivL=[];
@@ -6775,22 +6776,22 @@ function renderTimingPanel(item, side){
   const row=(icon,label,val)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span>${icon} ${label}</span><strong>${val?'YES':'NO'}</strong></div>`;
   const entry=(v)=>v==='CONFIRMED'?'🔴 CONFIRMED':v==='EARLY'?'🟠 EARLY':'🟡 NOT YET';
   return `<div class="timingFramework" style="margin-top:10px;padding:10px;border:1px solid rgba(255,210,90,.20);border-radius:10px;background:rgba(255,210,90,.035)">
-    <div style="font-weight:900">🎯 SHORT TIMING</div>
+    <div style="font-weight:900">🎯 SHORT TIMING <span style="font-size:11px;color:var(--muted)">• 1m ENTRY EXECUTION</span></div>
     ${row('🟠','SHORT SETUP',s.setup)}
     ${row('🟢','SELLING LOCATION',s.location)}
-    ${row('⚠️','15m REJECTION',s.rejection)}
-    ${row('🟠','15m LOWER HIGH',s.lh)}
-    ${row('🔴','15m LOWER LOW / BEARISH BREAK',s.ll)}
+    ${row('⚠️','1m REJECTION',s.rejection)}
+    ${row('🟠','1m LOWER HIGH',s.lh)}
+    ${row('🔴','1m LOWER LOW / BEARISH BREAK',s.ll)}
     <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🔴 SHORT ENTRY</span><strong>${entry(s.entry)}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = Rejection + LH • 🔴 CONFIRMED = stronger bearish entry sequence (bearish break / LL).</div>
-    <div style="margin-top:10px;font-weight:900">🎯 LONG TIMING</div>
+    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = 1m Rejection + 1m LH • 🔴 CONFIRMED = stronger 1m bearish entry sequence (bearish break / LL).</div>
+    <div style="margin-top:10px;font-weight:900">🎯 LONG TIMING <span style="font-size:11px;color:var(--muted)">• 1m ENTRY EXECUTION</span></div>
     ${row('🟢','LONG SETUP',l.setup)}
     ${row('🟢','BUYING LOCATION',l.location)}
-    ${row('⚠️','15m DEFENSE / RECLAIM',l.reclaim)}
-    ${row('🟠','15m HIGHER LOW',l.hl)}
-    ${row('🟢','15m HIGHER HIGH / BULLISH BREAK',l.hh)}
+    ${row('⚠️','1m DEFENSE / RECLAIM',l.reclaim)}
+    ${row('🟠','1m HIGHER LOW',l.hl)}
+    ${row('🟢','1m HIGHER HIGH / BULLISH BREAK',l.hh)}
     <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🟢 LONG ENTRY</span><strong>${entry(l.entry).replace('🔴','🟢')}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = Defense/Reclaim + HL • 🟢 CONFIRMED = stronger bullish entry sequence (bullish break / HH).</div>
+    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = 1m Defense/Reclaim + 1m HL • 🟢 CONFIRMED = stronger 1m bullish entry sequence (bullish break / HH).</div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:8px"><span>🔴 SIGNIFICANT CORRECTION</span><strong>${t.correctionConfirmed?'CONFIRMED':'NOT CONFIRMED'}</strong></div>
     <div style="margin-top:5px;font-size:11px;color:var(--muted)">15m EMA200 is a correction-depth confirmation layer, NOT an entry requirement. A short/long entry can be confirmed before EMA200 confirmation.</div>
   </div>`;
@@ -7010,7 +7011,7 @@ function getTraderExecutionTimeframe(r, zone){
   let tf='15m', trigger='', rationale='';
   if(side==='SELL'){
     if(hasLH || /REJECTION/.test(liqEvent) || rsi15>=70){
-      trigger='15m rejection + lower-high confirmation';
+      trigger='1m rejection + lower-high confirmation';
       rationale='Use 4H/1H for context and 15m for the actual short trigger.';
     }else if(rsi1h>=70 || rsi4h>=72){
       tf='1H';
@@ -7022,7 +7023,7 @@ function getTraderExecutionTimeframe(r, zone){
     }
   }else if(side==='BUY'){
     if(hasHL || /DOWNSIDE.*REJECTION|RECLAIM/.test(liqEvent) || (rsi15>=40 && rsi15<=65)){
-      trigger='15m reclaim + higher-low confirmation';
+      trigger='1m reclaim + higher-low confirmation';
       rationale='Use 4H/1H for context and 15m for the actual long trigger.';
     }else if(rsi1h>=40 && rsi1h<=68 && rsi4h>=40 && rsi4h<=68){
       tf='1H';
@@ -7620,6 +7621,7 @@ function renderTable(results){
    Uses the same Binance Futures klines already fetched by the scanner result.
    No extra request is made until a user selects a different timeframe. */
 const BINANCE_CHART_CFG = {
+  '1m':  { key:'k1mEntry', label:'1m', candles:240 },
   '15m': { key:'k15m', label:'15m', candles:240 },
   '1h':  { key:'k1h',  label:'1H',  candles:240 },
   '4h':  { key:'k4h',  label:'4H',  candles:240 },
@@ -7833,7 +7835,7 @@ function chartRender(symbol, tf){
   const fullCandles=chartKlinesFor(r,tf);
   // Keep enough history for indicators, but display fewer lower-timeframe candles
   // so 15m price action is not horizontally compressed.
-  const visibleCount = tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
+  const visibleCount = tf==='1m' ? 180 : tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
   const candles=fullCandles.slice(-visibleCount);
   host.dataset.tf=tf;
   host.querySelectorAll('.binanceTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
@@ -8018,13 +8020,14 @@ function renderCards(results){
           <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
         </div>
 
-<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
+<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="1m">
           <div class="binanceChartHead">
-            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • scanner levels and EMA structure overlaid</div></div>
+            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 1m entry chart + higher-timeframe scanner levels and EMA structure</div></div>
             <div class="binanceChartControls">
+              <button type="button" class="binanceTfBtn active" data-tf="1m">1m</button>
               <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
               <button type="button" class="binanceTfBtn" data-tf="1h">1H</button>
-              <button type="button" class="binanceTfBtn active" data-tf="4h">4H</button>
+              <button type="button" class="binanceTfBtn" data-tf="4h">4H</button>
               <button type="button" class="binanceTfBtn" data-tf="1d">1D</button>
               <button type="button" class="binanceChartAction" data-action="fit">↻</button>
             </div>
