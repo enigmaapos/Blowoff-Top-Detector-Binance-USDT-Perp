@@ -904,22 +904,29 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filters by the same Trader Decision price zones shown in each result. Buying/Selling means the price is inside or approaching that zone.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">🟢 Long Timing Filter</label>
+          <label class="controlLabel">🟢 Long Entry Status</label>
           <select id="longEntryFilter">
-            <option value="ALL">All Long Timing</option>
-            <option value="EARLY">🟠 EARLY — Defense/Reclaim + HL</option>
-            <option value="CONFIRMED">🟢 CONFIRMED — Stronger bullish sequence</option>
+            <option value="ALL">All Long Entry States</option>
+            <option value="CONFIRMED">🟢 Confirmed / staged</option>
+            <option value="STAGED">⚠️ Staged / conditional</option>
+            <option value="CONDITIONAL">🟡 Conditional</option>
+            <option value="WAIT">⏸ Wait</option>
+            <option value="NOT_READY">❌ Not yet / wait</option>
+            <option value="DONT_CHASE">🚫 Don't chase</option>
           </select>
-          <div class="dashboardHint">EARLY = Defense/Reclaim + HL. CONFIRMED = stronger bullish entry sequence (adds HH / bullish break).</div>
+          <div class="dashboardHint">Filters by the actual Long entry status and its current confirmation condition.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">🔴 Short Timing Filter</label>
+          <label class="controlLabel">🔴 Short Entry Status</label>
           <select id="shortEntryFilter">
-            <option value="ALL">All Short Timing</option>
-            <option value="EARLY">🟠 EARLY — Rejection + LH</option>
-            <option value="CONFIRMED">🔴 CONFIRMED — Stronger bearish sequence</option>
+            <option value="ALL">All Short Entry States</option>
+            <option value="CONDITIONAL">🟠 Conditional</option>
+            <option value="WAIT">⏸ Wait</option>
+            <option value="REJECTION">🟠 Rejection / failed bounce</option>
+            <option value="LOWER_HIGH">🔴 Failed bounce / lower-high</option>
+            <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
           </select>
-          <div class="dashboardHint">EARLY = Rejection + LH. CONFIRMED = stronger bearish entry sequence (adds LL / bearish break).</div>
+          <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
         </div>
       </div>
     </div>
@@ -1083,76 +1090,35 @@ function playBlowoffAlert(symbol) {
   }
 }
 
-// Timing-only alert state. Blowoff score, accumulation, favorites, and
-// ordinary scan results do NOT play the notification sound anymore.
-const alertedTimingStates = new Map();
-
-// Distinctive short two-tone entry chime generated locally. This avoids
-// relying on an external sound file and is used ONLY for timing alerts.
-function playTimingAlert(symbol, side, level) {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const now = ctx.currentTime;
-    const notes = side === 'short' ? [660, 440] : [523.25, 783.99];
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
-    gain.connect(ctx.destination);
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      osc.connect(gain);
-      osc.start(now + i * 0.16);
-      osc.stop(now + 0.16 + i * 0.16);
-    });
-    setTimeout(() => { try { ctx.close(); } catch (_) {} }, 700);
-    console.log(`Timing alert sound: ${symbol} ${side} ${level}`);
-  } catch (err) {
-    console.warn('Timing alert sound skipped:', err);
-  }
-}
-
-function getTimingAlertLevel(item) {
-  try {
-    const t = calculateTimingFramework(item, 'short');
-    const l = t.long;
-    const s = t.short;
-    if (s.entry === 'CONFIRMED') return {side:'short', level:'CONFIRMED'};
-    if (s.entry === 'EARLY') return {side:'short', level:'EARLY'};
-    if (l.entry === 'CONFIRMED') return {side:'long', level:'CONFIRMED'};
-    if (l.entry === 'EARLY') return {side:'long', level:'EARLY'};
-    return {side:null, level:'NOT YET'};
-  } catch (_) {
-    return {side:null, level:'NOT YET'};
-  }
-}
-
-// Play a sound only when SHORT/LONG timing advances into EARLY or CONFIRMED.
-// NOT YET never sounds. The state must first return to NOT YET before a
-// later EARLY/CONFIRMED transition can alert again.
-function triggerTimingSounds(results) {
+// A single sound rule for the entire app: sound only when a symbol newly
+// reaches the configured Blowoff Score threshold. Accumulation, favorites
+// refreshes, and other score-3 conditions cannot trigger sound by themselves.
+function triggerBlowoffSounds(results) {
   if (!Array.isArray(results)) return;
-  const seen = new Set();
+  const threshold = parseInt(el.threshold?.value, 10) || 4;
+  const currentBlowoffs = new Set();
+
   for (const item of results) {
-    if (!item?.symbol) continue;
+    if (!item || !item.symbol) continue;
     const symbol = String(item.symbol).toUpperCase();
-    const state = getTimingAlertLevel(item);
-    const key = `${state.side || 'none'}:${state.level}`;
-    seen.add(symbol);
-    const previous = alertedTimingStates.get(symbol) || 'none:NOT YET';
-    if ((state.level === 'EARLY' || state.level === 'CONFIRMED') && previous !== key) {
-      alertedTimingStates.set(symbol, key);
-      playTimingAlert(symbol, state.side, state.level);
-    } else if (state.level === 'NOT YET') {
-      alertedTimingStates.set(symbol, 'none:NOT YET');
+    const isBlowoff = Number(item.score) >= threshold;
+    if (isBlowoff) {
+      currentBlowoffs.add(symbol);
+      if (!alertedBlowoffSymbols.has(symbol)) {
+        alertedBlowoffSymbols.add(symbol);
+        playBlowoffAlert(symbol);
+      }
+    } else {
+      // Re-arm the symbol so a later new blowoff can sound again.
+      alertedBlowoffSymbols.delete(symbol);
     }
   }
-  for (const symbol of [...alertedTimingStates.keys()]) {
-    if (!seen.has(symbol)) alertedTimingStates.delete(symbol);
+
+  // Remove symbols no longer present in the current result set.
+  for (const symbol of [...alertedBlowoffSymbols]) {
+    if (!currentBlowoffs.has(symbol) && !results.some(r => String(r?.symbol || '').toUpperCase() === symbol)) {
+      alertedBlowoffSymbols.delete(symbol);
+    }
   }
 }
 
@@ -2600,7 +2566,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       opts.prefetchedK15
         ? Promise.resolve(opts.prefetchedK15)
         : safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
-      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1M ENTRY EXECUTION
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1w&limit=20`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1W
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1M&limit=12`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1M
@@ -2608,6 +2574,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       Number(opts.livePrice)>0
         ? Promise.resolve({price:Number(opts.livePrice), source:String(opts.livePriceSource||'Binance 24h ticker')})
         : safeFetch(`${API_BASE}/fapi/v1/ticker/price?symbol=${sym}`, { allowIfNotRunning: opts.allowIfNotRunning })
+            .catch(err => ({ price:null, source:'ticker unavailable', error:err?.message||String(err) }))
     ];
     const [k4hFull, k8hFull, k1h, k15, k1mEntry, k1d, k1w, k1m, f, liveTicker] = await Promise.all(promises);
 
@@ -2639,12 +2606,19 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const last4 = (k4h && k4h.length) ? k4h[k4h.length-1] : null;
     if(!last4) throw new Error('No 4H candles returned');
 
-    // Canonical live Binance price snapshot. Historical indicators remain
-    // candle-derived; Trader Decision location uses this live price.
-    const livePriceRaw = Number(opts.livePrice)>0 ? Number(opts.livePrice) : Number(liveTicker?.price);
-    if(!Number.isFinite(livePriceRaw) || livePriceRaw<=0) throw new Error('Binance live price unavailable');
+    // Canonical price snapshot. A live ticker is preferred, but ticker failure
+    // must NOT abort analysis: fall back to the latest available 1m/15m kline close.
+    const tickerPrice = Number(liveTicker?.price);
+    const fallback1m = Number((k1mEntry||[]).at(-1)?.[4]);
+    const fallback15m = Number((k15||[]).at(-1)?.[4]);
+    const livePriceRaw = Number(opts.livePrice)>0 ? Number(opts.livePrice)
+      : (Number.isFinite(tickerPrice)&&tickerPrice>0 ? tickerPrice
+      : (Number.isFinite(fallback1m)&&fallback1m>0 ? fallback1m : fallback15m));
+    if(!Number.isFinite(livePriceRaw) || livePriceRaw<=0) throw new Error('No usable Binance price or kline data');
     const livePrice = livePriceRaw;
-    const livePriceSource = String(opts.livePriceSource || liveTicker?.source || 'Binance ticker price');
+    const livePriceSource = Number(opts.livePrice)>0 ? String(opts.livePriceSource||'Provided price')
+      : (Number.isFinite(tickerPrice)&&tickerPrice>0 ? 'Binance live ticker'
+      : (Number.isFinite(fallback1m)&&fallback1m>0 ? 'Binance 1m kline fallback' : 'Binance 15m kline fallback'));
     const nowMs = Date.now();
     const closed4 = [...(k4hFull||[])].reverse().find(k=>Number(k?.[6])<=nowMs) || last4;
     const last4CloseTime = Number(last4?.[6]||0);
@@ -5647,23 +5621,14 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => traderBiasMatches(r, biasFilter));
   }
 
-  // Timing filters use the dedicated 15m entry-timing framework, not the
-  // legacy Trader Decision status labels. This keeps the filter definitions
-  // identical to the timing panel shown on each result.
   const longEntryFilter = el.longEntryFilter ? el.longEntryFilter.value : 'ALL';
   if (longEntryFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const t = calculateTimingFramework(r || {}, 'long');
-      return String(t?.long?.entry || 'NOT YET').toUpperCase() === longEntryFilter;
-    });
+    filtered = filtered.filter(r => entryStatusMatches(r, 'long', longEntryFilter));
   }
 
   const shortEntryFilter = el.shortEntryFilter ? el.shortEntryFilter.value : 'ALL';
   if (shortEntryFilter !== 'ALL') {
-    filtered = filtered.filter(r => {
-      const t = calculateTimingFramework(r || {}, 'short');
-      return String(t?.short?.entry || 'NOT YET').toUpperCase() === shortEntryFilter;
-    });
+    filtered = filtered.filter(r => entryStatusMatches(r, 'short', shortEntryFilter));
   }
 
   // Dedicated Trader Decision price-zone filter. This uses the exact same
@@ -6630,7 +6595,7 @@ function professionalState(item, rec){
 
 function calculateEntryPathFramework(item, side, statusCode){
   const r=item||{};
-  const candles=Array.isArray(r.k1mEntry)?r.k1mEntry:[];
+  const candles=Array.isArray(r.k15m)?r.k15m:[];
   const closes=candles.map(k=>Number(k?.[4])).filter(Number.isFinite);
   const price=Number(r.closeNow ?? closes[closes.length-1]);
   const emaFn=typeof ema==='function'?ema:null;
@@ -6689,16 +6654,16 @@ function calculateEntryPathFramework(item, side, statusCode){
     state=confirmed&&inside?'SHORT ZONE CONFIRMED':'WAIT FOR SHORT CONFIRMATION';
     stateIcon=confirmed&&inside?'🔴':'🟠';
     stateText=confirmed&&inside
-      ? 'Selling zone is active; execute only after 1m rejection + lower-high confirmation.'
-      : 'Bearish/short path is the primary scenario, but wait for price into the selling zone and the 1m rejection + lower-high entry trigger.';
+      ? 'Selling zone is active; execute only after 15m rejection + lower-high confirmation.'
+      : 'Bearish/short path is the primary scenario, but wait for price into the selling zone and rejection + lower-high confirmation.';
   } else if(primarySide==='long'){
     const confirmed=!!entryZoneObj?.confirmed;
     const inside=!!entryZoneObj?.inside;
     state=confirmed&&inside?'LONG ZONE CONFIRMED':'WAIT FOR LONG CONFIRMATION';
     stateIcon=confirmed&&inside?'🟢':'🟡';
     stateText=confirmed&&inside
-      ? 'Buying zone is active; execute only after 1m reclaim + higher-low confirmation.'
-      : 'Long path is the primary scenario, but wait for price into the buying zone and the 1m reclaim + higher-low entry trigger.';
+      ? 'Buying zone is active; execute only after 15m reclaim + higher-low confirmation.'
+      : 'Long path is the primary scenario, but wait for price into the buying zone and reclaim + higher-low confirmation.';
   }
 
   const pct=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&b>0?((a/b-1)*100):null;
@@ -6711,92 +6676,6 @@ function calculateEntryPathFramework(item, side, statusCode){
   return {price,ema50,ema200,state,stateIcon,stateText,sideLabel,entryLabel,primarySide,contested:!!zones?.contested,entryZoneObj,targetZoneObj,referenceEntry,maeBoundary,maePct,expectedTarget,mfePct,fromEntryTo50,fromEntryTo200,fmt,fp};
 }
 
-function calculateTimingFramework(item, side){
-  const r=item||{};
-  const candles=Array.isArray(r.k1mEntry)?r.k1mEntry:[];
-  const price=Number(r.closeNow ?? candles.at(-1)?.[4] ?? 0);
-  const requested=String(side||'').toLowerCase();
-  const zones=(()=>{try{return getTraderDecisionZones(r)||{};}catch(e){return {};}})();
-  const shortZone=zones.sell, longZone=zones.buy;
-  const phase=String(r.phase?.phase||r.phase||'');
-  const cg=r.correctionGuide||getCorrectionGuide(r)||{};
-  const rsi4h=Number(r.rsi4h||0), accum=Number(r.accumCombined?.confidence??r.accum??0);
-  const ema70=Number(r.ema70DistPct||0), blow=Number(r.score||0);
-  const dist=/distribution|breakdown/i.test(phase);
-  const setupShort = dist || rsi4h>=78 || ema70>=12 || blow>=10 || !!r.lowerHigh || String(cg.code||'').includes('RISK') || String(cg.code||'').includes('DEVELOPING');
-  const setupLong = !setupShort && (accum>=55 || /accumulation|re-accumulation|recovery/i.test(phase));
-
-  // Confirmed 1m entry structure from completed candles only. The latest candle is
-  // treated as the current bar and is not used as a confirmed pivot.
-  const bars=candles.slice(-80);
-  const pivH=[], pivL=[];
-  for(let i=2;i<bars.length-2;i++){
-    const h=Number(bars[i]?.[2]), l=Number(bars[i]?.[3]);
-    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
-    let sh=h>Number(bars[i-1]?.[2])&&h>=Number(bars[i+1]?.[2]);
-    let sl=l<Number(bars[i-1]?.[3])&&l<=Number(bars[i+1]?.[3]);
-    for(let j=2;j<=2;j++){
-      sh=sh&&h>Number(bars[i-j]?.[2])&&h>=Number(bars[i+j]?.[2]);
-      sl=sl&&l<Number(bars[i-j]?.[3])&&l<=Number(bars[i+j]?.[3]);
-    }
-    if(sh)pivH.push({i,price:h});
-    if(sl)pivL.push({i,price:l});
-  }
-  const lastH=pivH.at(-1), prevH=pivH.at(-2), lastL=pivL.at(-1), prevL=pivL.at(-2);
-  const lh=!!(lastH&&prevH&&lastH.price<prevH.price);
-  const ll=!!(lastL&&prevL&&lastL.price<prevL.price);
-  const hl=!!(lastL&&prevL&&lastL.price>prevL.price);
-  const hh=!!(lastH&&prevH&&lastH.price>prevH.price);
-  const latest=bars.at(-1), prev=bars.at(-2);
-  const latestClose=Number(latest?.[4]), latestHigh=Number(latest?.[2]), latestLow=Number(latest?.[3]);
-  const prevLow=Number(prev?.[3]), prevHigh=Number(prev?.[2]);
-  const bearishBreak=ll || (Number.isFinite(latestClose)&&Number.isFinite(prevLow)&&latestClose<prevLow);
-  const bullishBreak=hh || (Number.isFinite(latestClose)&&Number.isFinite(prevHigh)&&latestClose>prevHigh);
-
-  const rejectionShort=!!(shortZone && Number.isFinite(price) && Number(price)>=Number(shortZone.low) && Number(price)<=Number(shortZone.high) && Number.isFinite(latestHigh) && Number.isFinite(latestClose) && latestHigh>latestClose && ((latestHigh-latestClose)/(Math.max(1e-12,latestHigh-Number(latestLow))))>=0.35);
-  const rejectionLong=!!(longZone && Number.isFinite(price) && Number(price)>=Number(longZone.low) && Number(price)<=Number(longZone.high) && Number.isFinite(latestLow) && Number.isFinite(latestClose) && latestClose>latestLow && ((latestClose-latestLow)/(Math.max(1e-12,Number(latestHigh)-latestLow)))>=0.35);
-  const shortLocation=!!(shortZone?.inside||shortZone?.near);
-  const longLocation=!!(longZone?.inside||longZone?.near);
-  const shortEarly=rejectionShort&&lh;
-  const shortStrong=shortEarly&&bearishBreak;
-  const shortBest=shortStrong && ll;
-  const longEarly=rejectionLong&&hl;
-  const longStrong=longEarly&&bullishBreak;
-  const longBest=longStrong && hh;
-  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'EARLY':'NOT YET';
-  const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'EARLY':'NOT YET';
-  const correctionConfirmed=Number(cg.ema200Stretch15)<0;
-  const primary=requested==='long'?'long':requested==='short'?'short':shortLocation&&!longLocation?'short':longLocation&&!shortLocation?'long':setupShort?'short':'long';
-  return {short:{setup:setupShort,location:shortLocation,rejection:rejectionShort,lh,ll:bearishBreak,entry:shortEntry,best:shortBest},long:{setup:setupLong,location:longLocation,reclaim:rejectionLong,hl,hh:bullishBreak,entry:longEntry,best:longBest},correctionConfirmed,primary};
-}
-
-function renderTimingPanel(item, side){
-  const t=calculateTimingFramework(item,side);
-  const s=t.short, l=t.long;
-  const row=(icon,label,val)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span>${icon} ${label}</span><strong>${val?'YES':'NO'}</strong></div>`;
-  const entry=(v)=>v==='CONFIRMED'?'🔴 CONFIRMED':v==='EARLY'?'🟠 EARLY':'🟡 NOT YET';
-  return `<div class="timingFramework" style="margin-top:10px;padding:10px;border:1px solid rgba(255,210,90,.20);border-radius:10px;background:rgba(255,210,90,.035)">
-    <div style="font-weight:900">🎯 SHORT TIMING <span style="font-size:11px;color:var(--muted)">• 1m ENTRY EXECUTION</span></div>
-    ${row('🟠','SHORT SETUP',s.setup)}
-    ${row('🟢','SELLING LOCATION',s.location)}
-    ${row('⚠️','1m REJECTION',s.rejection)}
-    ${row('🟠','1m LOWER HIGH',s.lh)}
-    ${row('🔴','1m LOWER LOW / BEARISH BREAK',s.ll)}
-    <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🔴 SHORT ENTRY</span><strong>${entry(s.entry)}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = 1m Rejection + 1m LH • 🔴 CONFIRMED = stronger 1m bearish entry sequence (bearish break / LL).</div>
-    <div style="margin-top:10px;font-weight:900">🎯 LONG TIMING <span style="font-size:11px;color:var(--muted)">• 1m ENTRY EXECUTION</span></div>
-    ${row('🟢','LONG SETUP',l.setup)}
-    ${row('🟢','BUYING LOCATION',l.location)}
-    ${row('⚠️','1m DEFENSE / RECLAIM',l.reclaim)}
-    ${row('🟠','1m HIGHER LOW',l.hl)}
-    ${row('🟢','1m HIGHER HIGH / BULLISH BREAK',l.hh)}
-    <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🟢 LONG ENTRY</span><strong>${entry(l.entry).replace('🔴','🟢')}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = 1m Defense/Reclaim + 1m HL • 🟢 CONFIRMED = stronger 1m bullish entry sequence (bullish break / HH).</div>
-    <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:8px"><span>🔴 SIGNIFICANT CORRECTION</span><strong>${t.correctionConfirmed?'CONFIRMED':'NOT CONFIRMED'}</strong></div>
-    <div style="margin-top:5px;font-size:11px;color:var(--muted)">15m EMA200 is a correction-depth confirmation layer, NOT an entry requirement. A short/long entry can be confirmed before EMA200 confirmation.</div>
-  </div>`;
-}
-
 function renderEntryPathFramework(item, side, statusCode){
   const x=calculateEntryPathFramework(item,side,statusCode);
   const entry=x.entryZoneObj;
@@ -6804,22 +6683,20 @@ function renderEntryPathFramework(item, side, statusCode){
   const zoneText=entry?`${x.fmt(entry.low)}–${x.fmt(entry.high)}`:'mapped zone unavailable';
   const targetText=target?`${x.fmt(target.low)}–${x.fmt(target.high)}`:'opposing zone not mapped';
   const band=x.referenceEntry>0?`<div style="margin-top:7px;display:grid;grid-template-columns:1fr 1fr;gap:7px"><div><strong>EMA50:</strong> ${x.fmt(x.ema50)} <span class="small">(${x.fp(x.fromEntryTo50)} from planned reference)</span></div><div><strong>EMA200:</strong> ${x.fmt(x.ema200)} <span class="small">(${x.fp(x.fromEntryTo200)} from planned reference)</span></div></div>`:'';
-  const locationLine=x.contested
-    ? '<div style="margin-top:6px"><strong>🟠 WAIT:</strong> Zones are contested. No trade path is activated until directional resolution.</div>'
-    : `<div style="margin-top:6px"><strong>📍 Planned reference entry:</strong> ${x.referenceEntry>0?x.fmt(x.referenceEntry):'—'}${entry?` • ${zoneText} ${x.primarySide==='short'?'selling':'buying'} zone`:''}</div>`;
+  const path=x.expectedTarget>0&&Number.isFinite(x.mfePct)
+    ? `<div style="margin-top:6px"><strong>📈 MFE / favorable path:</strong> ${x.fmt(x.expectedTarget)} <span class="small">(${x.fp(x.mfePct)}) → opposing ${x.primarySide==='short'?'BUYING':'SELLING'} zone</span></div>`
+    : `<div style="margin-top:6px"><strong>📈 MFE / favorable path:</strong> opposing zone is not a favorable mapped target yet</div>`;
   return `<div class="entryPathFramework" style="margin-top:9px;padding:10px;border-radius:9px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.12)">
     <div style="font-weight:900">📐 ENTRY PATH / EXCURSION</div>
-    ${renderTimingPanel(item,x.primarySide)}
     <div style="margin-top:5px"><strong>${x.entryLabel}</strong> • ${x.sideLabel}</div>
-    ${locationLine}
+    ${x.contested?`<div style="margin-top:6px"><strong>🟠 WAIT:</strong> Zones are contested. No trade path is activated until directional resolution.</div>`:`<div style="margin-top:6px"><strong>📍 Planned reference entry:</strong> ${x.referenceEntry>0?x.fmt(x.referenceEntry):'—'}${entry?` • ${zoneText} ${x.primarySide==='short'?'selling':'buying'} zone`:''}</div>
     <div style="margin-top:6px"><strong>📉 MAE framework:</strong> The active planned entry zone and its adverse edge define the scenario MAE. EMA50/EMA200 remain structural context.</div>
     ${x.maeBoundary>0?`<div style="margin-top:6px"><strong>📉 MAE boundary:</strong> ${x.fmt(x.maeBoundary)} <span class="small">(${x.fp(x.maePct)} adverse from zone midpoint)</span> • ${x.primarySide==='short'?'above selling-zone high':'below buying-zone low'}</div>`:''}
     ${x.expectedTarget>0?`<div style="margin-top:6px"><strong>🎯 Expected target:</strong> ${x.fmt(x.expectedTarget)} <span class="small">• target zone ${targetText}</span></div>`:''}
-    <div style="margin-top:6px"><strong>🧭 Execution sequence:</strong> ${x.primarySide==='short' ? 'Selling zone → 15m rejection → LH → LL / bearish break → SHORT ENTRY' : x.primarySide==='long' ? 'Buying zone → 15m defense/reclaim → HL → HH / bullish break → LONG ENTRY' : 'Resolve direction → mapped zone → 15m trigger → ENTRY'}</div>
-    <div style="margin-top:6px"><strong>📌 Entry timing rule:</strong> ${x.primarySide==='short' ? 'Rejection + LH = early trigger; rejection + LH + LL/bearish break = stronger confirmation.' : x.primarySide==='long' ? 'Defense/reclaim + HL = early trigger; defense/reclaim + HL + HH/bullish break = stronger confirmation.' : 'No directional entry until structure resolves.'}</div>
+    ${path}
     <div style="margin-top:6px"><strong>${x.stateIcon} Current path:</strong> ${x.state} — ${x.stateText}</div>
     ${band}
-    <div style="margin-top:7px;font-size:11px;color:var(--muted)">The reference entry is a planned zone midpoint, not a claim that an entry has already occurred. MAE is a scenario excursion reference, not a stop-loss promise. EMA200 remains structural context/invalidation.</div>
+    <div style="margin-top:7px;font-size:11px;color:var(--muted)">The reference entry is a planned zone midpoint, not a claim that an entry has already occurred. MAE is a scenario excursion reference, not a stop-loss promise. EMA200 remains structural context/invalidation.</div>`}
   </div>`;
 }
 
@@ -6981,60 +6858,49 @@ function getTraderDecisionZones(r){
   return {buy,sell,active,overlap,contested,dominantSide,dominanceMargin};
 }
 function getTraderExecutionTimeframe(r, zone){
-  const item=r||{};
   const z=zone||{};
-  const phase=String(item.phase?.phase||item.phase||'').toLowerCase();
-  const rsi15=Number(item.rsi15||0);
-  const rsi1h=Number(item.rsi1h||0);
-  const rsi4h=Number(item.rsi4h||0);
-  const hasLH=!!item.hasLowerHigh || Number(item.lowerHighCount||0)>0 || (item.phase?.reasons||[]).some(x=>/lower[- ]?high/i.test(String(x)));
-  const hasHL=!!item.hasHigherLow || Number(item.higherLowCount||0)>0 || (item.phase?.reasons||[]).some(x=>/higher[- ]?low/i.test(String(x)));
-  const liqEvent=String(item.liquidity?.event||'').toUpperCase();
-  const inside=!!z.inside;
-  const confirmed=!!z.confirmed;
-  const side=z.side;
+  if(z.contested) return {tf:'WAIT',trigger:'Wait for zone resolution',rationale:'Zones are contested. Resolve direction first, then execute from 1m price action.',inside:!!z.inside,confirmed:false,contested:true};
+  if(z.side==='SELL') return {tf:'1m',trigger:'1m rejection + lower-high; stronger with bearish break / LL',rationale:'4H/1H/15m provide context and setup/location; 1m is the only entry trigger timeframe.',inside:!!z.inside,confirmed:!!z.confirmed,contested:false};
+  if(z.side==='BUY') return {tf:'1m',trigger:'1m defense/reclaim + higher-low; stronger with bullish break / HH',rationale:'4H/1H/15m provide context and setup/location; 1m is the only entry trigger timeframe.',inside:!!z.inside,confirmed:!!z.confirmed,contested:false};
+  return {tf:'1m',trigger:'1m rejection/LH for short or defense/reclaim/HL for long',rationale:'4H/1H/15m provide context; 1m is the execution timeframe.',inside:!!z.inside,confirmed:!!z.confirmed,contested:false};
+}
 
-  if(z.contested){
-    return {
-      tf:'WAIT',
-      trigger:'Wait for zone resolution',
-      rationale:'Buying and selling zones overlap. Wait for a confirmed 15m reclaim + higher-low or rejection + lower-high before execution.',
-      inside,
-      confirmed:false,
-      contested:true
-    };
-  }
-
-  // Execution TF is deliberately separate from the liquidity-source TF.
-  // Higher TFs define context; 15m is the default execution layer because
-  // the scanner already has 15m structure/RSI/EMA confirmation data.
-  let tf='15m', trigger='', rationale='';
-  if(side==='SELL'){
-    if(hasLH || /REJECTION/.test(liqEvent) || rsi15>=70){
-      trigger='1m rejection + lower-high confirmation';
-      rationale='Use 4H/1H for context and 15m for the actual short trigger.';
-    }else if(rsi1h>=70 || rsi4h>=72){
-      tf='1H';
-      trigger='1H rejection; refine entry on 15m';
-      rationale='Higher-timeframe rejection is present; use 15m to refine the entry.';
-    }else{
-      trigger='15m rejection or lower-high confirmation';
-      rationale='Wait for 15m structure confirmation before execution.';
-    }
-  }else if(side==='BUY'){
-    if(hasHL || /DOWNSIDE.*REJECTION|RECLAIM/.test(liqEvent) || (rsi15>=40 && rsi15<=65)){
-      trigger='1m reclaim + higher-low confirmation';
-      rationale='Use 4H/1H for context and 15m for the actual long trigger.';
-    }else if(rsi1h>=40 && rsi1h<=68 && rsi4h>=40 && rsi4h<=68){
-      tf='1H';
-      trigger='1H reclaim; refine entry on 15m';
-      rationale='Recovery evidence is developing; use 15m for precise execution.';
-    }else{
-      trigger='15m reclaim or higher-low confirmation';
-      rationale='Wait for 15m structure confirmation before execution.';
-    }
-  }
-  return {tf,trigger,rationale,inside,confirmed};
+/* ---------- Dedicated 1m entry execution engine ----------
+   4H = context, 15m = setup/location, 1m = actual trigger. */
+function entry1mCompletedCandles(r){
+  const arr=Array.isArray(r?.k1mEntry)?r.k1mEntry:[]; const now=Date.now();
+  return arr.filter(k=>Array.isArray(k)&&k.length>=7&&Number(k[6])<=now);
+}
+function entry1mPivots(vals,look=2){
+  const out=[]; for(let i=look;i<vals.length-look;i++){ let hi=true,lo=true; for(let j=1;j<=look;j++){if(vals[i]<=vals[i-j]||vals[i]<=vals[i+j])hi=false;if(vals[i]>=vals[i-j]||vals[i]>=vals[i+j])lo=false;} if(hi)out.push({i,type:'H',value:vals[i]}); if(lo)out.push({i,type:'L',value:vals[i]}); } return out;
+}
+function calculate1mEntryTiming(item){
+  const r=item||{},candles=entry1mCompletedCandles(r),price=Number(r.closeNow||0);
+  const zones=(()=>{try{return getTraderDecisionZones(r)||{};}catch(e){return {};}})(),sell=zones.sell||null,buy=zones.buy||null;
+  const highs=candles.map(k=>Number(k[2])),lows=candles.map(k=>Number(k[3])),closes=candles.map(k=>Number(k[4])),opens=candles.map(k=>Number(k[1]));
+  const base=Math.max(0,highs.length-120),hh=highs.slice(-120),ll=lows.slice(-120);
+  const ph=entry1mPivots(hh,2).map(x=>({...x,i:x.i+base})),pl=entry1mPivots(ll,2).map(x=>({...x,i:x.i+base}));
+  const recentH=ph.slice(-4),recentL=pl.slice(-4);
+  const lowerHigh=recentH.length>=2&&recentH.at(-1).value<recentH.at(-2).value;
+  const higherLow=recentL.length>=2&&recentL.at(-1).value>recentL.at(-2).value;
+  const last=candles.at(-1),prev=candles.at(-2);
+  const o=Number(last?.[1]),h=Number(last?.[2]),lo=Number(last?.[3]),c=Number(last?.[4]),pc=Number(prev?.[4]);
+  const range=Math.max(1e-12,h-lo),upper=Math.max(0,h-Math.max(o,c))/range,lower=Math.max(0,Math.min(o,c)-lo)/range;
+  const inSell=!!sell&&price>=Number(sell.low)&&price<=Number(sell.high),inBuy=!!buy&&price>=Number(buy.low)&&price<=Number(buy.high);
+  const rejection=inSell&&(upper>=0.35||(h>=Number(sell.low)&&c<Number(sell.low))||(Number.isFinite(pc)&&pc>=Number(sell.low)&&c<pc));
+  const defense=inBuy&&(lower>=0.35||(lo<=Number(buy.high)&&c>Number(buy.high))||(Number.isFinite(pc)&&pc<=Number(buy.high)&&c>pc));
+  const priorLow=recentL.at(-1)?.value||0,priorHigh=recentH.at(-1)?.value||0;
+  const bearishBreak=!!priorLow&&c<priorLow,bullishBreak=!!priorHigh&&c>priorHigh;
+  const phase=String(r.phase?.phase||r.phase||'').toLowerCase();
+  const shortSetup=!!(r.lowerHigh||Number(r.lowerHighs||0)>0||/distribution|breakdown|bearish/.test(phase)||Number(r.preCrash?.score||0)>=4||Number(r.topDetection?.score||0)>=55);
+  const longSetup=!!(r.higherLow||Number(r.higherLows||0)>0||/accumulation|recovery|re-accumulation|bullish/.test(phase));
+  const shortEarly=rejection&&lowerHigh,shortConfirmed=shortEarly&&bearishBreak,longEarly=defense&&higherLow,longConfirmed=longEarly&&bullishBreak;
+  return {candles,price,zones,sell,buy,inSell,inBuy,rejection,defense,lowerHigh,higherLow,bearishBreak,bullishBreak,pivots:{highs:recentH,lows:recentL},last,short:{setup:shortSetup,location:inSell,rejection,lowerHigh,bearishBreak,entry:shortConfirmed?'CONFIRMED':shortEarly?'EARLY':'NOT YET'},long:{setup:longSetup,location:inBuy,defense,higherLow,bullishBreak,entry:longConfirmed?'CONFIRMED':longEarly?'EARLY':'NOT YET'}};
+}
+function render1mTimingPanel(item){
+  const t=calculate1mEntryTiming(item),s=t.short,l=t.long,yn=v=>v?'YES':'NO';
+  const badge=(v,side)=>v==='CONFIRMED'?`<strong style="color:${side==='short'?'#ff5c5c':'#2dd4bf'}">${v}</strong>`:v==='EARLY'?'<strong style="color:#ffb454">EARLY</strong>':'<strong style="color:#ffd966">NOT YET</strong>';
+  return `<div class="timingPanel" style="margin-top:9px;padding:10px;border-radius:10px;background:rgba(126,220,255,.04);border:1px solid rgba(126,220,255,.12)"><div style="font-weight:900">🎯 SHORT TIMING • 1m ENTRY EXECUTION</div><div class="small" style="margin-top:4px">15m/4H context + 15m zone • 1m trigger only</div><div style="margin-top:7px;line-height:1.55">🟠 SHORT SETUP <strong>${yn(s.setup)}</strong><br>🟢 SELLING LOCATION <strong>${yn(s.location)}</strong><br>⚠️ 1m REJECTION <strong>${yn(s.rejection)}</strong><br>🟠 1m LOWER HIGH <strong>${yn(s.lowerHigh)}</strong><br>🔴 1m LOWER LOW / BEARISH BREAK <strong>${yn(s.bearishBreak)}</strong><br>🔴 SHORT ENTRY ${badge(s.entry,'short')}</div><div class="small" style="margin-top:5px">🟠 EARLY = 1m Rejection + LH • 🔴 CONFIRMED = Rejection + LH + bearish break / LL.</div><div style="font-weight:900;margin-top:11px">🎯 LONG TIMING • 1m ENTRY EXECUTION</div><div style="margin-top:7px;line-height:1.55">🟢 LONG SETUP <strong>${yn(l.setup)}</strong><br>🟢 BUYING LOCATION <strong>${yn(l.location)}</strong><br>⚠️ 1m DEFENSE / RECLAIM <strong>${yn(l.defense)}</strong><br>🟠 1m HIGHER LOW <strong>${yn(l.higherLow)}</strong><br>🟢 1m HIGHER HIGH / BULLISH BREAK <strong>${yn(l.bullishBreak)}</strong><br>🟢 LONG ENTRY ${badge(l.entry,'long')}</div><div class="small" style="margin-top:5px">🟠 EARLY = 1m Defense/Reclaim + HL • 🟢 CONFIRMED = Defense/Reclaim + HL + bullish break / HH.</div><div style="margin-top:8px;font-size:11px;color:var(--muted)">1m completed candles used: ${t.candles.length}. Current live price is used only for zone location.</div></div>`;
 }
 
 function formatTraderZonePrice(v){
@@ -7403,6 +7269,7 @@ function renderTraderDecisionBlock(r, compact=false){
     </div>` : ''}
     ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed on the execution timeframe.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
+    ${render1mTimingPanel(item)}
     ${renderEntryPathFramework(item, (()=>{ const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); return /bearish|short/.test(tb)?'short':/bullish|controlled|recovery/.test(tb)?'long':'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
     ${renderTraderDecisionAudit(item,compact)}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
@@ -7621,11 +7488,11 @@ function renderTable(results){
    Uses the same Binance Futures klines already fetched by the scanner result.
    No extra request is made until a user selects a different timeframe. */
 const BINANCE_CHART_CFG = {
-  '1m':  { key:'k1mEntry', label:'1m', candles:240 },
-  '15m': { key:'k15m', label:'15m', candles:240 },
-  '1h':  { key:'k1h',  label:'1H',  candles:240 },
-  '4h':  { key:'k4h',  label:'4H',  candles:240 },
-  '1d':  { key:'k1d',  label:'1D',  candles:120 }
+  '1m': { key:'k1mEntry', label:'1m ENTRY', candles:120 },
+  '15m': { key:'k15m', label:'15m', candles:96 },
+  '1h':  { key:'k1h',  label:'1H',  candles:96 },
+  '4h':  { key:'k4h',  label:'4H',  candles:96 },
+  '1d':  { key:'k1d',  label:'1D',  candles:80 }
 };
 
 function chartEsc(v){ return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -7655,147 +7522,29 @@ function chartFormatVol(v){
   if(n>=1e3) return (n/1e3).toFixed(1)+'K';
   return n.toFixed(0);
 }
-function chartLevelCandidates(r, tf, candles){
+function chartLevelCandidates(r){
   const levels=[];
-  const add=(name,value,type,source)=>{const n=chartNum(value); if(n&&n>0) levels.push({name,value:n,type,source:source||''});};
-  const arr=Array.isArray(candles)?candles:[];
-  const candlePrice=arr.length?Number(arr[arr.length-1]?.[4]):0;
-  const scannerPrice=Number(r?.closeNow??r?.last??r?.price??0);
-  const price=Number.isFinite(candlePrice)&&candlePrice>0?candlePrice:scannerPrice;
-  const eps=price>0?Math.max(price*0.0005,Number.EPSILON):0;
-
-  // A level is only a valid chart Resistance when it is ABOVE the current
-  // displayed price. A Support must be BELOW it. Never relabel a broken
-  // resistance as the active resistance line.
-  const validResistance=v=>Number.isFinite(Number(v))&&Number(v)>price+eps;
-  const validSupport=v=>Number.isFinite(Number(v))&&Number(v)<price-eps;
-
-  // Find confirmed local swing pivots from the same timeframe being displayed.
-  const highs=[], lows=[];
-  for(let i=2;i<arr.length-2;i++){
-    const h=Number(arr[i]?.[2]), l=Number(arr[i]?.[3]);
-    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
-    let sh=h>Number(arr[i-1]?.[2])&&h>=Number(arr[i+1]?.[2]);
-    let sl=l<Number(arr[i-1]?.[3])&&l<=Number(arr[i+1]?.[3]);
-    for(let j=2;j<=2;j++){
-      sh=sh&&h>Number(arr[i-j]?.[2])&&h>=Number(arr[i+j]?.[2]);
-      sl=sl&&l<Number(arr[i-j]?.[3])&&l<=Number(arr[i+j]?.[3]);
-    }
-    if(sh) highs.push(h);
-    if(sl) lows.push(l);
-  }
-
-  const above=validResistance(price)?highs.filter(validResistance).sort((a,b)=>a-b):[];
-  const below=validSupport(price)?lows.filter(validSupport).sort((a,b)=>b-a):[];
-
-  if(above.length) add('Resistance',above[0],'resistance',tf+' swing');
-  if(below.length) add('Support',below[0],'support',tf+' swing');
-
-  const is4h=String(tf).toLowerCase()==='4h';
-  const scannerResistance=Number(r?.resistanceLevel);
-  const scannerSupport=Number(r?.supportLevel);
-
-  // 4H scanner structure remains primary only when it is on the correct side
-  // of the current price. If it has been broken, use a valid local pivot or
-  // leave the side empty rather than displaying an inverted S/R label.
-  if(is4h){
-    if(validResistance(scannerResistance)){
-      for(let i=levels.length-1;i>=0;i--) if(levels[i].type==='resistance') levels.splice(i,1);
-      add('Resistance',scannerResistance,'resistance','4H structure');
-    }
-    if(validSupport(scannerSupport)){
-      for(let i=levels.length-1;i>=0;i--) if(levels[i].type==='support') levels.splice(i,1);
-      add('Support',scannerSupport,'support','4H structure');
-    }
-  }else{
-    if(!levels.some(x=>x.type==='resistance') && validResistance(scannerResistance)){
-      add('Resistance',scannerResistance,'resistance','4H fallback');
-    }
-    if(!levels.some(x=>x.type==='support') && validSupport(scannerSupport)){
-      add('Support',scannerSupport,'support','4H fallback');
-    }
-  }
-
-  // Final hard safety gate: never allow an inverted level through, regardless
-  // of which source produced it.
-  return levels.filter(x=>x.type==='resistance'?validResistance(x.value):validSupport(x.value));
-}
-function chartStructurePivots(candles){
-  const arr=Array.isArray(candles)?candles:[], highs=[], lows=[];
-  for(let i=2;i<arr.length-2;i++){
-    const h=Number(arr[i]?.[2]), l=Number(arr[i]?.[3]);
-    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
-    let sh=h>Number(arr[i-1]?.[2])&&h>=Number(arr[i+1]?.[2]);
-    let sl=l<Number(arr[i-1]?.[3])&&l<=Number(arr[i+1]?.[3]);
-    for(let j=2;j<=2;j++){
-      sh=sh&&h>Number(arr[i-j]?.[2])&&h>=Number(arr[i+j]?.[2]);
-      sl=sl&&l<Number(arr[i-j]?.[3])&&l<=Number(arr[i+j]?.[3]);
-    }
-    if(sh) highs.push({i,price:h,type:'high'});
-    if(sl) lows.push({i,price:l,type:'low'});
-  }
-  const classify=(pivots)=>pivots.map((p,i)=>({...p,label:i===0?'':p.price<pivots[i-1].price?(p.type==='high'?'LH':'LL'):(p.type==='high'?'HH':'HL')}));
-  return {highs:classify(highs),lows:classify(lows)};
-}
-function chartStructureBias(structure){
-  const hs=structure.highs.filter(x=>x.label).slice(-1)[0]?.label||'';
-  const ls=structure.lows.filter(x=>x.label).slice(-1)[0]?.label||'';
-  if(hs==='LH'&&ls==='LL') return 'BEARISH';
-  if(hs==='HH'&&ls==='HL') return 'BULLISH';
-  if(hs==='LH'||ls==='LL') return 'BEARISH RISK';
-  if(hs==='HH'||ls==='HL') return 'BULLISH SUPPORT';
-  return 'MIXED';
-}
-function chartDrawStructure(ctx,structure,xFor,yFor,pad,w){
-  const pivots=[...structure.highs,...structure.lows].filter(p=>p.label).sort((a,b)=>a.i-b.i).slice(-6);
-  if(!pivots.length) return;
-  ctx.save();
-  ctx.lineWidth=1.2; ctx.setLineDash([2,3]); ctx.strokeStyle='rgba(207,232,255,.38)';
-  for(let i=1;i<pivots.length;i++){
-    const a=pivots[i-1], b=pivots[i];
-    ctx.beginPath();ctx.moveTo(xFor(a.i),yFor(a.price));ctx.lineTo(xFor(b.i),yFor(b.price));ctx.stroke();
-  }
-  ctx.setLineDash([]);ctx.font='bold 9px sans-serif';ctx.textAlign='center';
-  pivots.forEach(p=>{
-    const x=xFor(p.i), y=yFor(p.price);
-    ctx.fillStyle=p.label==='LH'||p.label==='LL'?'#ff8b8b':'#8de9d5';
-    ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();
-    ctx.fillText(p.label,x,p.type==='high'?y-7:y+12);
-  });
-  const bias=chartStructureBias(structure);
-  ctx.textAlign='left';ctx.font='bold 10px sans-serif';
-  ctx.fillStyle=bias.startsWith('BEARISH')?'#ff8b8b':bias.startsWith('BULLISH')?'#8de9d5':'#d7e2ef';
-  ctx.fillText('Structure: '+bias,pad.left+4,pad.top+12);
-  ctx.restore();
-}
-
-function chartZoneObjects(r){
+  const add=(name,value,type)=>{const n=chartNum(value); if(n&&n>0) levels.push({name,value:n,type});};
+  add('Support',r?.supportLevel,'support');
+  add('Resistance',r?.resistanceLevel,'resistance');
+  // Nearby downside/upside structure from the same target engine used in the card.
   try{
-    const z=(typeof getTraderDecisionZones==='function') ? getTraderDecisionZones(r) : {};
-    const out=[];
-    const b=z?.buy, sell=z?.sell;
-    if(b && Number.isFinite(Number(b.low)) && Number.isFinite(Number(b.high)) && Number(b.high)>Number(b.low)) out.push({side:'BUY',low:Number(b.low),high:Number(b.high),label:'Buying Zone'});
-    if(sell && Number.isFinite(Number(sell.low)) && Number.isFinite(Number(sell.high)) && Number(sell.high)>Number(sell.low)) out.push({side:'SELL',low:Number(sell.low),high:Number(sell.high),label:'Selling Zone'});
-    return out;
-  }catch(_){ return []; }
-}
-function chartDrawZones(ctx,zones,xFor,yFor,pad,w,minP,maxP){
-  if(!zones?.length) return;
-  ctx.save();
-  zones.forEach(z=>{
-    const lo=Math.max(minP,z.low), hi=Math.min(maxP,z.high);
-    if(hi<=lo) return;
-    const y1=yFor(hi), y2=yFor(lo);
-    ctx.fillStyle=z.side==='SELL'?'rgba(255,92,108,.075)':'rgba(45,212,191,.065)';
-    ctx.fillRect(pad.left,y1,w-pad.left-pad.right,Math.max(2,y2-y1));
-    ctx.strokeStyle=z.side==='SELL'?'rgba(255,92,108,.30)':'rgba(45,212,191,.28)';
-    ctx.setLineDash([3,4]); ctx.lineWidth=1;
-    [y1,y2].forEach(y=>{ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();});
-    ctx.setLineDash([]); ctx.font='bold 9px sans-serif';ctx.textAlign='left';
-    ctx.fillStyle=z.side==='SELL'?'#ffb0b8':'#9ff4dc';
-    ctx.fillText(z.label,w-pad.right+5,y1+10);
-  });
-  ctx.restore();
+    const lt=getLongTermTargets(r)||{};
+    add('S1',lt.s1,'support'); add('S2',lt.s2,'support');
+    add('R1',lt.t1,'resistance'); add('R2',lt.t2,'resistance');
+  }catch(e){}
+  // Liquidity Intelligence pools from the same scanner result. These are
+  // drawn as contextual zones and do not alter the EMA200 correction layer.
+  try{
+    const l=r?.liquidity || (typeof detectLiquidityIntelligence==='function'?detectLiquidityIntelligence(r):{});
+    const df=getLiquidityDisplayFilter();
+    const pools=df==='UPSIDE' ? (l?.above||[]) : df==='DOWNSIDE' ? (l?.below||[]) : [...(l?.above||[]),...(l?.below||[])];
+    pools.slice(0,6).forEach((x,i)=>{
+      if(x?.price) levels.push({name:`💧 ${x.type||'Liquidity'} ${x.tf||''}`,value:Number(x.price),type:Number(x.price)>=Number(r.closeNow)?'liqAbove':'liqBelow',strength:Number(x.strength||0),distancePct:Number(x.distancePct||0)});
+    });
+  }catch(e){}
+  // The most useful transition trigger is the primary structural support.
+  return levels;
 }
 function chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP,minT,maxT){
   ctx.save();
@@ -7819,24 +7568,15 @@ function chartDrawLine(ctx, values, xFor, yFor, lineWidth, dash){
   if(started) ctx.stroke(); ctx.restore();
 }
 function chartRender(symbol, tf){
-  const safeSymbol=String(symbol||'');
-  const host=[...document.querySelectorAll('.binanceChartPanel[data-symbol]')].find(h=>String(h.dataset.symbol||'').toUpperCase()===safeSymbol.toUpperCase());
+  const host=document.querySelector(`.binanceChartPanel[data-symbol="${CSS.escape(symbol)}"]`);
   if(!host) return;
-  const status=host.querySelector('.binanceChartStatus');
-  try{
-    const r=(Array.isArray(window.results)?window.results:[]).find(x=>String(x?.symbol||'').toUpperCase()===safeSymbol.toUpperCase());
-    if(!r){ if(status) status.textContent='Chart data unavailable for this symbol.'; return; }
+  const r=(Array.isArray(window.results)?window.results:[]).find(x=>String(x?.symbol||'').toUpperCase()===String(symbol).toUpperCase());
+  if(!r) return;
   const canvas=host.querySelector('.binanceChartCanvas');
   const wrap=host.querySelector('.binanceChartCanvasWrap');
+  const status=host.querySelector('.binanceChartStatus');
   if(!canvas||!wrap) return;
-  // Give lower timeframes more vertical room so candles, HH/HL/LH/LL and volume remain readable.
-  const compactWidth=window.innerWidth<=760;
-  wrap.style.height = tf==='15m' ? (compactWidth?'400px':'460px') : tf==='1h' ? (compactWidth?'360px':'410px') : tf==='4h' ? (compactWidth?'330px':'360px') : (compactWidth?'310px':'340px');
-  const fullCandles=chartKlinesFor(r,tf);
-  // Keep enough history for indicators, but display fewer lower-timeframe candles
-  // so 15m price action is not horizontally compressed.
-  const visibleCount = tf==='1m' ? 180 : tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
-  const candles=fullCandles.slice(-visibleCount);
+  const candles=chartKlinesFor(r,tf);
   host.dataset.tf=tf;
   host.querySelectorAll('.binanceTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
   if(!candles.length){ canvas.style.display='none'; wrap.innerHTML='<div class="binanceChartEmpty">No Binance candle data is available for this timeframe yet.</div>'; return; }
@@ -7850,45 +7590,27 @@ function chartRender(symbol, tf){
   ctx.fillStyle='#0d1724';ctx.fillRect(0,0,w,h);
   const pad={left:8,right:62,top:12,bottom:54}, volH=Math.min(72,h*.20), plotTop=pad.top, plotBottom=h-pad.bottom-volH;
   const opens=candles.map(k=>Number(k[1])), highs=candles.map(k=>Number(k[2])), lows=candles.map(k=>Number(k[3])), closes=candles.map(k=>Number(k[4])), vols=candles.map(k=>Number(k[5]));
-  const cw=Math.max(2,(w-pad.left-pad.right)/candles.length*.68);
-  let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r,tf,candles);
+  let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r);
   levels.forEach(l=>{if(l.value>=minP*.985&&l.value<=maxP*1.015){minP=Math.min(minP,l.value);maxP=Math.max(maxP,l.value);}});
   const range=Math.max(maxP-minP,maxP*.0001); minP-=range*.05; maxP+=range*.05;
   const xFor=i=>pad.left+(w-pad.left-pad.right)*(i+.5)/candles.length;
   const yFor=p=>plotTop+(maxP-p)/(maxP-minP)*(plotBottom-plotTop);
+  const maxV=Math.max(...vols,1);
+  const volY=v=>plotBottom+4+(maxV-v)/maxV*volH;
   chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP);
-  // Volume: always visible in a dedicated lower panel so participation can be read with price.
-  const maxV=Math.max(...vols.filter(Number.isFinite),1);
+  // Volume
   ctx.save(); ctx.globalAlpha=.72;
-  candles.forEach((k,i)=>{
-    const v=Number(vols[i]); if(!Number.isFinite(v)) return;
-    const x=xFor(i)-cw/2, y=plotBottom+4+(maxV-v)/maxV*volH;
-    ctx.fillStyle=closes[i]>=opens[i]?'#2dd4bf':'#ff5c6c';
-    ctx.fillRect(x,y,Math.max(1,cw),Math.max(1,plotBottom+volH-y));
-  });
-  ctx.restore();
-  ctx.save(); ctx.fillStyle='rgba(207,232,255,.55)'; ctx.font='bold 9px sans-serif'; ctx.textAlign='left'; ctx.fillText('VOLUME',pad.left,plotBottom+15); ctx.restore();
-  // Market structure: confirmed swing HH/HL/LH/LL labels and bias.
-  // This is independent of S/R, so a bearish structure can be shown before
-  // the 15m EMA200 correction-confirmation rule is triggered.
-  const structure=chartStructurePivots(candles);
-  const zones=chartZoneObjects(r);
+  const cw=Math.max(2,(w-pad.left-pad.right)/candles.length*.68);
+  candles.forEach((k,i)=>{const x=xFor(i)-cw/2, y=volY(vols[i]); const up=closes[i]>=opens[i]; ctx.fillStyle=up?'#2dd4bf':'#ff5c6c';ctx.fillRect(x,y,cw,plotBottom+volH-y);}); ctx.restore();
   // Candles
   candles.forEach((k,i)=>{
     const x=xFor(i), o=opens[i], hi=highs[i], lo=lows[i], cl=closes[i], up=cl>=o;
     ctx.strokeStyle=up?'#2dd4bf':'#ff5c6c'; ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(x,yFor(hi));ctx.lineTo(x,yFor(lo));ctx.stroke();
     const top=yFor(Math.max(o,cl)), bot=yFor(Math.min(o,cl)); ctx.fillStyle=up?'#2dd4bf':'#ff5c6c'; ctx.fillRect(x-cw/2,top,Math.max(1,cw),Math.max(1,bot-top));
   });
-  // Show only the most important trend/correction reference: EMA200.
-  if(fullCandles.length>=200){
-    const fullCloses=fullCandles.map(k=>Number(k[4]));
-    const fullEma=chartEma(fullCloses,200);
-    const emaVisible=fullEma.slice(-candles.length);
-    ctx.strokeStyle='rgba(255,255,255,.90)';
-    chartDrawLine(ctx,emaVisible,xFor,yFor,2.0,[]);
-  }
-  // Buying / selling zones are shown as context bands; they do not confirm an entry.
-  chartDrawZones(ctx,zones,xFor,yFor,pad,w,minP,maxP);
+  // EMA overlays: 14 / 21 / 50 / 200 when enough candles exist.
+  const emas=[[14,'rgba(255,217,102,.95)'],[21,'rgba(126,220,255,.95)'],[50,'rgba(215,120,255,.9)'],[200,'rgba(159,179,204,.85)']];
+  emas.forEach(([p,col])=>{if(closes.length>=p){ctx.strokeStyle=col;chartDrawLine(ctx,chartEma(closes,p),xFor,yFor,1.15,[]);}});
   // Scanner structural levels
   levels.forEach(l=>{
     if(l.value<minP||l.value>maxP) return;
@@ -7901,20 +7623,28 @@ function chartRender(symbol, tf){
     ctx.fillStyle=isLiq ? (l.type==='liqAbove'?'#ffe38a':'#ff7b86') : (l.type==='support'?'#9ff4dc':'#ffd0a1');
     ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(l.name+' '+chartFormatPrice(l.value),w-pad.right+5,y-3);ctx.restore();
   });
-  // Plot the latest confirmed market-structure pivots after candles/EMA/SR.
-  chartDrawStructure(ctx,structure,xFor,yFor,pad,w);
+  // 1m execution overlays: 15m zones are location; 1m pivots are execution.
+  if(tf==='1m'){
+    try{
+      const et=calculate1mEntryTiming(r);
+      const band=(z,stroke,fill,label)=>{if(!z)return;const a=Number(z.low),b=Number(z.high);if(!Number.isFinite(a)||!Number.isFinite(b))return;const y1=yFor(a),y2=yFor(b);ctx.save();ctx.fillStyle=fill;ctx.fillRect(pad.left,Math.min(y1,y2),w-pad.left-pad.right,Math.abs(y2-y1));ctx.strokeStyle=stroke;ctx.setLineDash([5,4]);ctx.strokeRect(pad.left,Math.min(y1,y2),w-pad.left-pad.right,Math.abs(y2-y1));ctx.setLineDash([]);ctx.fillStyle=stroke;ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(label,w-pad.right+5,Math.min(y1,y2)+11);ctx.restore();};
+      band(et.sell,'rgba(255,92,92,.75)','rgba(255,92,92,.08)','SELL 15m ZONE'); band(et.buy,'rgba(45,212,191,.75)','rgba(45,212,191,.08)','BUY 15m ZONE');
+      et.pivots.highs.slice(-3).forEach(p=>{const x=xFor(p.i),y=yFor(p.value);ctx.save();ctx.fillStyle='#ff7b86';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.fillText('LH/HH',x,y-7);ctx.restore();});
+      et.pivots.lows.slice(-3).forEach(p=>{const x=xFor(p.i),y=yFor(p.value);ctx.save();ctx.fillStyle='#9ff4dc';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.fillText('HL/LL',x,y+12);ctx.restore();});
+      if(et.rejection){const x=xFor(candles.length-1),y=yFor(Number(candles[candles.length-1][4]));ctx.save();ctx.fillStyle='#ff5c5c';ctx.font='bold 10px sans-serif';ctx.fillText('⚠ 1m REJECTION',x-38,y-18);ctx.restore();}
+      if(et.defense){const x=xFor(candles.length-1),y=yFor(Number(candles[candles.length-1][4]));ctx.save();ctx.fillStyle='#2dd4bf';ctx.font='bold 10px sans-serif';ctx.fillText('⚠ 1m DEFENSE',x-32,y+24);ctx.restore();}
+    }catch(e){console.warn('1m chart overlay skipped',e);}
+  }
   // Current price
   const last=closes[closes.length-1], ly=yFor(last);ctx.save();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.left,ly);ctx.lineTo(w-pad.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(chartFormatPrice(last),w-pad.right+5,ly+11);ctx.restore();
   // Date labels
   ctx.fillStyle='rgba(207,232,255,.48)';ctx.font='9px sans-serif';ctx.textAlign='center';
-  [0,Math.floor(candles.length/2),candles.length-1].forEach(i=>{const d=new Date(Number(candles[i][0]));ctx.fillText(d.toLocaleString(undefined,{month:'short',day:'numeric',hour:tf==='1d'?undefined:'2-digit',minute:tf==='1d'?undefined:'2-digit'}),xFor(i),h-10);});
+  [0,Math.floor(candles.length/2),candles.length-1].forEach(i=>{const d=new Date(Number(candles[i][0]));ctx.fillText(d.toLocaleString(undefined,{month:'short',day:'numeric',hour:tf==='1d'?undefined:'2-digit',minute:tf==='1d'?undefined:'2-digit'}),xFor(i),h-16);});
+  // Volume label
+  ctx.textAlign='left';ctx.fillText('VOL',pad.left,plotBottom+13);
   const cfg=BINANCE_CHART_CFG[tf];
   const lastTime=new Date(Number(candles[candles.length-1][6]||candles[candles.length-1][0]));
   status.textContent=`Binance Futures • ${cfg.label} • ${candles.length} candles • Last ${chartFormatPrice(last)} • Updated ${lastTime.toLocaleTimeString()}`;
-  }catch(err){
-    console.error('Chart render error', safeSymbol, tf, err);
-    if(status) status.textContent=`Chart error: ${err?.message||'unable to render'}`;
-  }
 }
 function bindBinanceCharts(){
   document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
@@ -7924,26 +7654,26 @@ function bindBinanceCharts(){
         const btn=ev.target.closest('.binanceTfBtn');
         if(btn){ ev.preventDefault(); chartRender(host.dataset.symbol,btn.dataset.tf); }
         const fit=ev.target.closest('.binanceChartAction[data-action="fit"]');
-        if(fit){ ev.preventDefault(); chartRender(host.dataset.symbol,host.dataset.tf||'4h'); }
+        if(fit){ ev.preventDefault(); chartRender(host.dataset.symbol,host.dataset.tf||'1m'); }
       });
     }
     // The Binance Futures chart is displayed directly under Trader Decision,
     // outside the collapsible Detailed Evidence <details>. Render it immediately.
-    chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+    chartRender(host.dataset.symbol,host.dataset.tf||'1m');
   });
 }
 window.addEventListener('resize',()=>{
   document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
-    chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+    chartRender(host.dataset.symbol,host.dataset.tf||'1m');
   });
 });
 document.addEventListener('toggle',ev=>{
   const d=ev.target.closest?.('details.coinDetails'); if(!d||!d.open) return;
-  const host=d.querySelector('.binanceChartPanel[data-symbol]'); if(host) setTimeout(()=>chartRender(host.dataset.symbol,host.dataset.tf||'4h'),30);
+  const host=d.querySelector('.binanceChartPanel[data-symbol]'); if(host) setTimeout(()=>chartRender(host.dataset.symbol,host.dataset.tf||'1m'),30);
 },true);
 // Chart is outside Detailed Evidence, so resize it independently.
 window.addEventListener('load',()=>{
-  setTimeout(()=>document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>chartRender(host.dataset.symbol,host.dataset.tf||'4h')),60);
+  setTimeout(()=>document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>chartRender(host.dataset.symbol,host.dataset.tf||'1m')),60);
 });
 
 function renderCards(results){
@@ -8022,9 +7752,9 @@ function renderCards(results){
 
 <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="1m">
           <div class="binanceChartHead">
-            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 1m entry chart + higher-timeframe scanner levels and EMA structure</div></div>
+            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • scanner levels and EMA structure overlaid</div></div>
             <div class="binanceChartControls">
-              <button type="button" class="binanceTfBtn active" data-tf="1m">1m</button>
+              <button type="button" class="binanceTfBtn active" data-tf="1m">1m ENTRY</button>
               <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
               <button type="button" class="binanceTfBtn" data-tf="1h">1H</button>
               <button type="button" class="binanceTfBtn" data-tf="4h">4H</button>
@@ -8033,8 +7763,8 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>HH / HL / LH / LL</span><span>— Current price</span></div>
-          <div class="binanceChartStatus">Preparing Binance candle chart…</div>
+          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span>${getLiquidityDisplayFilter()==='DOWNSIDE'?'': '<span style="color:#ffe38a">💧 Upside liquidity</span>'}${getLiquidityDisplayFilter()==='UPSIDE'?'': '<span style="color:#ff6675">💧 Downside liquidity</span>'}<span>— Current price</span></div>
+          <div class="binanceChartStatus">Loading Binance candle data…</div>
         </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
@@ -8940,10 +8670,9 @@ async function runScan(once=false, suppliedSession=null){
     commitScannerSurface('main');
     commitMarketScanResults(results);
 
-    // TIMING-ONLY SOUND RULE: sound only when SHORT/LONG entry timing
-    // advances from NOT YET into EARLY or CONFIRMED. Blowoff score and
-    // accumulation alerts are silent.
-    triggerTimingSounds(window.lastScanResults);
+    // SINGLE SOUND RULE: only a newly detected blowoff can trigger sound.
+    // Conditional accumulation alerts never trigger sound.
+    triggerBlowoffSounds(window.lastScanResults);
 
     // Browser notifications remain informational and follow the configured alert mode.
     const condEnabled = el.condAlert.checked;
@@ -9212,7 +8941,7 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
       try{
         document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
           const d=host.closest('details.coinDetails');
-          if(d?.open && typeof chartRender==='function') chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+          if(d?.open && typeof chartRender==='function') chartRender(host.dataset.symbol,host.dataset.tf||'1m');
         });
       }catch(e){}
     },120);
