@@ -7627,12 +7627,51 @@ function chartRender(symbol, tf){
   if(tf==='1m'){
     try{
       const et=calculate1mEntryTiming(r);
-      const band=(z,stroke,fill,label)=>{if(!z)return;const a=Number(z.low),b=Number(z.high);if(!Number.isFinite(a)||!Number.isFinite(b))return;const y1=yFor(a),y2=yFor(b);ctx.save();ctx.fillStyle=fill;ctx.fillRect(pad.left,Math.min(y1,y2),w-pad.left-pad.right,Math.abs(y2-y1));ctx.strokeStyle=stroke;ctx.setLineDash([5,4]);ctx.strokeRect(pad.left,Math.min(y1,y2),w-pad.left-pad.right,Math.abs(y2-y1));ctx.setLineDash([]);ctx.fillStyle=stroke;ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(label,w-pad.right+5,Math.min(y1,y2)+11);ctx.restore();};
-      band(et.sell,'rgba(255,92,92,.75)','rgba(255,92,92,.08)','SELL 15m ZONE'); band(et.buy,'rgba(45,212,191,.75)','rgba(45,212,191,.08)','BUY 15m ZONE');
-      et.pivots.highs.slice(-3).forEach(p=>{const x=xFor(p.i),y=yFor(p.value);ctx.save();ctx.fillStyle='#ff7b86';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.fillText('LH/HH',x,y-7);ctx.restore();});
-      et.pivots.lows.slice(-3).forEach(p=>{const x=xFor(p.i),y=yFor(p.value);ctx.save();ctx.fillStyle='#9ff4dc';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.fillText('HL/LL',x,y+12);ctx.restore();});
-      if(et.rejection){const x=xFor(candles.length-1),y=yFor(Number(candles[candles.length-1][4]));ctx.save();ctx.fillStyle='#ff5c5c';ctx.font='bold 10px sans-serif';ctx.fillText('⚠ 1m REJECTION',x-38,y-18);ctx.restore();}
-      if(et.defense){const x=xFor(candles.length-1),y=yFor(Number(candles[candles.length-1][4]));ctx.save();ctx.fillStyle='#2dd4bf';ctx.font='bold 10px sans-serif';ctx.fillText('⚠ 1m DEFENSE',x-32,y+24);ctx.restore();}
+      // Keep the chart readable: zones are wide translucent bands, while labels
+      // are placed inside the plot rather than in the crowded price-label gutter.
+      const band=(z,stroke,fill,label,topBias)=>{
+        if(!z)return;
+        const a=Number(z.low),b=Number(z.high);
+        if(!Number.isFinite(a)||!Number.isFinite(b))return;
+        const y1=yFor(a),y2=yFor(b),yt=Math.min(y1,y2),yb=Math.max(y1,y2);
+        ctx.save();
+        ctx.fillStyle=fill;ctx.fillRect(pad.left,yt,w-pad.left-pad.right,Math.max(2,yb-yt));
+        ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.setLineDash([5,4]);
+        ctx.strokeRect(pad.left,yt,w-pad.left-pad.right,Math.max(2,yb-yt));ctx.setLineDash([]);
+        ctx.fillStyle=stroke;ctx.font='bold 9px sans-serif';ctx.textAlign='left';
+        const ly=Math.max(plotTop+11,Math.min(plotBottom-4,yt+(topBias?11:Math.max(11,yb-yt-3))));
+        ctx.fillText(label,pad.left+5,ly);ctx.restore();
+      };
+      band(et.sell,'rgba(255,92,92,.75)','rgba(255,92,92,.07)','SELL 15m ZONE',true);
+      band(et.buy,'rgba(45,212,191,.75)','rgba(45,212,191,.07)','BUY 15m ZONE',false);
+
+      // Only the latest few pivots are shown, with alternating offsets so labels
+      // do not sit directly on top of one another.
+      const hi=et.pivots.highs.slice(-3), lo=et.pivots.lows.slice(-3);
+      hi.forEach((p,j)=>{
+        const x=xFor(p.i),y=yFor(p.value),off=(j%2)*10;
+        ctx.save();ctx.fillStyle='#ff7b86';ctx.font='bold 8px sans-serif';ctx.textAlign='center';
+        ctx.fillText(j===hi.length-1 ? (et.lowerHigh?'LH':'HH') : 'H',x,y-7-off);ctx.restore();
+      });
+      lo.forEach((p,j)=>{
+        const x=xFor(p.i),y=yFor(p.value),off=(j%2)*10;
+        ctx.save();ctx.fillStyle='#9ff4dc';ctx.font='bold 8px sans-serif';ctx.textAlign='center';
+        ctx.fillText(j===lo.length-1 ? (et.higherLow?'HL':'LL') : 'L',x,y+11+off);ctx.restore();
+      });
+
+      // Entry markers are attached to the latest completed 1m candle and use a
+      // compact tag, preventing long text from crossing the candle/EMA area.
+      const lastC=candles[candles.length-1], lx=xFor(candles.length-1), lclose=Number(lastC[4]), ly1=yFor(lclose);
+      if(et.rejection){
+        ctx.save();ctx.fillStyle='rgba(255,92,92,.16)';ctx.strokeStyle='#ff5c5c';ctx.lineWidth=1;
+        const bx=Math.min(w-pad.right-92,Math.max(pad.left,lx-46)),by=Math.max(plotTop+2,ly1-30);
+        ctx.fillRect(bx,by,92,16);ctx.strokeRect(bx,by,92,16);ctx.fillStyle='#ff8b94';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.fillText('1m REJECTION',bx+46,by+11);ctx.restore();
+      }
+      if(et.defense){
+        ctx.save();ctx.fillStyle='rgba(45,212,191,.16)';ctx.strokeStyle='#2dd4bf';ctx.lineWidth=1;
+        const bx=Math.min(w-pad.right-82,Math.max(pad.left,lx-41)),by=Math.min(plotBottom-18,ly1+10);
+        ctx.fillRect(bx,by,82,16);ctx.strokeRect(bx,by,82,16);ctx.fillStyle='#65e6d0';ctx.font='bold 8px sans-serif';ctx.textAlign='center';ctx.fillText('1m DEFENSE',bx+41,by+11);ctx.restore();
+      }
     }catch(e){console.warn('1m chart overlay skipped',e);}
   }
   // Current price
