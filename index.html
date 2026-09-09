@@ -7552,13 +7552,15 @@ function chartDrawLine(ctx, values, xFor, yFor, lineWidth, dash){
   if(started) ctx.stroke(); ctx.restore();
 }
 function chartRender(symbol, tf){
-  const host=document.querySelector(`.binanceChartPanel[data-symbol="${CSS.escape(symbol)}"]`);
+  const safeSymbol=String(symbol||'');
+  const host=document.querySelector(`.binanceChartPanel[data-symbol="${CSS.escape(safeSymbol)}"]`);
   if(!host) return;
-  const r=(Array.isArray(window.results)?window.results:[]).find(x=>String(x?.symbol||'').toUpperCase()===String(symbol).toUpperCase());
-  if(!r) return;
+  const status=host.querySelector('.binanceChartStatus');
+  try{
+    const r=(Array.isArray(window.results)?window.results:[]).find(x=>String(x?.symbol||'').toUpperCase()===safeSymbol.toUpperCase());
+    if(!r){ if(status) status.textContent='Chart data unavailable for this symbol.'; return; }
   const canvas=host.querySelector('.binanceChartCanvas');
   const wrap=host.querySelector('.binanceChartCanvasWrap');
-  const status=host.querySelector('.binanceChartStatus');
   if(!canvas||!wrap) return;
   const candles=chartKlinesFor(r,tf);
   host.dataset.tf=tf;
@@ -7611,6 +7613,10 @@ function chartRender(symbol, tf){
   const cfg=BINANCE_CHART_CFG[tf];
   const lastTime=new Date(Number(candles[candles.length-1][6]||candles[candles.length-1][0]));
   status.textContent=`Binance Futures • ${cfg.label} • ${candles.length} candles • Last ${chartFormatPrice(last)} • Updated ${lastTime.toLocaleTimeString()}`;
+  }catch(err){
+    console.error('Chart render error', safeSymbol, tf, err);
+    if(status) status.textContent=`Chart error: ${err?.message||'unable to render'}`;
+  }
 }
 function bindBinanceCharts(){
   document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
@@ -7728,8 +7734,8 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA14</span><span>EMA21</span><span>EMA50</span><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span>${getLiquidityDisplayFilter()==='DOWNSIDE'?'': '<span style="color:#ffe38a">💧 Upside liquidity</span>'}${getLiquidityDisplayFilter()==='UPSIDE'?'': '<span style="color:#ff6675">💧 Downside liquidity</span>'}<span>— Current price</span></div>
-          <div class="binanceChartStatus">Loading Binance candle data…</div>
+          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>— Current price</span></div>
+          <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
