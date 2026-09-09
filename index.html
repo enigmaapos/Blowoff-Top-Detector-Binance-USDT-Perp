@@ -7621,6 +7621,7 @@ function renderTable(results){
    Uses the same Binance Futures klines already fetched by the scanner result.
    No extra request is made until a user selects a different timeframe. */
 const BINANCE_CHART_CFG = {
+  '1m':  { key:'k1mEntry', label:'1m', candles:240 },
   '15m': { key:'k15m', label:'15m', candles:240 },
   '1h':  { key:'k1h',  label:'1H',  candles:240 },
   '4h':  { key:'k4h',  label:'4H',  candles:240 },
@@ -7834,7 +7835,7 @@ function chartRender(symbol, tf){
   const fullCandles=chartKlinesFor(r,tf);
   // Keep enough history for indicators, but display fewer lower-timeframe candles
   // so 15m price action is not horizontally compressed.
-  const visibleCount = tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
+  const visibleCount = tf==='1m' ? 180 : tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
   const candles=fullCandles.slice(-visibleCount);
   host.dataset.tf=tf;
   host.querySelectorAll('.binanceTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
@@ -8019,13 +8020,14 @@ function renderCards(results){
           <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
         </div>
 
-<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
+<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="1m">
           <div class="binanceChartHead">
-            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • scanner levels and EMA structure overlaid</div></div>
+            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 1m entry chart + higher-timeframe scanner levels and EMA structure</div></div>
             <div class="binanceChartControls">
+              <button type="button" class="binanceTfBtn active" data-tf="1m">1m</button>
               <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
               <button type="button" class="binanceTfBtn" data-tf="1h">1H</button>
-              <button type="button" class="binanceTfBtn active" data-tf="4h">4H</button>
+              <button type="button" class="binanceTfBtn" data-tf="4h">4H</button>
               <button type="button" class="binanceTfBtn" data-tf="1d">1D</button>
               <button type="button" class="binanceChartAction" data-action="fit">↻</button>
             </div>
