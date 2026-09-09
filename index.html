@@ -1887,8 +1887,17 @@ function renderMarketStructurePsychology(r){
     : "Structure data limited";
 
   const srFlip = r.srFlip || ms.srFlip || r.supportResistanceFlip || r.structureFlip || "None detected";
-  const support = r.support ?? r.supportLevel ?? ms.support ?? null;
-  const resistance = r.resistance ?? r.resistanceLevel ?? ms.resistance ?? null;
+  const rawSupport = r.support ?? r.supportLevel ?? ms.support ?? null;
+  const rawResistance = r.resistance ?? r.resistanceLevel ?? ms.resistance ?? null;
+  const currentStructurePrice = Number(r.closeNow ?? r.last ?? r.price ?? 0) || 0;
+  // Do not present an old/historical swing level as an active S/R level when
+  // it is on the wrong side of the current price. Execution zones are handled
+  // separately by Trader Decision Zones.
+  const support = (currentStructurePrice > 0 && Number.isFinite(Number(rawSupport)) && Number(rawSupport) < currentStructurePrice) ? rawSupport : null;
+  const resistance = (currentStructurePrice > 0 && Number.isFinite(Number(rawResistance)) && Number(rawResistance) > currentStructurePrice) ? rawResistance : null;
+  const historicalSrNote = (currentStructurePrice > 0 && ((rawSupport != null && Number(rawSupport) >= currentStructurePrice) || (rawResistance != null && Number(rawResistance) <= currentStructurePrice)))
+    ? `Historical swing levels are shown only when they are on the correct side of current price; Trader Decision Zones are the active execution levels.`
+    : '';
 
   const blowoff = mspNum(r.score);
   const preCrash = r.preCrash && typeof r.preCrash === "object" ? r.preCrash : {};
@@ -1986,8 +1995,9 @@ ${renderOverallMarketVerdict(r)}
         HH/HL suggests buyers are accepting higher prices; LH/LL suggests weakening demand and increasing selling pressure.
         Support/resistance flips are inferred from confirmed swing levels and breakout/retest behavior.
         Psychology labels are interpretations of measurable price/volume structure, not direct measurements of trader emotion.
-        ${support != null ? `<br><strong>Support:</strong> ${mspEscape(support)}` : ""}
-        ${resistance != null ? ` <strong>Resistance:</strong> ${mspEscape(resistance)}` : ""}
+        ${support != null ? `<br><strong>Structural support:</strong> ${mspEscape(support)}` : ""}
+        ${resistance != null ? ` <strong>Structural resistance:</strong> ${mspEscape(resistance)}` : ""}
+        ${historicalSrNote ? `<br><span class="mspSub">${mspEscape(historicalSrNote)}</span>` : ""}
       </div>
     </div>`;
 }
