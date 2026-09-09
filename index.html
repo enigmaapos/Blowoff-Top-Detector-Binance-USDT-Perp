@@ -3413,9 +3413,9 @@ function getCorrectionGuide(item) {
   if(ema200Stretch15!==null&&ema200Stretch15>=0&&downsideSignals>=2){
     let severityScore=downsideSignals*18; if(Math.abs(rawDropFromPeak)>=10)severityScore+=10; if(Math.abs(rawDropFromPeak)>=15)severityScore+=8; if(rsi15<45)severityScore+=7; if(rsi15<35)severityScore+=5; if(volumeSpike4h>=1.5)severityScore+=6; if(wickRatio4h>=1.5)severityScore+=5; severityScore=Math.max(0,Math.min(100,Math.round(severityScore)));
     const severity=severityScore>=70?'STRONG':severityScore>=45?'MODERATE':'EARLY'; const confidence=Math.max(60,Math.min(95,Math.round(55+severityScore*.4)));
-    const reasons=[meaningfulDecline?`Drop from peak ${rawDropFromPeak.toFixed(1)}%`:null,lowerHigh?'Lower-high structure':null,rsiFalling?'Short-term RSI weakness':null,belowShort15?'Price below short-term 15m EMAs':null,emaNear?`15m EMA200 stretch ${ema200Stretch15.toFixed(2)}%`:null];
+    const reasons=[lowerHigh?'Lower-high structure':null,belowShort15?'Price below short-term 15m EMAs':null,meaningfulDecline?`Drop from peak ${rawDropFromPeak.toFixed(1)}%`:null,rsiFalling?'Short-term RSI weakness':null,emaNear?`15m EMA200 stretch ${ema200Stretch15.toFixed(2)}%`:null,'15m EMA200 confirmation has not occurred'];
     if(emaNear&&ema200Stretch15>0)reasons.unshift('Deepening correction — approaching 15m EMA200');
-    const statusLabel = severity==='STRONG' ? '🟠 DEEPENING CORRECTION — NOT CONFIRMED' : '🟠 CORRECTION DEVELOPING — NOT CONFIRMED';
+    const statusLabel = severity==='STRONG' ? '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED' : '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED';
     return make('CORRECTION_DEVELOPING',statusLabel,'DEVELOPING','#f39c12',confidence,reasons,{severity,severityScore,progressSignals:downsideSignals,progressFlags,maxProgressSignals:5,confirmation:'15m EMA200 stretch < 0%'});
   }
   const exhaustionEvidence=volumeSpike4h>=1.2||wickRatio4h>=1.2||lowerHigh||rawDropFromPeak<=-15;
@@ -7802,8 +7802,8 @@ function renderCards(results){
 
         <div class="correctionGuidePro" style="--cg-color:${cgColor}">
           <div class="cgTitle">🔴 Correction Status — authoritative confirmation layer</div>
-          <div class="cgStatus" style="color:${cgColor}">${cg.label||'🟢 NOT CONFIRMED'} <span style="font-size:14px;color:#cfe8ff;font-weight:800">(${Number(cg.confidence||0)}%)</span></div>
-          <div class="cgMessage"><strong>${confirmed ? '🔴 SIGNIFICANT CORRECTION CONFIRMED' : (cg.code==='CORRECTION_DEVELOPING' ? '🟠 CORRECTION DEVELOPING — NOT CONFIRMED' : '🟢 NOT CONFIRMED / PRE-CORRECTION')}</strong></div>
+          <div class="cgStatus" style="color:${cgColor}">${cg.label||'🟢 NOT CONFIRMED'} ${confirmed ? '' : `<span style="font-size:14px;color:#cfe8ff;font-weight:800">(warning score: ${Number(cg.confidence||0)}/100 — not probability)</span>`}</div>
+          <div class="cgMessage"><strong>${confirmed ? '🔴 SIGNIFICANT CORRECTION CONFIRMED' : (cg.code==='CORRECTION_DEVELOPING' ? '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED' : '🟢 NOT CONFIRMED / PRE-CORRECTION')}</strong></div>
           <div class="cgMessage">${(cg.reasons&&cg.reasons.length)?cg.reasons.slice(0,3).join('; '):'No significant correction progression is confirmed.'}</div>
           <div class="cgEvidence"><strong>15m EMA200:</strong> ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} ${confirmed?'🔴 below EMA200 — confirmation active':'🟢 above EMA200 — confirmation not active'}</div>
           <div class="cgAuthority">Only this layer confirms a significant correction. Overheating, distribution, blowoff and pre-correction scores are warnings/context — not confirmation.</div>
