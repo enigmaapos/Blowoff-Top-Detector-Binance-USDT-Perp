@@ -872,6 +872,7 @@ body.authLocked{overflow:hidden}
             <option value="cycleMatch">Cycle Match %</option>
             <option value="correctionRank">Correction Status</option>
             <option value="correctionConfidence">Correction Confidence</option>
+            <option value="fourHourBearishRisk">⚠️ 4H Bearish Risk Score</option>
             <option value="fundingRate">Funding Rate</option>
             <option value="phase">Market Phase</option>
             <option value="phaseRank">Market Phase Rank</option>
@@ -927,6 +928,19 @@ body.authLocked{overflow:hidden}
             <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
           </select>
           <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">⚠️ 4H Bearish Risk Filter</label>
+          <select id="fourHourBearishRiskFilter">
+            <option value="ALL">All 4H Trend / Risk States</option>
+            <option value="BULLISH_RISK">🟡 4H Bullish → Bearish Risk</option>
+            <option value="ANY_RISK">🟠 Any 4H Bearish Risk</option>
+            <option value="HIGH_RISK">🔴 4H High Bearish Risk</option>
+            <option value="EXTREME_RISK">🔥 4H Extreme Bearish Risk</option>
+            <option value="BULLISH_LOW">🟢 4H Bullish — Low Risk</option>
+            <option value="BEARISH_TREND">🔻 4H Bearish Trend</option>
+          </select>
+          <div class="dashboardHint">4H trend and 4H bearish risk are separate. A coin can be 🟢 Bullish 4H while simultaneously showing 🟡/🟠 Bearish Risk.</div>
         </div>
       </div>
     </div>
@@ -1002,6 +1016,7 @@ const el = {
   longEntryFilter: document.getElementById('longEntryFilter'),
   traderZoneFilter: document.getElementById('traderZoneFilter'),
   shortEntryFilter: document.getElementById('shortEntryFilter'),
+  fourHourBearishRiskFilter: document.getElementById('fourHourBearishRiskFilter'),
   entryStatusSort: document.getElementById('entryStatusSort'),
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
@@ -2927,6 +2942,9 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       else if(result.topDetection.score>=25) result.topDetection.level='🟡 TOP RISK INCREASING';
     }
 
+    // ===== DEDICATED 4H BEARISH-RISK FILTER =====
+    result.fourHourBearishRisk = calculate4HBearishRisk(result);
+
     // ===== UNIFIED MARKET-CYCLE SYNTHESIS =====
     // Run after top/correction inputs are available so the final state can
     // combine EMA hierarchy + HH/LH/HL/LL + RSI + S/R location + correction.
@@ -2959,6 +2977,8 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     // Correction Status is the authoritative confirmation layer, so compute it
     // BEFORE the final recommendation can synthesize the complete state.
     result.correctionGuide = getCorrectionGuide(result);
+    // Recompute 4H risk after all upstream structural/top inputs are finalized.
+    result.fourHourBearishRisk = calculate4HBearishRisk(result);
     // Recompute after the authoritative correction guide exists so the unified
     // cycle state can correctly classify post-top markdown/support-test states.
     result.unifiedMarketCycle = calculateUnifiedMarketCycle(result);
@@ -3433,6 +3453,77 @@ function calculateEmaStretch(price, emaValue) {
    15m EMA200 = SIGNIFICANT CORRECTION CONFIRMATION
    ============================================================ */
 // 4) CORRECTION CONFIRMATION — authoritative downside-state classification.
+
+/* ============================================================
+   DEDICATED 4H BEARISH-RISK ENGINE
+   ------------------------------------------------------------
+   Trend and risk are intentionally independent. A coin may remain
+   BULLISH on 4H while its downside-risk score is rising.
+   ============================================================ */
+function calculate4HBearishRisk(item){
+  item=item||{};
+  try{
+    const raw=Array.isArray(item.k4h)?item.k4h:[];
+    const now=Date.now();
+    const bars=raw.filter(k=>Array.isArray(k)&&k.length>=5&&(!Number.isFinite(Number(k[6]))||Number(k[6])<=now));
+    const closes=bars.map(k=>Number(k[4])).filter(Number.isFinite);
+    const highs=bars.map(k=>Number(k[2])).filter(Number.isFinite);
+    const lows=bars.map(k=>Number(k[3])).filter(Number.isFinite);
+    const price=Number(item.closeNow||closes.at(-1)||0);
+    const empty=()=>({code:'INSUFFICIENT_DATA',state:'⚪ 4H RISK DATA INSUFFICIENT',trend:'UNKNOWN',riskLevel:'UNKNOWN',score:0,confidence:0,bullishTrend:false,bearishTrend:false,bullishRisk:false,highRisk:false,extremeRisk:false,reasons:['At least 50 completed 4H candles are required.'],ema:{},structure:{hh:0,hl:0,lh:0,ll:0},meta:{}});
+    if(closes.length<50||!Number.isFinite(price)||price<=0)return empty();
+    const e14=ema(closes,14),e21=ema(closes,21),e50=ema(closes,50),e70=ema(closes,70),e200=closes.length>=200?ema(closes,200):null;
+    const valid200=Number.isFinite(e200)&&e200>0;
+    const aboveAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price>v);
+    const belowAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price<v);
+    const bullishStack=valid200&&e14>e21&&e21>e50&&e50>e70&&e70>e200;
+    const bearishStack=valid200&&e14<e21&&e21<e50&&e50<e70&&e70<e200;
+    const fastBull=e14>e21&&e21>e50, fastBear=e14<e21&&e21<e50;
+    function hiPivots(v,look=2){const out=[];for(let i=look;i<v.length-look;i++){let ok=true;for(let j=1;j<=look;j++){if(v[i]<v[i-j]||v[i]<v[i+j]){ok=false;break;}}if(ok)out.push({index:i,price:v[i]});}return out;}
+    function loPivots(v,look=2){const out=[];for(let i=look;i<v.length-look;i++){let ok=true;for(let j=1;j<=look;j++){if(v[i]>v[i-j]||v[i]>v[i+j]){ok=false;break;}}if(ok)out.push({index:i,price:v[i]});}return out;}
+    const ph=hiPivots(highs,2).slice(-6),pl=loPivots(lows,2).slice(-6);
+    let hh=0,lh=0,hl=0,ll=0;
+    for(let i=1;i<ph.length;i++){if(ph[i].price>ph[i-1].price*1.001)hh++;else if(ph[i].price<ph[i-1].price*0.999)lh++;}
+    for(let i=1;i<pl.length;i++){if(pl[i].price>pl[i-1].price*1.001)hl++;else if(pl[i].price<pl[i-1].price*0.999)ll++;}
+    const bullishStructure=(hh>=1&&hl>=1)||(hh>=2)||(hl>=2), bearishStructure=(lh>=1&&ll>=1)||(lh>=2)||(ll>=2);
+    const rsi4h=Number(item.rsi4h||0),vol=Number(item.volSpike4||1),wick=Number(item.wickRatio4||0),topScore=Number(item.topDetection?.score||0);
+    const phase=String(item.phase?.phase||item.phase||'').toLowerCase(),distPhase=/distribution|breakdown/.test(phase),blowoffPhase=/blowoff|mania/.test(phase);
+    const bs=item.bearishStructure||{}, bsRank=Number(bs.stageRank||0),bsStage=String(bs.stage||bs.state||'').toUpperCase();
+    const rc=[item.resistanceLevel,item.marketStructure?.resistance,item.liquidity?.nearestAbove?.price].map(Number).filter(v=>Number.isFinite(v)&&v>=price*.995);
+    const resistance=rc.length?rc.reduce((a,b)=>Math.abs(b-price)<Math.abs(a-price)?b:a):null;
+    const nearResistance=Number.isFinite(resistance)&&resistance<=price*1.025;
+    let score=0; const reasons=[];
+    if(lh>=1){score+=14;reasons.push(`Lower-high structure ${lh}`);} if(ll>=1){score+=12;reasons.push(`Lower-low structure ${ll}`);} if(lh>=2)score+=8;if(ll>=2)score+=6;
+    if(bsRank>=1){score+=Math.min(20,bsRank*4);reasons.push(`4H bearish structure ${bsStage||'developing'}`);}
+    if(distPhase){score+=16;reasons.push('4H distribution / breakdown phase');} if(blowoffPhase){score+=12;reasons.push('4H blowoff / mania context');}
+    if(topScore>=70){score+=14;reasons.push(`Top-detection ${topScore}/100`);}else if(topScore>=45){score+=8;reasons.push(`Top-detection ${topScore}/100`);}
+    if(nearResistance){score+=10;reasons.push(`Near structural resistance ${Number(resistance).toPrecision(8)}`);}
+    if(rsi4h>=85){score+=14;reasons.push(`4H RSI ${rsi4h.toFixed(1)} extreme`);}else if(rsi4h>=78){score+=9;reasons.push(`4H RSI ${rsi4h.toFixed(1)} elevated`);}else if(rsi4h>=72){score+=4;reasons.push(`4H RSI ${rsi4h.toFixed(1)} elevated`);}
+    if(vol>=2){score+=8;reasons.push(`4H volume ×${vol.toFixed(2)}`);}else if(vol>=1.5)score+=4;
+    if(wick>=1.8){score+=8;reasons.push(`4H rejection wick ×${wick.toFixed(2)}`);}else if(wick>=1.4)score+=4;
+    if(fastBull&&!bullishStack){score+=7;reasons.push('Bullish EMA stack is weakening');}
+    if(bullishStack&&price<e14){score+=12;reasons.push('Bullish 4H EMA stack remains, but price lost EMA14');}
+    if(bullishStack&&price<e21){score+=8;reasons.push('Price lost 4H EMA21 while long-term stack remains bullish');}
+    if(valid200&&price<e70&&bullishStack){score+=8;reasons.push('Price is below 4H EMA70 despite bullish long-term alignment');}
+    if(valid200&&price<e200&&bullishStack){score+=10;reasons.push('Price is below 4H EMA200 — bullish trend is under major pressure');}
+    score=Math.max(0,Math.min(100,Math.round(score)));
+    const bullishTrend=(bullishStack&&aboveAll)||(fastBull&&!bearishStack&&price>e50);
+    const bearishTrend=(bearishStack&&belowAll)||(fastBear&&!bullishStack&&price<e50);
+    const riskLevel=score>=75?'EXTREME':score>=55?'HIGH':score>=30?'MODERATE':'LOW';
+    const bullishRisk=bullishTrend&&score>=30,highRisk=score>=55,extremeRisk=score>=75;
+    let state;
+    if(bullishTrend&&score>=75)state='🔥 4H BULLISH → EXTREME BEARISH RISK';
+    else if(bullishTrend&&score>=55)state='🔴 4H BULLISH → HIGH BEARISH RISK';
+    else if(bullishTrend&&score>=30)state='🟡 4H BULLISH → BEARISH RISK';
+    else if(bearishTrend&&score>=55)state='🔴 4H BEARISH TREND → HIGH RISK';
+    else if(bearishTrend)state='🔻 4H BEARISH TREND';
+    else if(score>=55)state='🟠 4H MIXED → HIGH BEARISH RISK';
+    else if(score>=30)state='🟡 4H MIXED → BEARISH RISK';
+    else state='🟢 4H LOW BEARISH RISK';
+    reasons.unshift(bullishTrend?'4H trend remains BULLISH — trend and risk are intentionally separate':bearishTrend?'4H trend is BEARISH':'4H trend is MIXED / transitional');
+    return {code:bullishRisk?'BULLISH_BEARISH_RISK':bearishTrend?'BEARISH_TREND':score>=30?'BEARISH_RISK':'LOW_RISK',state,trend:bullishTrend?'BULLISH':bearishTrend?'BEARISH':'MIXED',riskLevel,score,confidence:Math.max(45,Math.min(98,Math.round(45+score*.5))),bullishTrend,bearishTrend,bullishRisk,highRisk,extremeRisk,reasons:reasons.slice(0,12),ema:{ema14:e14,ema21:e21,ema50:e50,ema70:e70,ema200:e200,aboveAll,belowAll,bullishStack,bearishStack,fastBull,fastBear},structure:{hh,hl,lh,ll,bullishStructure,bearishStructure},meta:{price,rsi4h,vol,wick,topScore,distPhase,blowoffPhase,bearishStageRank:bsRank,bearishStage:bsStage,resistance,nearResistance}};
+  }catch(err){return {code:'ERROR',state:'⚪ 4H BEARISH-RISK UNAVAILABLE',trend:'UNKNOWN',riskLevel:'UNKNOWN',score:0,confidence:0,bullishTrend:false,bearishTrend:false,bullishRisk:false,highRisk:false,extremeRisk:false,reasons:[`4H risk engine error: ${err.message}`],ema:{},structure:{},meta:{}};}
+}
 
 /* ============================================================
    UNIFIED MARKET-CYCLE ENGINE — EMA + STRUCTURE + LOCATION + RSI + CORRECTION
@@ -5484,6 +5575,7 @@ function getText(v) {
 // Legacy sort keys are preserved. New keys are added only for the fields
 // introduced by the updated cycle / correction analysis.
 function getValueForKey(r, key) {
+  if(key==='fourHourBearishRisk') return Number((r?.fourHourBearishRisk||calculate4HBearishRisk(r||{})).score||0);
   if (!r) return null;
 
   switch (key) {
@@ -6033,6 +6125,21 @@ function filterResultsForDist(results) {
     });
   }
 
+  // Dedicated 4H Bearish-Risk filter. Trend and risk are independent.
+  const fourHourBearishRiskFilter = el.fourHourBearishRiskFilter ? el.fourHourBearishRiskFilter.value : 'ALL';
+  if (fourHourBearishRiskFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      const x = r?.fourHourBearishRisk || calculate4HBearishRisk(r || {});
+      if (fourHourBearishRiskFilter === 'BULLISH_RISK') return !!x.bullishTrend && Number(x.score||0) >= 30;
+      if (fourHourBearishRiskFilter === 'ANY_RISK') return Number(x.score||0) >= 30;
+      if (fourHourBearishRiskFilter === 'HIGH_RISK') return Number(x.score||0) >= 55;
+      if (fourHourBearishRiskFilter === 'EXTREME_RISK') return Number(x.score||0) >= 75;
+      if (fourHourBearishRiskFilter === 'BULLISH_LOW') return !!x.bullishTrend && Number(x.score||0) < 30;
+      if (fourHourBearishRiskFilter === 'BEARISH_TREND') return !!x.bearishTrend;
+      return true;
+    });
+  }
+
   // Dedicated Unified Bearish Structure filter.
   // Threshold semantics: selecting BOS, for example, includes BOS, RETEST,
   // and full BREAKDOWN states. This makes the filter useful for scanning
@@ -6395,6 +6502,9 @@ if (el.liquidityFilter) {
     }
     renderActiveView(true);
   });
+}
+if (el.fourHourBearishRiskFilter) {
+  el.fourHourBearishRiskFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.bearishStructureFilter) {
   el.bearishStructureFilter.addEventListener('change', () => renderActiveView(true));
@@ -7653,6 +7763,15 @@ function renderTraderDecisionBlock(r, compact=false){
   </div>`;
 }
 
+function render4HBearishRisk(item){
+  const r=item||{},x=r.fourHourBearishRisk||calculate4HBearishRisk(r),score=Number(x.score||0);
+  const tone=score>=75?'#ff5c5c':score>=55?'#ff9f43':score>=30?'#ffd966':'#2dd4bf';
+  const trend=x.trend==='BULLISH'?'🟢 BULLISH 4H':x.trend==='BEARISH'?'🔻 BEARISH 4H':'🟡 MIXED 4H';
+  const risk=score>=75?'🔥 EXTREME BEARISH RISK':score>=55?'🔴 HIGH BEARISH RISK':score>=30?'🟡 BEARISH RISK':'🟢 LOW BEARISH RISK';
+  const e=x.ema||{},st=x.structure||{},fmt=v=>Number.isFinite(Number(v))?Number(v).toPrecision(8):'—';
+  return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone}"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><strong>⚠️ 4H TREND + BEARISH RISK</strong><strong style="color:${tone}">${score}/100</strong></div><div style="margin-top:5px;font-size:17px;font-weight:900">${mspEscape(x.state||'4H risk unavailable')}</div><div style="margin-top:5px"><strong>Trend:</strong> ${trend} &nbsp; <strong>Risk:</strong> <span style="color:${tone}">${risk}</span></div><div class="signalGrid" style="margin-top:8px"><div class="signalItem"><strong>EMA</strong><br>${e.bullishStack?'🟢 Bullish stack':e.bearishStack?'🔻 Bearish stack':'🟡 Mixed'}<br><span class="small">Price ${e.aboveAll?'above all':e.belowAll?'below all':'inside / mixed'}</span></div><div class="signalItem"><strong>Structure</strong><br>HH ${st.hh||0} • HL ${st.hl||0}<br><span class="small">LH ${st.lh||0} • LL ${st.ll||0}</span></div><div class="signalItem"><strong>4H EMA14 / EMA21</strong><br>${fmt(e.ema14)} / ${fmt(e.ema21)}<br><span class="small">Risk can rise before trend flips</span></div></div><div style="margin-top:8px"><strong>Why:</strong> ${(x.reasons||[]).slice(0,6).map(mspEscape).join(' • ')||'No major downside-risk evidence.'}</div><div class="small" style="margin-top:7px">Trend and risk are separate. A 🟢 bullish 4H trend can legitimately show 🟡/🟠 bearish risk. This does not replace the authoritative 15m EMA200 correction confirmation.</div></div>`;
+}
+
 function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const phase=String(r.phase?.phase||r.phase||'Unknown');
   const phasePct=Number(r.phase?.confidence||0);
@@ -7702,6 +7821,7 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
     : `Why: ${rec.rationale}.`;
   return `
     ${renderUnifiedMarketCycle(r)}
+    ${render4HBearishRisk(r)}
 
     <div class="proRead" style="border-left:4px solid ${state.tone==='red'?'#ff5c5c':state.tone==='orange'?'#ff9f43':state.tone==='yellow'?'#ffd966':state.tone==='green'?'#2dd4bf':'#7edcff'};background:rgba(255,255,255,.025);padding:12px;border-radius:10px;margin-top:10px">
       <div class="small" style="text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700">🧠 MARKET READ</div>
@@ -8960,7 +9080,7 @@ function commitMarketScanResults(nextResults){
     try {
       const ids = [
         'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
-        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','bearishStructureFilter',
+        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','fourHourBearishRiskFilter','bearishStructureFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
       const active = ids.some(id => {
