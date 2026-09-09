@@ -904,29 +904,22 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filters by the same Trader Decision price zones shown in each result. Buying/Selling means the price is inside or approaching that zone.</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">🟢 Long Entry Status</label>
+          <label class="controlLabel">🟢 Long Timing Filter</label>
           <select id="longEntryFilter">
-            <option value="ALL">All Long Entry States</option>
-            <option value="CONFIRMED">🟢 Confirmed / staged</option>
-            <option value="STAGED">⚠️ Staged / conditional</option>
-            <option value="CONDITIONAL">🟡 Conditional</option>
-            <option value="WAIT">⏸ Wait</option>
-            <option value="NOT_READY">❌ Not yet / wait</option>
-            <option value="DONT_CHASE">🚫 Don't chase</option>
+            <option value="ALL">All Long Timing</option>
+            <option value="EARLY">🟠 EARLY — Defense/Reclaim + HL</option>
+            <option value="CONFIRMED">🟢 CONFIRMED — Stronger bullish sequence</option>
           </select>
-          <div class="dashboardHint">Filters by the actual Long entry status and its current confirmation condition.</div>
+          <div class="dashboardHint">EARLY = Defense/Reclaim + HL. CONFIRMED = stronger bullish entry sequence (adds HH / bullish break).</div>
         </div>
         <div class="controlItem">
-          <label class="controlLabel">🔴 Short Entry Status</label>
+          <label class="controlLabel">🔴 Short Timing Filter</label>
           <select id="shortEntryFilter">
-            <option value="ALL">All Short Entry States</option>
-            <option value="CONDITIONAL">🟠 Conditional</option>
-            <option value="WAIT">⏸ Wait</option>
-            <option value="REJECTION">🟠 Rejection / failed bounce</option>
-            <option value="LOWER_HIGH">🔴 Failed bounce / lower-high</option>
-            <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
+            <option value="ALL">All Short Timing</option>
+            <option value="EARLY">🟠 EARLY — Rejection + LH</option>
+            <option value="CONFIRMED">🔴 CONFIRMED — Stronger bearish sequence</option>
           </select>
-          <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
+          <div class="dashboardHint">EARLY = Rejection + LH. CONFIRMED = stronger bearish entry sequence (adds LL / bearish break).</div>
         </div>
       </div>
     </div>
@@ -5653,14 +5646,23 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => traderBiasMatches(r, biasFilter));
   }
 
+  // Timing filters use the dedicated 15m entry-timing framework, not the
+  // legacy Trader Decision status labels. This keeps the filter definitions
+  // identical to the timing panel shown on each result.
   const longEntryFilter = el.longEntryFilter ? el.longEntryFilter.value : 'ALL';
   if (longEntryFilter !== 'ALL') {
-    filtered = filtered.filter(r => entryStatusMatches(r, 'long', longEntryFilter));
+    filtered = filtered.filter(r => {
+      const t = calculateTimingFramework(r || {}, 'long');
+      return String(t?.long?.entry || 'NOT YET').toUpperCase() === longEntryFilter;
+    });
   }
 
   const shortEntryFilter = el.shortEntryFilter ? el.shortEntryFilter.value : 'ALL';
   if (shortEntryFilter !== 'ALL') {
-    filtered = filtered.filter(r => entryStatusMatches(r, 'short', shortEntryFilter));
+    filtered = filtered.filter(r => {
+      const t = calculateTimingFramework(r || {}, 'short');
+      return String(t?.short?.entry || 'NOT YET').toUpperCase() === shortEntryFilter;
+    });
   }
 
   // Dedicated Trader Decision price-zone filter. This uses the exact same
@@ -6780,7 +6782,7 @@ function renderTimingPanel(item, side){
     ${row('🟠','15m LOWER HIGH',s.lh)}
     ${row('🔴','15m LOWER LOW / BEARISH BREAK',s.ll)}
     <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🔴 SHORT ENTRY</span><strong>${entry(s.entry)}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">Prepare = location + rejection • Early = rejection + LH • Stronger = rejection + LH + bearish break • Best = LH → LL + bearish continuation.</div>
+    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = Rejection + LH • 🔴 CONFIRMED = stronger bearish entry sequence (bearish break / LL).</div>
     <div style="margin-top:10px;font-weight:900">🎯 LONG TIMING</div>
     ${row('🟢','LONG SETUP',l.setup)}
     ${row('🟢','BUYING LOCATION',l.location)}
@@ -6788,7 +6790,7 @@ function renderTimingPanel(item, side){
     ${row('🟠','15m HIGHER LOW',l.hl)}
     ${row('🟢','15m HIGHER HIGH / BULLISH BREAK',l.hh)}
     <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🟢 LONG ENTRY</span><strong>${entry(l.entry).replace('🔴','🟢')}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">Long mirror: defense/reclaim + HL = early; add HH/bullish break for stronger confirmation.</div>
+    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = Defense/Reclaim + HL • 🟢 CONFIRMED = stronger bullish entry sequence (bullish break / HH).</div>
     <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:8px"><span>🔴 SIGNIFICANT CORRECTION</span><strong>${t.correctionConfirmed?'CONFIRMED':'NOT CONFIRMED'}</strong></div>
     <div style="margin-top:5px;font-size:11px;color:var(--muted)">15m EMA200 is a correction-depth confirmation layer, NOT an entry requirement. A short/long entry can be confirmed before EMA200 confirmation.</div>
   </div>`;
