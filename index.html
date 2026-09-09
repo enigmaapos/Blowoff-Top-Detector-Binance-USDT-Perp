@@ -1887,17 +1887,8 @@ function renderMarketStructurePsychology(r){
     : "Structure data limited";
 
   const srFlip = r.srFlip || ms.srFlip || r.supportResistanceFlip || r.structureFlip || "None detected";
-  const rawSupport = r.support ?? r.supportLevel ?? ms.support ?? null;
-  const rawResistance = r.resistance ?? r.resistanceLevel ?? ms.resistance ?? null;
-  const currentStructurePrice = Number(r.closeNow ?? r.last ?? r.price ?? 0) || 0;
-  // Do not present an old/historical swing level as an active S/R level when
-  // it is on the wrong side of the current price. Execution zones are handled
-  // separately by Trader Decision Zones.
-  const support = (currentStructurePrice > 0 && Number.isFinite(Number(rawSupport)) && Number(rawSupport) < currentStructurePrice) ? rawSupport : null;
-  const resistance = (currentStructurePrice > 0 && Number.isFinite(Number(rawResistance)) && Number(rawResistance) > currentStructurePrice) ? rawResistance : null;
-  const historicalSrNote = (currentStructurePrice > 0 && ((rawSupport != null && Number(rawSupport) >= currentStructurePrice) || (rawResistance != null && Number(rawResistance) <= currentStructurePrice)))
-    ? `Historical swing levels are shown only when they are on the correct side of current price; Trader Decision Zones are the active execution levels.`
-    : '';
+  const support = r.support ?? r.supportLevel ?? ms.support ?? null;
+  const resistance = r.resistance ?? r.resistanceLevel ?? ms.resistance ?? null;
 
   const blowoff = mspNum(r.score);
   const preCrash = r.preCrash && typeof r.preCrash === "object" ? r.preCrash : {};
@@ -1995,9 +1986,8 @@ ${renderOverallMarketVerdict(r)}
         HH/HL suggests buyers are accepting higher prices; LH/LL suggests weakening demand and increasing selling pressure.
         Support/resistance flips are inferred from confirmed swing levels and breakout/retest behavior.
         Psychology labels are interpretations of measurable price/volume structure, not direct measurements of trader emotion.
-        ${support != null ? `<br><strong>Structural support:</strong> ${mspEscape(support)}` : ""}
-        ${resistance != null ? ` <strong>Structural resistance:</strong> ${mspEscape(resistance)}` : ""}
-        ${historicalSrNote ? `<br><span class="mspSub">${mspEscape(historicalSrNote)}</span>` : ""}
+        ${support != null ? `<br><strong>Support:</strong> ${mspEscape(support)}` : ""}
+        ${resistance != null ? ` <strong>Resistance:</strong> ${mspEscape(resistance)}` : ""}
       </div>
     </div>`;
 }
@@ -3413,9 +3403,9 @@ function getCorrectionGuide(item) {
   if(ema200Stretch15!==null&&ema200Stretch15>=0&&downsideSignals>=2){
     let severityScore=downsideSignals*18; if(Math.abs(rawDropFromPeak)>=10)severityScore+=10; if(Math.abs(rawDropFromPeak)>=15)severityScore+=8; if(rsi15<45)severityScore+=7; if(rsi15<35)severityScore+=5; if(volumeSpike4h>=1.5)severityScore+=6; if(wickRatio4h>=1.5)severityScore+=5; severityScore=Math.max(0,Math.min(100,Math.round(severityScore)));
     const severity=severityScore>=70?'STRONG':severityScore>=45?'MODERATE':'EARLY'; const confidence=Math.max(60,Math.min(95,Math.round(55+severityScore*.4)));
-    const reasons=[lowerHigh?'Lower-high structure':null,belowShort15?'Price below short-term 15m EMAs':null,meaningfulDecline?`Drop from peak ${rawDropFromPeak.toFixed(1)}%`:null,rsiFalling?'Short-term RSI weakness':null,emaNear?`15m EMA200 stretch ${ema200Stretch15.toFixed(2)}%`:null,'15m EMA200 confirmation has not occurred'];
-    if(emaNear&&ema200Stretch15>0)reasons.unshift('Deepening correction — approaching 15m EMA200');
-    const statusLabel = severity==='STRONG' ? '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED' : '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED';
+    const reasons=[meaningfulDecline?`Drop from peak ${rawDropFromPeak.toFixed(1)}%`:null,lowerHigh?'Lower-high structure':null,rsiFalling?'Short-term RSI weakness':null,belowShort15?'Price below short-term 15m EMAs':null,emaNear?`15m EMA200 stretch ${ema200Stretch15.toFixed(2)}%`:null];
+    if(emaNear&&ema200Stretch15>0)reasons.unshift(`Price is approaching the 15m EMA200 confirmation layer (${ema200Stretch15.toFixed(2)}% above EMA200)`);
+    const statusLabel = '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED';
     return make('CORRECTION_DEVELOPING',statusLabel,'DEVELOPING','#f39c12',confidence,reasons,{severity,severityScore,progressSignals:downsideSignals,progressFlags,maxProgressSignals:5,confirmation:'15m EMA200 stretch < 0%'});
   }
   const exhaustionEvidence=volumeSpike4h>=1.2||wickRatio4h>=1.2||lowerHigh||rawDropFromPeak<=-15;
@@ -7279,7 +7269,7 @@ function renderTraderDecisionBlock(r, compact=false){
         ${buyZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(45,212,191,.055);border:1px solid rgba(45,212,191,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🟢 BUYING ZONE</strong><span style="font-size:10px;font-weight:800;color:${buyZone.confirmed?'#2dd4bf':'#ffb454'}">${/CONTESTED|OVERRIDDEN/i.test(String(buyZone.status||''))?'CONTESTED':buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(buyZone.low)} – ${formatTraderZonePrice(buyZone.high)}</div><div class="small" style="margin-top:4px">Quality ${buyZone.quality}/100${liqDownsideSweep?' • Swept / reclaim':''}</div><div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(45,212,191,.10);font-size:10px;line-height:1.45"><strong>Execution TF:</strong> ${buyExecution.tf} <span style="color:var(--muted)">• ${buyExecution.trigger}</span></div></div>` : ''}
       </div>
     </div>` : ''}
-    ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the ${(traderZones?.dominantSide==='SELL' || activeTraderZone?.side==='SELL' || (!activeTraderZone && sellZone?.confirmed)) ? 'short' : (traderZones?.dominantSide==='BUY' || activeTraderZone?.side==='BUY' || buyZone?.confirmed) ? 'long' : 'directional'} trigger is confirmed on the execution timeframe.`}</div></div>` : ''}
+    ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed on the execution timeframe.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     ${renderEntryPathFramework(item, (()=>{ const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); return /bearish|short/.test(tb)?'short':/bullish|controlled|recovery/.test(tb)?'long':'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
     ${renderTraderDecisionAudit(item,compact)}
@@ -7802,8 +7792,8 @@ function renderCards(results){
 
         <div class="correctionGuidePro" style="--cg-color:${cgColor}">
           <div class="cgTitle">🔴 Correction Status — authoritative confirmation layer</div>
-          <div class="cgStatus" style="color:${cgColor}">${cg.label||'🟢 NOT CONFIRMED'} ${confirmed ? '' : `<span style="font-size:14px;color:#cfe8ff;font-weight:800">(warning score: ${Number(cg.confidence||0)}/100 — not probability)</span>`}</div>
-          <div class="cgMessage"><strong>${confirmed ? '🔴 SIGNIFICANT CORRECTION CONFIRMED' : (cg.code==='CORRECTION_DEVELOPING' ? '🟠 PRE-CORRECTION / CORRECTION RISK — NOT CONFIRMED' : '🟢 NOT CONFIRMED / PRE-CORRECTION')}</strong></div>
+          <div class="cgStatus" style="color:${cgColor}">${cg.label||'🟢 NOT CONFIRMED'} <span style="font-size:14px;color:#cfe8ff;font-weight:800">(${Number(cg.confidence||0)}%)</span></div>
+          <div class="cgMessage"><strong>${confirmed ? '🔴 SIGNIFICANT CORRECTION CONFIRMED' : (cg.code==='CORRECTION_DEVELOPING' ? '🟠 CORRECTION DEVELOPING — NOT CONFIRMED' : '🟢 NOT CONFIRMED / PRE-CORRECTION')}</strong></div>
           <div class="cgMessage">${(cg.reasons&&cg.reasons.length)?cg.reasons.slice(0,3).join('; '):'No significant correction progression is confirmed.'}</div>
           <div class="cgEvidence"><strong>15m EMA200:</strong> ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} ${confirmed?'🔴 below EMA200 — confirmation active':'🟢 above EMA200 — confirmation not active'}</div>
           <div class="cgAuthority">Only this layer confirms a significant correction. Overheating, distribution, blowoff and pre-correction scores are warnings/context — not confirmation.</div>
