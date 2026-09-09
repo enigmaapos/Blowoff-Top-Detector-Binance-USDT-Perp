@@ -7699,7 +7699,11 @@ function chartRender(symbol, tf){
   // Give lower timeframes more vertical room so candles, HH/HL/LH/LL and volume remain readable.
   const compactWidth=window.innerWidth<=760;
   wrap.style.height = tf==='15m' ? (compactWidth?'400px':'460px') : tf==='1h' ? (compactWidth?'360px':'410px') : tf==='4h' ? (compactWidth?'330px':'360px') : (compactWidth?'310px':'340px');
-  const candles=chartKlinesFor(r,tf);
+  const fullCandles=chartKlinesFor(r,tf);
+  // Keep enough history for indicators, but display fewer lower-timeframe candles
+  // so 15m price action is not horizontally compressed.
+  const visibleCount = tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
+  const candles=fullCandles.slice(-visibleCount);
   host.dataset.tf=tf;
   host.querySelectorAll('.binanceTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
   if(!candles.length){ canvas.style.display='none'; wrap.innerHTML='<div class="binanceChartEmpty">No Binance candle data is available for this timeframe yet.</div>'; return; }
@@ -7743,9 +7747,12 @@ function chartRender(symbol, tf){
     const top=yFor(Math.max(o,cl)), bot=yFor(Math.min(o,cl)); ctx.fillStyle=up?'#2dd4bf':'#ff5c6c'; ctx.fillRect(x-cw/2,top,Math.max(1,cw),Math.max(1,bot-top));
   });
   // Show only the most important trend/correction reference: EMA200.
-  if(closes.length>=200){
+  if(fullCandles.length>=200){
+    const fullCloses=fullCandles.map(k=>Number(k[4]));
+    const fullEma=chartEma(fullCloses,200);
+    const emaVisible=fullEma.slice(-candles.length);
     ctx.strokeStyle='rgba(255,255,255,.90)';
-    chartDrawLine(ctx,chartEma(closes,200),xFor,yFor,2.0,[]);
+    chartDrawLine(ctx,emaVisible,xFor,yFor,2.0,[]);
   }
   // Buying / selling zones are shown as context bands; they do not confirm an entry.
   chartDrawZones(ctx,zones,xFor,yFor,pad,w,minP,maxP);
