@@ -2566,6 +2566,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       opts.prefetchedK15
         ? Promise.resolve(opts.prefetchedK15)
         : safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1M ENTRY EXECUTION
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1w&limit=20`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1W
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1M&limit=12`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1M
@@ -2573,6 +2574,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       Number(opts.livePrice)>0
         ? Promise.resolve({price:Number(opts.livePrice), source:String(opts.livePriceSource||'Binance 24h ticker')})
         : safeFetch(`${API_BASE}/fapi/v1/ticker/price?symbol=${sym}`, { allowIfNotRunning: opts.allowIfNotRunning })
+            .catch(err => ({ price:null, source:'ticker unavailable', error:err?.message||String(err) }))
     ];
     const [k4hFull, k8hFull, k1h, k15, k1mEntry, k1d, k1w, k1m, f, liveTicker] = await Promise.all(promises);
 
@@ -2604,12 +2606,19 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const last4 = (k4h && k4h.length) ? k4h[k4h.length-1] : null;
     if(!last4) throw new Error('No 4H candles returned');
 
-    // Canonical live Binance price snapshot. Historical indicators remain
-    // candle-derived; Trader Decision location uses this live price.
-    const livePriceRaw = Number(opts.livePrice)>0 ? Number(opts.livePrice) : Number(liveTicker?.price);
-    if(!Number.isFinite(livePriceRaw) || livePriceRaw<=0) throw new Error('Binance live price unavailable');
+    // Canonical price snapshot. A live ticker is preferred, but ticker failure
+    // must NOT abort analysis: fall back to the latest available 1m/15m kline close.
+    const tickerPrice = Number(liveTicker?.price);
+    const fallback1m = Number((k1mEntry||[]).at(-1)?.[4]);
+    const fallback15m = Number((k15||[]).at(-1)?.[4]);
+    const livePriceRaw = Number(opts.livePrice)>0 ? Number(opts.livePrice)
+      : (Number.isFinite(tickerPrice)&&tickerPrice>0 ? tickerPrice
+      : (Number.isFinite(fallback1m)&&fallback1m>0 ? fallback1m : fallback15m));
+    if(!Number.isFinite(livePriceRaw) || livePriceRaw<=0) throw new Error('No usable Binance price or kline data');
     const livePrice = livePriceRaw;
-    const livePriceSource = String(opts.livePriceSource || liveTicker?.source || 'Binance ticker price');
+    const livePriceSource = Number(opts.livePrice)>0 ? String(opts.livePriceSource||'Provided price')
+      : (Number.isFinite(tickerPrice)&&tickerPrice>0 ? 'Binance live ticker'
+      : (Number.isFinite(fallback1m)&&fallback1m>0 ? 'Binance 1m kline fallback' : 'Binance 15m kline fallback'));
     const nowMs = Date.now();
     const closed4 = [...(k4hFull||[])].reverse().find(k=>Number(k?.[6])<=nowMs) || last4;
     const last4CloseTime = Number(last4?.[6]||0);
