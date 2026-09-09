@@ -7553,7 +7553,7 @@ function chartDrawLine(ctx, values, xFor, yFor, lineWidth, dash){
 }
 function chartRender(symbol, tf){
   const safeSymbol=String(symbol||'');
-  const host=document.querySelector(`.binanceChartPanel[data-symbol="${CSS.escape(safeSymbol)}"]`);
+  const host=[...document.querySelectorAll('.binanceChartPanel[data-symbol]')].find(h=>String(h.dataset.symbol||'').toUpperCase()===safeSymbol.toUpperCase());
   if(!host) return;
   const status=host.querySelector('.binanceChartStatus');
   try{
@@ -7575,7 +7575,9 @@ function chartRender(symbol, tf){
   const ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
   ctx.fillStyle='#0d1724';ctx.fillRect(0,0,w,h);
   const pad={left:8,right:62,top:12,bottom:54}, volH=Math.min(72,h*.20), plotTop=pad.top, plotBottom=h-pad.bottom-volH;
-  const opens=candles.map(k=>Number(k[1])), highs=candles.map(k=>Number(k[2])), lows=candles.map(k=>Number(k[3])), closes=candles.map(k=>Number(k[4])), vols=candles.map(k=>Number(k[5]));
+  const opens=candles.map(k=>Number(k[1])), highs=candles.map(k=>Number(k[2])), lows=candles.map(k=>Number(k[3])), closes=candles.map(k=>Number(k[4]));
+  // Candle body width for the simplified price-only chart.
+  const cw=Math.max(2,(w-pad.left-pad.right)/candles.length*.68);
   let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r);
   levels.forEach(l=>{if(l.value>=minP*.985&&l.value<=maxP*1.015){minP=Math.min(minP,l.value);maxP=Math.max(maxP,l.value);}});
   const range=Math.max(maxP-minP,maxP*.0001); minP-=range*.05; maxP+=range*.05;
