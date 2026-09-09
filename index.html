@@ -1090,35 +1090,76 @@ function playBlowoffAlert(symbol) {
   }
 }
 
-// A single sound rule for the entire app: sound only when a symbol newly
-// reaches the configured Blowoff Score threshold. Accumulation, favorites
-// refreshes, and other score-3 conditions cannot trigger sound by themselves.
-function triggerBlowoffSounds(results) {
-  if (!Array.isArray(results)) return;
-  const threshold = parseInt(el.threshold?.value, 10) || 4;
-  const currentBlowoffs = new Set();
+// Timing-only alert state. Blowoff score, accumulation, favorites, and
+// ordinary scan results do NOT play the notification sound anymore.
+const alertedTimingStates = new Map();
 
+// Distinctive short two-tone entry chime generated locally. This avoids
+// relying on an external sound file and is used ONLY for timing alerts.
+function playTimingAlert(symbol, side, level) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const now = ctx.currentTime;
+    const notes = side === 'short' ? [660, 440] : [523.25, 783.99];
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+    gain.connect(ctx.destination);
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(gain);
+      osc.start(now + i * 0.16);
+      osc.stop(now + 0.16 + i * 0.16);
+    });
+    setTimeout(() => { try { ctx.close(); } catch (_) {} }, 700);
+    console.log(`Timing alert sound: ${symbol} ${side} ${level}`);
+  } catch (err) {
+    console.warn('Timing alert sound skipped:', err);
+  }
+}
+
+function getTimingAlertLevel(item) {
+  try {
+    const t = calculateTimingFramework(item, 'short');
+    const l = t.long;
+    const s = t.short;
+    if (s.entry === 'CONFIRMED') return {side:'short', level:'CONFIRMED'};
+    if (s.entry === 'EARLY') return {side:'short', level:'EARLY'};
+    if (l.entry === 'CONFIRMED') return {side:'long', level:'CONFIRMED'};
+    if (l.entry === 'EARLY') return {side:'long', level:'EARLY'};
+    return {side:null, level:'NOT YET'};
+  } catch (_) {
+    return {side:null, level:'NOT YET'};
+  }
+}
+
+// Play a sound only when SHORT/LONG timing advances into EARLY or CONFIRMED.
+// NOT YET never sounds. The state must first return to NOT YET before a
+// later EARLY/CONFIRMED transition can alert again.
+function triggerTimingSounds(results) {
+  if (!Array.isArray(results)) return;
+  const seen = new Set();
   for (const item of results) {
-    if (!item || !item.symbol) continue;
+    if (!item?.symbol) continue;
     const symbol = String(item.symbol).toUpperCase();
-    const isBlowoff = Number(item.score) >= threshold;
-    if (isBlowoff) {
-      currentBlowoffs.add(symbol);
-      if (!alertedBlowoffSymbols.has(symbol)) {
-        alertedBlowoffSymbols.add(symbol);
-        playBlowoffAlert(symbol);
-      }
-    } else {
-      // Re-arm the symbol so a later new blowoff can sound again.
-      alertedBlowoffSymbols.delete(symbol);
+    const state = getTimingAlertLevel(item);
+    const key = `${state.side || 'none'}:${state.level}`;
+    seen.add(symbol);
+    const previous = alertedTimingStates.get(symbol) || 'none:NOT YET';
+    if ((state.level === 'EARLY' || state.level === 'CONFIRMED') && previous !== key) {
+      alertedTimingStates.set(symbol, key);
+      playTimingAlert(symbol, state.side, state.level);
+    } else if (state.level === 'NOT YET') {
+      alertedTimingStates.set(symbol, 'none:NOT YET');
     }
   }
-
-  // Remove symbols no longer present in the current result set.
-  for (const symbol of [...alertedBlowoffSymbols]) {
-    if (!currentBlowoffs.has(symbol) && !results.some(r => String(r?.symbol || '').toUpperCase() === symbol)) {
-      alertedBlowoffSymbols.delete(symbol);
-    }
+  for (const symbol of [...alertedTimingStates.keys()]) {
+    if (!seen.has(symbol)) alertedTimingStates.delete(symbol);
   }
 }
 
@@ -8894,9 +8935,10 @@ async function runScan(once=false, suppliedSession=null){
     commitScannerSurface('main');
     commitMarketScanResults(results);
 
-    // SINGLE SOUND RULE: only a newly detected blowoff can trigger sound.
-    // Conditional accumulation alerts never trigger sound.
-    triggerBlowoffSounds(window.lastScanResults);
+    // TIMING-ONLY SOUND RULE: sound only when SHORT/LONG entry timing
+    // advances from NOT YET into EARLY or CONFIRMED. Blowoff score and
+    // accumulation alerts are silent.
+    triggerTimingSounds(window.lastScanResults);
 
     // Browser notifications remain informational and follow the configured alert mode.
     const condEnabled = el.condAlert.checked;
