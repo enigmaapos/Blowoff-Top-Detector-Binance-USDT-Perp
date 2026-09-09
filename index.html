@@ -6771,7 +6771,8 @@ function renderEntryPathFramework(item, side, statusCode){
     <div style="margin-top:6px"><strong>📉 MAE framework:</strong> The active planned entry zone and its adverse edge define the scenario MAE. EMA50/EMA200 remain structural context.</div>
     ${x.maeBoundary>0?`<div style="margin-top:6px"><strong>📉 MAE boundary:</strong> ${x.fmt(x.maeBoundary)} <span class="small">(${x.fp(x.maePct)} adverse from zone midpoint)</span> • ${x.primarySide==='short'?'above selling-zone high':'below buying-zone low'}</div>`:''}
     ${x.expectedTarget>0?`<div style="margin-top:6px"><strong>🎯 Expected target:</strong> ${x.fmt(x.expectedTarget)} <span class="small">• target zone ${targetText}</span></div>`:''}
-    ${path}
+    <div style="margin-top:6px"><strong>🧭 Execution sequence:</strong> ${x.primarySide==='short' ? 'Selling zone → 15m rejection → LH → LL / bearish break → SHORT ENTRY' : x.primarySide==='long' ? 'Buying zone → 15m defense/reclaim → HL → HH / bullish break → LONG ENTRY' : 'Resolve direction → mapped zone → 15m trigger → ENTRY'}</div>
+    <div style="margin-top:6px"><strong>📌 Entry timing rule:</strong> ${x.primarySide==='short' ? 'Rejection + LH = early trigger; rejection + LH + LL/bearish break = stronger confirmation.' : x.primarySide==='long' ? 'Defense/reclaim + HL = early trigger; defense/reclaim + HL + HH/bullish break = stronger confirmation.' : 'No directional entry until structure resolves.'}</div>
     <div style="margin-top:6px"><strong>${x.stateIcon} Current path:</strong> ${x.state} — ${x.stateText}</div>
     ${band}
     <div style="margin-top:7px;font-size:11px;color:var(--muted)">The reference entry is a planned zone midpoint, not a claim that an entry has already occurred. MAE is a scenario excursion reference, not a stop-loss promise. EMA200 remains structural context/invalidation.</div>
