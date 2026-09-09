@@ -7635,6 +7635,95 @@ function chartDrawStructure(ctx,structure,xFor,yFor,pad,w){
   ctx.fillText('Structure: '+bias,pad.left+4,pad.top+12);
   ctx.restore();
 }
+
+function chartZoneObjects(r){
+  try{
+    const z=(typeof getTraderDecisionZones==='function') ? getTraderDecisionZones(r) : {};
+    const out=[];
+    const b=z?.buy, sell=z?.sell;
+    if(b && Number.isFinite(Number(b.low)) && Number.isFinite(Number(b.high)) && Number(b.high)>Number(b.low)) out.push({side:'BUY',low:Number(b.low),high:Number(b.high),label:'Buying Zone'});
+    if(sell && Number.isFinite(Number(sell.low)) && Number.isFinite(Number(sell.high)) && Number(sell.high)>Number(sell.low)) out.push({side:'SELL',low:Number(sell.low),high:Number(sell.high),label:'Selling Zone'});
+    return out;
+  }catch(_){ return []; }
+}
+function chartRejectionSignals(candles, levels, zones){
+  const arr=Array.isArray(candles)?candles:[], out=[];
+  const refs=[...(levels||[]),...(zones||[])];
+  for(let i=Math.max(2,arr.length-50);i<arr.length;i++){
+    const k=arr[i]; if(!Array.isArray(k)) continue;
+    const o=Number(k[1]), h=Number(k[2]), l=Number(k[3]), c=Number(k[4]);
+    if(![o,h,l,c].every(Number.isFinite)) continue;
+    const body=Math.max(Math.abs(c-o),Math.max(h-l,1e-12)*0.05);
+    const upper=h-Math.max(o,c), lower=Math.min(o,c)-l;
+    const upperRatio=upper/body, lowerRatio=lower/body;
+    const closeNearLow=(h-l)>0 && (h-c)/(h-l)>=0.60;
+    const closeNearHigh=(h-l)>0 && (c-l)/(h-l)>=0.60;
+    let sellRef=false,buyRef=false;
+    refs.forEach(r=>{
+      const lo=Number(r.low??r.value), hi=Number(r.high??r.value);
+      if(!Number.isFinite(lo)||!Number.isFinite(hi)) return;
+      const pad=Math.max((hi-lo)*0.18,Math.max(Math.abs(hi),Math.abs(lo))*0.0015);
+      const touches=h>=lo-pad && l<=hi+pad;
+      if(!touches) return;
+      if(r.side==='SELL'||r.type==='resistance'||r.name==='Resistance') sellRef=true;
+      if(r.side==='BUY'||r.type==='support'||r.name==='Support') buyRef=true;
+    });
+    if(sellRef && upperRatio>=1.35 && closeNearLow) out.push({i,type:'SELL_REJECTION',price:h,level:h,reason:'upper wick + close back down'});
+    else if(buyRef && lowerRatio>=1.35 && closeNearHigh) out.push({i,type:'BUY_REJECTION',price:l,level:l,reason:'lower wick + close back up'});
+  }
+  return out;
+}
+function chartDrawZones(ctx,zones,xFor,yFor,pad,w,minP,maxP){
+  if(!zones?.length) return;
+  ctx.save();
+  zones.forEach(z=>{
+    const lo=Math.max(minP,z.low), hi=Math.min(maxP,z.high);
+    if(hi<=lo) return;
+    const y1=yFor(hi), y2=yFor(lo);
+    ctx.fillStyle=z.side==='SELL'?'rgba(255,92,108,.075)':'rgba(45,212,191,.065)';
+    ctx.fillRect(pad.left,y1,w-pad.left-pad.right,Math.max(2,y2-y1));
+    ctx.strokeStyle=z.side==='SELL'?'rgba(255,92,108,.30)':'rgba(45,212,191,.28)';
+    ctx.setLineDash([3,4]); ctx.lineWidth=1;
+    [y1,y2].forEach(y=>{ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();});
+    ctx.setLineDash([]); ctx.font='bold 9px sans-serif';ctx.textAlign='left';
+    ctx.fillStyle=z.side==='SELL'?'#ffb0b8':'#9ff4dc';
+    ctx.fillText(z.label,w-pad.right+5,y1+10);
+  });
+  ctx.restore();
+}
+function chartDrawRejections(ctx,rejections,xFor,yFor,pad,w){
+  if(!rejections?.length) return;
+  ctx.save(); ctx.font='bold 8px sans-serif'; ctx.textAlign='center';
+  rejections.slice(-5).forEach(q=>{
+    const x=xFor(q.i), y=yFor(q.price);
+    const sell=q.type==='SELL_REJECTION';
+    ctx.strokeStyle=sell?'#ff7b86':'#8ff0d8'; ctx.fillStyle=ctx.strokeStyle; ctx.lineWidth=1.4;
+    ctx.beginPath();
+    if(sell){ ctx.moveTo(x,y-16);ctx.lineTo(x,y-5);ctx.lineTo(x-3,y-9);ctx.moveTo(x,y-5);ctx.lineTo(x+3,y-9); }
+    else { ctx.moveTo(x,y+16);ctx.lineTo(x,y+5);ctx.lineTo(x-3,y+9);ctx.moveTo(x,y+5);ctx.lineTo(x+3,y+9); }
+    ctx.stroke();
+    ctx.fillText('REJECTION',x,sell?y-19:y+26);
+  });
+  ctx.restore();
+}
+function chartDrawTransition(ctx,structure,xFor,yFor,pad){
+  const seq=[...structure.highs,...structure.lows].filter(p=>p.label).sort((a,b)=>a.i-b.i);
+  if(seq.length<2) return;
+  const last=seq.slice(-6), labels=last.map(x=>x.label);
+  const hasBear=labels.includes('LH')||labels.includes('LL'), hasBull=labels.includes('HH')||labels.includes('HL');
+  let state='MIXED';
+  const recent=labels.slice(-3).join(' → ');
+  if(labels.slice(-3).includes('LH')&&labels.slice(-3).includes('LL')) state='BULLISH → BEARISH TRANSITION';
+  else if(labels.slice(-3).includes('HL')&&labels.slice(-3).includes('HH')) state='BEARISH → BULLISH TRANSITION';
+  else if(hasBear&&!hasBull) state='BEARISH';
+  else if(hasBull&&!hasBear) state='BULLISH';
+  ctx.save(); ctx.font='bold 9px sans-serif'; ctx.textAlign='left';
+  const color=state.includes('BEARISH')?'#ff8b8b':state.includes('BULLISH')?'#8de9d5':'#d7e2ef';
+  ctx.fillStyle=color; ctx.fillText('Trend: '+state,pad.left+4,pad.top+25);
+  if(state.includes('TRANSITION')){ctx.font='8px sans-serif';ctx.fillStyle='#dbe8f5';ctx.fillText('Recent structure: '+recent,pad.left+4,pad.top+36);}
+  ctx.restore();
+}
+
 function chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP,minT,maxT){
   ctx.save();
   ctx.strokeStyle='rgba(255,255,255,.055)'; ctx.lineWidth=1;
@@ -7693,6 +7782,8 @@ function chartRender(symbol, tf){
   // This is independent of S/R, so a bearish structure can be shown before
   // the 15m EMA200 correction-confirmation rule is triggered.
   const structure=chartStructurePivots(candles);
+  const zones=chartZoneObjects(r);
+  const rejections=chartRejectionSignals(candles,levels,zones);
   // Candles
   candles.forEach((k,i)=>{
     const x=xFor(i), o=opens[i], hi=highs[i], lo=lows[i], cl=closes[i], up=cl>=o;
@@ -7704,6 +7795,8 @@ function chartRender(symbol, tf){
     ctx.strokeStyle='rgba(255,255,255,.90)';
     chartDrawLine(ctx,chartEma(closes,200),xFor,yFor,2.0,[]);
   }
+  // Buying / selling zones are shown as context bands; they do not confirm an entry.
+  chartDrawZones(ctx,zones,xFor,yFor,pad,w,minP,maxP);
   // Scanner structural levels
   levels.forEach(l=>{
     if(l.value<minP||l.value>maxP) return;
@@ -7718,6 +7811,9 @@ function chartRender(symbol, tf){
   });
   // Plot the latest confirmed market-structure pivots after candles/EMA/SR.
   chartDrawStructure(ctx,structure,xFor,yFor,pad,w);
+  // Explicitly show trend transition and rejection events for position timing.
+  chartDrawTransition(ctx,structure,xFor,yFor,pad);
+  chartDrawRejections(ctx,rejections,xFor,yFor,pad,w);
   // Current price
   const last=closes[closes.length-1], ly=yFor(last);ctx.save();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.left,ly);ctx.lineTo(w-pad.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(chartFormatPrice(last),w-pad.right+5,ly+11);ctx.restore();
   // Date labels
@@ -7847,7 +7943,7 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>— Current price</span></div>
+          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>HH / HL / LH / LL</span><span>↔ Transition</span><span>⚠ Rejection</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
 
