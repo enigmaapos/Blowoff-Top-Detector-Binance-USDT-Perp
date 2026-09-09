@@ -7587,6 +7587,54 @@ function chartLevelCandidates(r, tf, candles){
   // of which source produced it.
   return levels.filter(x=>x.type==='resistance'?validResistance(x.value):validSupport(x.value));
 }
+function chartStructurePivots(candles){
+  const arr=Array.isArray(candles)?candles:[], highs=[], lows=[];
+  for(let i=2;i<arr.length-2;i++){
+    const h=Number(arr[i]?.[2]), l=Number(arr[i]?.[3]);
+    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
+    let sh=h>Number(arr[i-1]?.[2])&&h>=Number(arr[i+1]?.[2]);
+    let sl=l<Number(arr[i-1]?.[3])&&l<=Number(arr[i+1]?.[3]);
+    for(let j=2;j<=2;j++){
+      sh=sh&&h>Number(arr[i-j]?.[2])&&h>=Number(arr[i+j]?.[2]);
+      sl=sl&&l<Number(arr[i-j]?.[3])&&l<=Number(arr[i+j]?.[3]);
+    }
+    if(sh) highs.push({i,price:h,type:'high'});
+    if(sl) lows.push({i,price:l,type:'low'});
+  }
+  const classify=(pivots)=>pivots.map((p,i)=>({...p,label:i===0?'':p.price<pivots[i-1].price?(p.type==='high'?'LH':'LL'):(p.type==='high'?'HH':'HL')}));
+  return {highs:classify(highs),lows:classify(lows)};
+}
+function chartStructureBias(structure){
+  const hs=structure.highs.filter(x=>x.label).slice(-1)[0]?.label||'';
+  const ls=structure.lows.filter(x=>x.label).slice(-1)[0]?.label||'';
+  if(hs==='LH'&&ls==='LL') return 'BEARISH';
+  if(hs==='HH'&&ls==='HL') return 'BULLISH';
+  if(hs==='LH'||ls==='LL') return 'BEARISH RISK';
+  if(hs==='HH'||ls==='HL') return 'BULLISH SUPPORT';
+  return 'MIXED';
+}
+function chartDrawStructure(ctx,structure,xFor,yFor,pad,w){
+  const pivots=[...structure.highs,...structure.lows].filter(p=>p.label).sort((a,b)=>a.i-b.i).slice(-6);
+  if(!pivots.length) return;
+  ctx.save();
+  ctx.lineWidth=1.2; ctx.setLineDash([2,3]); ctx.strokeStyle='rgba(207,232,255,.38)';
+  for(let i=1;i<pivots.length;i++){
+    const a=pivots[i-1], b=pivots[i];
+    ctx.beginPath();ctx.moveTo(xFor(a.i),yFor(a.price));ctx.lineTo(xFor(b.i),yFor(b.price));ctx.stroke();
+  }
+  ctx.setLineDash([]);ctx.font='bold 9px sans-serif';ctx.textAlign='center';
+  pivots.forEach(p=>{
+    const x=xFor(p.i), y=yFor(p.price);
+    ctx.fillStyle=p.label==='LH'||p.label==='LL'?'#ff8b8b':'#8de9d5';
+    ctx.beginPath();ctx.arc(x,y,2.5,0,Math.PI*2);ctx.fill();
+    ctx.fillText(p.label,x,p.type==='high'?y-7:y+12);
+  });
+  const bias=chartStructureBias(structure);
+  ctx.textAlign='left';ctx.font='bold 10px sans-serif';
+  ctx.fillStyle=bias.startsWith('BEARISH')?'#ff8b8b':bias.startsWith('BULLISH')?'#8de9d5':'#d7e2ef';
+  ctx.fillText('Structure: '+bias,pad.left+4,pad.top+12);
+  ctx.restore();
+}
 function chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP,minT,maxT){
   ctx.save();
   ctx.strokeStyle='rgba(255,255,255,.055)'; ctx.lineWidth=1;
@@ -7641,6 +7689,10 @@ function chartRender(symbol, tf){
   const xFor=i=>pad.left+(w-pad.left-pad.right)*(i+.5)/candles.length;
   const yFor=p=>plotTop+(maxP-p)/(maxP-minP)*(plotBottom-plotTop);
   chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP);
+  // Market structure: confirmed swing HH/HL/LH/LL labels and bias.
+  // This is independent of S/R, so a bearish structure can be shown before
+  // the 15m EMA200 correction-confirmation rule is triggered.
+  const structure=chartStructurePivots(candles);
   // Candles
   candles.forEach((k,i)=>{
     const x=xFor(i), o=opens[i], hi=highs[i], lo=lows[i], cl=closes[i], up=cl>=o;
@@ -7664,6 +7716,8 @@ function chartRender(symbol, tf){
     ctx.fillStyle=isLiq ? (l.type==='liqAbove'?'#ffe38a':'#ff7b86') : (l.type==='support'?'#9ff4dc':'#ffd0a1');
     ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(l.name+' '+chartFormatPrice(l.value),w-pad.right+5,y-3);ctx.restore();
   });
+  // Plot the latest confirmed market-structure pivots after candles/EMA/SR.
+  chartDrawStructure(ctx,structure,xFor,yFor,pad,w);
   // Current price
   const last=closes[closes.length-1], ly=yFor(last);ctx.save();ctx.strokeStyle='rgba(255,255,255,.45)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.left,ly);ctx.lineTo(w-pad.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(chartFormatPrice(last),w-pad.right+5,ly+11);ctx.restore();
   // Date labels
