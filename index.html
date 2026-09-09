@@ -7522,12 +7522,47 @@ function chartFormatVol(v){
   if(n>=1e3) return (n/1e3).toFixed(1)+'K';
   return n.toFixed(0);
 }
-function chartLevelCandidates(r){
+function chartLevelCandidates(r, tf, candles){
   const levels=[];
-  const add=(name,value,type)=>{const n=chartNum(value); if(n&&n>0) levels.push({name,value:n,type});};
-  // Keep only the most important decision levels on the chart.
-  add('Support',r?.supportLevel,'support');
-  add('Resistance',r?.resistanceLevel,'resistance');
+  const add=(name,value,type,source)=>{const n=chartNum(value); if(n&&n>0) levels.push({name,value:n,type,source:source||''});};
+  const price=Number(r?.closeNow||r?.last||r?.price||0);
+  const arr=Array.isArray(candles)?candles:[];
+
+  // Chart S/R must come from the same timeframe being displayed. Use confirmed
+  // local swing pivots, then fall back to the scanner's 4H structural levels.
+  const highs=[], lows=[];
+  for(let i=2;i<arr.length-2;i++){
+    const h=Number(arr[i]?.[2]), l=Number(arr[i]?.[3]);
+    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
+    let sh=h>Number(arr[i-1]?.[2])&&h>=Number(arr[i+1]?.[2]);
+    let sl=l<Number(arr[i-1]?.[3])&&l<=Number(arr[i+1]?.[3]);
+    for(let j=2;j<=2;j++){
+      sh=sh&&h>Number(arr[i-j]?.[2])&&h>=Number(arr[i+j]?.[2]);
+      sl=sl&&l<Number(arr[i-j]?.[3])&&l<=Number(arr[i+j]?.[3]);
+    }
+    if(sh) highs.push(h);
+    if(sl) lows.push(l);
+  }
+  const above=price>0?highs.filter(x=>x>price*1.0005).sort((a,b)=>a-b):[];
+  const below=price>0?lows.filter(x=>x<price*0.9995).sort((a,b)=>b-a):[];
+
+  if(above.length) add('Resistance',above[0],'resistance',tf+' swing');
+  if(below.length) add('Support',below[0],'support',tf+' swing');
+
+  // For 4H, the scanner's confirmed structural levels are the primary levels.
+  // For other chart timeframes they are fallbacks only when no local level exists.
+  if(String(tf).toLowerCase()==='4h'){
+    if(Number.isFinite(Number(r?.resistanceLevel))&&Number(r.resistanceLevel)>0){
+      levels.length=levels.filter(x=>x.type!=='resistance').length; // remove local resistance only
+      add('Resistance',r.resistanceLevel,'resistance','4H structure');
+    }
+    if(Number.isFinite(Number(r?.supportLevel))&&Number(r.supportLevel)>0){
+      levels.push({name:'Support',value:Number(r.supportLevel),type:'support',source:'4H structure'});
+    }
+  }else{
+    if(!levels.some(x=>x.type==='resistance')) add('Resistance',r?.resistanceLevel,'resistance','4H fallback');
+    if(!levels.some(x=>x.type==='support')) add('Support',r?.supportLevel,'support','4H fallback');
+  }
   return levels;
 }
 function chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP,minT,maxT){
@@ -7578,7 +7613,7 @@ function chartRender(symbol, tf){
   const opens=candles.map(k=>Number(k[1])), highs=candles.map(k=>Number(k[2])), lows=candles.map(k=>Number(k[3])), closes=candles.map(k=>Number(k[4]));
   // Candle body width for the simplified price-only chart.
   const cw=Math.max(2,(w-pad.left-pad.right)/candles.length*.68);
-  let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r);
+  let minP=Math.min(...lows), maxP=Math.max(...highs); const levels=chartLevelCandidates(r,tf,candles);
   levels.forEach(l=>{if(l.value>=minP*.985&&l.value<=maxP*1.015){minP=Math.min(minP,l.value);maxP=Math.max(maxP,l.value);}});
   const range=Math.max(maxP-minP,maxP*.0001); minP-=range*.05; maxP+=range*.05;
   const xFor=i=>pad.left+(w-pad.left-pad.right)*(i+.5)/candles.length;
