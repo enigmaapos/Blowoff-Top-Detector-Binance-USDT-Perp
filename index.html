@@ -7525,11 +7525,19 @@ function chartFormatVol(v){
 function chartLevelCandidates(r, tf, candles){
   const levels=[];
   const add=(name,value,type,source)=>{const n=chartNum(value); if(n&&n>0) levels.push({name,value:n,type,source:source||''});};
-  const price=Number(r?.closeNow||r?.last||r?.price||0);
   const arr=Array.isArray(candles)?candles:[];
+  const candlePrice=arr.length?Number(arr[arr.length-1]?.[4]):0;
+  const scannerPrice=Number(r?.closeNow??r?.last??r?.price??0);
+  const price=Number.isFinite(candlePrice)&&candlePrice>0?candlePrice:scannerPrice;
+  const eps=price>0?Math.max(price*0.0005,Number.EPSILON):0;
 
-  // Chart S/R must come from the same timeframe being displayed. Use confirmed
-  // local swing pivots, then fall back to the scanner's 4H structural levels.
+  // A level is only a valid chart Resistance when it is ABOVE the current
+  // displayed price. A Support must be BELOW it. Never relabel a broken
+  // resistance as the active resistance line.
+  const validResistance=v=>Number.isFinite(Number(v))&&Number(v)>price+eps;
+  const validSupport=v=>Number.isFinite(Number(v))&&Number(v)<price-eps;
+
+  // Find confirmed local swing pivots from the same timeframe being displayed.
   const highs=[], lows=[];
   for(let i=2;i<arr.length-2;i++){
     const h=Number(arr[i]?.[2]), l=Number(arr[i]?.[3]);
@@ -7543,27 +7551,41 @@ function chartLevelCandidates(r, tf, candles){
     if(sh) highs.push(h);
     if(sl) lows.push(l);
   }
-  const above=price>0?highs.filter(x=>x>price*1.0005).sort((a,b)=>a-b):[];
-  const below=price>0?lows.filter(x=>x<price*0.9995).sort((a,b)=>b-a):[];
+
+  const above=validResistance(price)?highs.filter(validResistance).sort((a,b)=>a-b):[];
+  const below=validSupport(price)?lows.filter(validSupport).sort((a,b)=>b-a):[];
 
   if(above.length) add('Resistance',above[0],'resistance',tf+' swing');
   if(below.length) add('Support',below[0],'support',tf+' swing');
 
-  // For 4H, the scanner's confirmed structural levels are the primary levels.
-  // For other chart timeframes they are fallbacks only when no local level exists.
-  if(String(tf).toLowerCase()==='4h'){
-    if(Number.isFinite(Number(r?.resistanceLevel))&&Number(r.resistanceLevel)>0){
-      levels.length=levels.filter(x=>x.type!=='resistance').length; // remove local resistance only
-      add('Resistance',r.resistanceLevel,'resistance','4H structure');
+  const is4h=String(tf).toLowerCase()==='4h';
+  const scannerResistance=Number(r?.resistanceLevel);
+  const scannerSupport=Number(r?.supportLevel);
+
+  // 4H scanner structure remains primary only when it is on the correct side
+  // of the current price. If it has been broken, use a valid local pivot or
+  // leave the side empty rather than displaying an inverted S/R label.
+  if(is4h){
+    if(validResistance(scannerResistance)){
+      for(let i=levels.length-1;i>=0;i--) if(levels[i].type==='resistance') levels.splice(i,1);
+      add('Resistance',scannerResistance,'resistance','4H structure');
     }
-    if(Number.isFinite(Number(r?.supportLevel))&&Number(r.supportLevel)>0){
-      levels.push({name:'Support',value:Number(r.supportLevel),type:'support',source:'4H structure'});
+    if(validSupport(scannerSupport)){
+      for(let i=levels.length-1;i>=0;i--) if(levels[i].type==='support') levels.splice(i,1);
+      add('Support',scannerSupport,'support','4H structure');
     }
   }else{
-    if(!levels.some(x=>x.type==='resistance')) add('Resistance',r?.resistanceLevel,'resistance','4H fallback');
-    if(!levels.some(x=>x.type==='support')) add('Support',r?.supportLevel,'support','4H fallback');
+    if(!levels.some(x=>x.type==='resistance') && validResistance(scannerResistance)){
+      add('Resistance',scannerResistance,'resistance','4H fallback');
+    }
+    if(!levels.some(x=>x.type==='support') && validSupport(scannerSupport)){
+      add('Support',scannerSupport,'support','4H fallback');
+    }
   }
-  return levels;
+
+  // Final hard safety gate: never allow an inverted level through, regardless
+  // of which source produced it.
+  return levels.filter(x=>x.type==='resistance'?validResistance(x.value):validSupport(x.value));
 }
 function chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP,minT,maxT){
   ctx.save();
