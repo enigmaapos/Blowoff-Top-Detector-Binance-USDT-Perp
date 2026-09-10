@@ -8017,7 +8017,17 @@ function calculateUnifiedMarketCycle(item){
 
     let phase='NORMAL / TRENDING', code='TRENDING', state='⚪ NEUTRAL TREND', tone='neutral';
     let trend='MIXED', momentum=rsiOversold?'OVERSOLD / STRETCHED':rsiStretched?'STRETCHED':rsi15>=70?'OVERBOUGHT':'NORMAL';
-    let location=supportTest?'SUPPORT TEST':supportFailed?'SUPPORT FAILED':nearResistance?'RESISTANCE TEST':'BETWEEN STRUCTURAL LEVELS';
+    // Prefer the closest meaningful structural zone. When price is near
+    // resistance, that zone takes priority over a looser support-test range.
+    // This keeps the screenshot-aligned Profit/Resistance interpretation
+    // from being mislabeled as a support test.
+    let location=(nearResistance && (!supportTest || resistanceDist <= supportDist))
+      ? 'RESISTANCE TEST'
+      : supportTest
+        ? 'SUPPORT TEST'
+        : supportFailed
+          ? 'SUPPORT FAILED'
+          : 'BETWEEN STRUCTURAL LEVELS';
     let reversal=reversalConfirmed?'CONFIRMED':bounceOnly?'BOUNCE RISK — NOT REVERSAL':'NOT CONFIRMED';
     const reasons=[];
 
@@ -8058,9 +8068,20 @@ function calculateUnifiedMarketCycle(item){
 
     // Location and reversal state are appended after phase classification so a
     // markdown market can explicitly read as "support test + bounce risk".
-    if(supportTest){ location='SUPPORT TEST'; reasons.push(`Support ${Number(support).toPrecision(8)} • ${supportDist.toFixed(2)}% from price`); }
-    else if(supportFailed){ location='SUPPORT FAILED'; reasons.push(`Support ${Number(support).toPrecision(8)} has failed`); }
-    if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
+    // Keep resistance/profit-taking as the active location when it is the
+    // nearer actionable zone. Only use SUPPORT TEST when support is actually
+    // the closer active level and price is not sitting at resistance.
+    if(nearResistance && (!supportTest || resistanceDist <= supportDist)){
+      location='RESISTANCE TEST';
+      if(resistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
+    }else if(supportTest){
+      location='SUPPORT TEST';
+      reasons.push(`Support ${Number(support).toPrecision(8)} • ${supportDist.toFixed(2)}% from price`);
+    }else if(supportFailed){
+      location='SUPPORT FAILED';
+      reasons.push(`Support ${Number(support).toPrecision(8)} has failed`);
+    }
+    if(resistance && nearResistance && !(location==='RESISTANCE TEST')) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
     if(rsiOversold){ momentum='OVERSOLD / STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — oversold condition`); }
     else if(rsiStretched){ momentum='STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — stretched`); }
     if(reversalConfirmed){ reversal='CONFIRMED'; reasons.push('Higher-low + EMA14/EMA21 reclaim + bullish structure'); }
@@ -8130,8 +8151,8 @@ function renderUnifiedCycleMap(u){
   const stages=[
     {id:'awareness',icon:'🟠',title:'AWARENESS',sub:'Support / Accumulation',tone:'#ff8a4c'},
     {id:'markup',icon:'🟢',title:'MARKUP',sub:'Expansion / Continuation',tone:'#2dd4bf'},
-    {id:'distribution',icon:'🟠',title:'RESISTANCE / DISTRIBUTION',sub:'Topping / Exhaustion',tone:'#ff9f43'},
-    {id:'markdown',icon:'🔵',title:'PROFIT / MARKDOWN',sub:'Downtrend / Correction',tone:'#4da3ff'},
+    {id:'distribution',icon:'🟠',title:'RESISTANCE / DISTRIBUTION',sub:'Profit-taking / Topping',tone:'#ff9f43'},
+    {id:'markdown',icon:'🔵',title:'PROFIT / MARKDOWN',sub:'Profit protection / Downtrend',tone:'#4da3ff'},
     {id:'support',icon:'🔴',title:'SUPPORT / RECOVERY',sub:'Defense / Reversal watch',tone:'#ff5c5c'}
   ];
   const activeStage=stages.find(x=>x.id===active)||stages[0];
@@ -8160,7 +8181,7 @@ function renderUnifiedCycleMap(u){
       <div style="font-size:11px;font-weight:950;color:${activeStage.tone};padding:5px 8px;border-radius:999px;border:1px solid ${activeStage.tone}66;background:${activeStage.tone}12">CURRENT: ${activeStage.title}</div>
     </div>
     <div style="display:flex;align-items:stretch;gap:5px;margin-top:11px;overflow-x:auto;padding-bottom:4px">${cards}</div>
-    <div class="small" style="margin-top:7px;color:var(--muted)">Visual guide: Awareness → Markup → Resistance/Distribution → Profit/Markdown → Support/Recovery → next cycle. This map is a visual interpretation only; the existing Unified Market-Cycle engine remains authoritative.</div>
+    <div class="small" style="margin-top:7px;color:var(--muted)">Visual guide: Awareness → Markup → Resistance/Distribution (profit-taking zone) → Profit/Markdown → Support/Recovery → next cycle. The map is visual only; the existing Unified Market-Cycle and correction logic remain authoritative.</div>
   </div>`;
 }
 
