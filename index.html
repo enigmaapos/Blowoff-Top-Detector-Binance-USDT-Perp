@@ -7420,41 +7420,16 @@ function renderTraderDecisionBlock(r, compact=false){
       ? `🔴 Confirmed — correction still active`
       : `🟢 Not confirmed`;
 
-  return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
+  return `<div class="proDecision traderDecisionV2" style="margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:16px">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
     <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
     <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
-    <div style="margin-top:10px;padding:12px 13px;border-radius:10px;background:linear-gradient(180deg,rgba(126,220,255,.065),rgba(126,220,255,.025));border:1px solid rgba(126,220,255,.16);box-shadow:0 2px 10px rgba(0,0,0,.08)">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:15px">⚡</span><strong style="font-size:13px;letter-spacing:.02em">BEST ACTION NOW</strong><span style="margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--muted);text-transform:uppercase">Execution guidance</span></div>
-      <div style="font-size:13px;line-height:1.55">${bestAction}</div>
-    </div>
-    ${(buyZone || sellZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(20,24,32,.22);border:1px solid rgba(255,255,255,.08)">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px"><span>📍</span><strong style="font-size:12px;letter-spacing:.03em">PRICE ZONES</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Mapped liquidity areas</span></div>
-      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
-        ${sellZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(255,92,92,.055);border:1px solid rgba(255,92,92,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🔴 SELLING ZONE</strong><span style="font-size:10px;font-weight:800;color:${sellZone.confirmed?'#ff5c5c':'#ffb454'}">${/CONTESTED|OVERRIDDEN/i.test(String(sellZone.status||''))?'CONTESTED':sellZone.confirmed?'CONFIRMED':sellZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(sellZone.low)} – ${formatTraderZonePrice(sellZone.high)}</div><div class="small" style="margin-top:4px">Quality ${sellZone.quality}/100${liqUpsideSweep?' • Swept / rejection':''}</div><div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,92,92,.10);font-size:10px;line-height:1.45"><strong>Execution TF:</strong> ${sellExecution.tf} <span style="color:var(--muted)">• ${sellExecution.trigger}</span></div></div>` : ''}
-        ${buyZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(45,212,191,.055);border:1px solid rgba(45,212,191,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🟢 BUYING ZONE</strong><span style="font-size:10px;font-weight:800;color:${buyZone.confirmed?'#2dd4bf':'#ffb454'}">${/CONTESTED|OVERRIDDEN/i.test(String(buyZone.status||''))?'CONTESTED':buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(buyZone.low)} – ${formatTraderZonePrice(buyZone.high)}</div><div class="small" style="margin-top:4px">Quality ${buyZone.quality}/100${liqDownsideSweep?' • Swept / reclaim':''}</div><div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(45,212,191,.10);font-size:10px;line-height:1.45"><strong>Execution TF:</strong> ${buyExecution.tf} <span style="color:var(--muted)">• ${buyExecution.trigger}</span></div></div>` : ''}
-      </div>
-    </div>` : ''}
-    ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed on the execution timeframe.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
-    ${renderEntryPathFramework(item, (()=>{ const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); return /bearish|short/.test(tb)?'short':/bullish|controlled|recovery/.test(tb)?'long':'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
-    ${renderTraderDecisionAudit(item,compact)}
-    <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
-    <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
-    <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 30D</div>
-    <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="recBox" style="margin:0"><strong>🔎 Missing confirmation</strong><ul class="tradeList" style="margin:5px 0 0 18px">${missingHtml}</ul></div>
-      <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
-    </div>
-    <div class="small" style="margin-top:7px;color:var(--muted)">
-      Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
-      Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}${rsi15SessionText}${rsi4h1wText}${rsi8h1mText}
-    </div>
   </div>`;
+
 }
 
 function renderProfessionalAnalysis(r, rec, srec, longTargets){
@@ -8306,26 +8281,9 @@ function renderUnifiedCycleMap(u){
 function renderUnifiedMarketCycle(item){
   const r=item||{};
   let u=r.unifiedMarketCycle;
-  // Never preserve a stale/failed Unified Market-Cycle object. Recompute from
-  // the current result whenever the cached object is missing or errored.
   if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE') u=calculateUnifiedMarketCycle(r);
-  const tone=u.tone==='red'?'#ff5c5c':u.tone==='orange'?'#ff9f43':u.tone==='green'?'#2dd4bf':'#7edcff';
-  const e=u.ema||{}, st=u.structure||{}, m=u.meta||{};
-  const fmt=v=>Number.isFinite(Number(v))?(Number(v)<1?Number(v).toPrecision(7):Number(v).toFixed(6)):'—';
-  return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
+  return `<div class="recBox unifiedCycleCompact" style="margin-top:10px;background:rgba(255,255,255,.035)">
     <div style="font-size:16px;font-weight:950">🧭 UNIFIED MARKET-CYCLE — ${u.confidence||0}%</div>
-    <div style="font-size:19px;font-weight:950;color:${tone};margin-top:3px">${u.state||'⚪ UNKNOWN'}</div>
-    ${renderUnifiedCycleMap(u)}
-    <div style="margin-top:9px"><strong>Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
-    <div style="margin-top:4px"><strong>Correction authority:</strong> ${u.correctionStage||'—'}${u.recoveryConfirmed?' • 🟣 Recovery state active':''}</div>
-    <div style="margin-top:4px"><strong>Reversal:</strong> ${u.reversal||'—'}</div>
-    <div style="margin-top:6px"><strong>EMA structure:</strong> ${e.bearishStack?'🔴 Bearish aligned':e.bullishStack?'🟢 Bullish aligned':'🟡 Mixed / transitional'} • Price ${e.belowAll?'below all major EMAs':e.aboveAll?'above all major EMAs':'between EMA layers'}</div>
-    <div class="small" style="margin-top:4px">EMA14 ${fmt(e.ema14)} • EMA21 ${fmt(e.ema21)} • EMA50 ${fmt(e.ema50)} • EMA70 ${fmt(e.ema70)} • EMA200 ${fmt(e.ema200)}</div>
-    <div style="margin-top:5px"><strong>Structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
-    <div style="margin-top:5px"><strong>Support:</strong> ${fmt(u.support)} • <strong>Resistance:</strong> ${fmt(u.resistance)}</div>
-    <div style="margin-top:7px"><strong>🎯 Decision:</strong> ${u.action||'Wait for structural resolution.'}</div>
-    <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(u.reasons||[]).slice(0,6).join(' • ')||'No unified evidence available.'}</div>
-    <div class="small" style="margin-top:6px;color:var(--muted)">This synthesis does not turn RSI oversold into a long signal. A reversal requires structure recovery, not oscillator level alone.</div>
   </div>`;
 }
 
@@ -8425,16 +8383,13 @@ function renderCards(results){
 
                 <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
 
+        ${renderTopDetectionStack(r)}
+
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
           <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
           <div class="coinDetailsBody" style="margin-top:10px">
 
         
-
-        <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
-             The detector/render function already exists; this call keeps it visible
-             inside the per-coin expandable evidence section. -->
-        ${renderTopDetectionStack(r)}
 
         <div class="sigList" style="margin-top:0">
           Last: ${r.closeNow}<br>
