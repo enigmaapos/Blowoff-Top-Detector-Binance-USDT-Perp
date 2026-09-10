@@ -563,6 +563,8 @@ html,body{max-width:100%;overflow-x:hidden}*{box-sizing:border-box}.card-panel,.
   .stateBanner .stateReason{font-size:12px;color:#cfe8ff;margin-top:6px;line-height:1.45}
   .authorityNote{padding:9px 10px;border-radius:9px;background:rgba(255,255,255,.02);border:1px dashed rgba(255,255,255,.1);font-size:11px;color:#cfe8ff;line-height:1.45;margin:8px 0 12px}
   .signalGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px}.signalItem{padding:8px;border-radius:8px;background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);font-size:11px;line-height:1.35}.signalItem strong{font-size:12px}
+  .primaryDecisionEvidence{display:block}
+  .primaryDecisionEvidence .topDetPanel{margin-top:0}
   @media(max-width:600px){.layerGrid,.signalGrid{grid-template-columns:1fr}.layerCard .layerValue{font-size:16px}}
 table{min-width:0!important;width:100%}.tableScroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}@media(max-width:900px){#tableView{display:none!important}#cardView{display:block!important}}@media(min-width:901px){#tableView{display:block!important}#cardView{display:none!important}}@media(max-width:600px){.controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.controls>*{min-width:0}.controls input,.controls select,.controls button{width:100%;min-height:38px}.interpretScores{grid-template-columns:1fr 1fr}.interpretScore:last-child{grid-column:1/-1}}@media(max-width:380px){.controls{grid-template-columns:1fr}.interpretScores{grid-template-columns:1fr}.interpretScore:last-child{grid-column:auto}}
 
@@ -1006,7 +1008,7 @@ body.authLocked{overflow:hidden}
 </div>
 
 <script>
-/* BUILD: FINAL-UNIFIED-CORRECTION-CYCLE-2026-09-10 */
+/* BUILD: PRIMARY-COIN-CARD-COMPLETE-2026-09-10 */
 /* ANALYSIS ARCHITECTURE: 1 Context → 2 Warning → 3 Support → 4 Confirmation. */
 /* ======================================================
    Full detector with Correction Status sorting (client-side).
@@ -8471,23 +8473,34 @@ function renderCards(results){
 
                 <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
 
+        <!-- PRIMARY COIN CARD: top / HVD warning stack is visible without opening details. -->
+        <div class="primaryDecisionEvidence" style="margin-top:11px">
+          ${renderTopDetectionStack(r)}
+        </div>
+
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
           <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
           <div class="coinDetailsBody" style="margin-top:10px">
 
         
 
-        <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
-             The detector/render function already exists; this call keeps it visible
-             inside the per-coin expandable evidence section. -->
-        ${renderTopDetectionStack(r)}
-
-        <div class="sigList" style="margin-top:0">
+        <div class="recBox" style="margin-top:0">
+          <strong>🔬 Detailed technical diagnostics</strong><br>
           Last: ${r.closeNow}<br>
           RSI4H: ${rsi4h.toFixed(1)} • Vol×${Number(r.volSpike4||0).toFixed(2)} • Wick: ${wick.toFixed(2)}<br>
           EMA70 Extension: ${ema70.toFixed(2)}% • 15m EMA200 Stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'} • Funding: ${Number(r.fundingRate||0).toFixed(6)}<br>
           1D Volume: ${Number(r.volume1d||0).toLocaleString()} • 1D Volume Trend: ${Number.isFinite(Number(r.volume1dTrendPct)) ? (Number(r.volume1dTrendPct)>=0?'+':'')+Number(r.volume1dTrendPct).toFixed(1)+'%' : 'n/a'} ${r.volume1dFalling?'📉 DECLINING':r.volume1dWeakening?'📉 WEAKENING':'↔ STABLE'} • Declining days: ${Number(r.volume1dDecliningDays||0)}<br>
-          <small style="color:#cfe8ff">${renderPhaseComparison(r)}${renderBearishStructureDetector(r)}${renderSMCBreakerBlock(r)}${renderMarketStructurePsychology(r)}<div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div></small>
+          15m RSI &lt;50 (1D • 24H): ${rsi15SessionTotal?`${rsi15Below50}/${rsi15SessionTotal} (${rsi15Below50Pct.toFixed(1)}%)`:'no completed data'}<br>
+          4H RSI &lt;50 (1W • 7D): ${rsi4h1wTotal?`${rsi4h1wBelow50}/${rsi4h1wTotal} (${rsi4h1wPct.toFixed(1)}%)`:'no completed data'}<br>
+          8H RSI &lt;50 (1M • 30D): ${rsi8h1mTotal?`${rsi8h1mBelow50}/${rsi8h1mTotal} (${rsi8h1mPct.toFixed(1)}%)`:'no completed data'}
+        </div>
+
+        <div class="sigList" style="margin-top:10px">
+          ${renderPhaseComparison(r)}
+          ${renderBearishStructureDetector(r)}
+          ${renderSMCBreakerBlock(r)}
+          ${renderMarketStructurePsychology(r)}
+          <div style="margin-top:7px">Blowoff: <strong>${r.score??0}/8</strong> • Top Stack: <strong>${r.topDetection?.score??0}/100</strong> • <strong>${r.expl?.label||'None'}</strong></div>
         </div>
 
         <div class="proRead" style="border-left:4px solid ${state.tone==='red'?'#ff5c5c':state.tone==='orange'?'#ff9f43':state.tone==='yellow'?'#ffd966':state.tone==='green'?'#2dd4bf':'#7edcff'};background:rgba(255,255,255,.025);padding:12px;border-radius:10px;margin-top:0">
