@@ -6411,11 +6411,33 @@ function getFinalRecommendation(item){
   const strongSupport = accum>=65 && a4h>=55 && a1h>=50;
   const broadSupport = accum>=58 && a4h>=50 && a15>=55;
 
+  // ===== UNIFIED MARKET-CYCLE AUTHORITY =====
+  // Keep the final recommendation and Trader Decision on the same authoritative
+  // cycle state. Oversold/support-test is NOT a reversal by itself.
+  const unified=r.unifiedMarketCycle||calculateUnifiedMarketCycle(r);
+  const unifiedMarkdown=unified.code==='MARKDOWN_POST_TOP';
+  const unifiedSupportTest=unified.meta?.supportTest===true;
+  const unifiedReversalConfirmed=unified.meta?.reversalConfirmed===true;
+
   let state='⚪ NO CLEAR EDGE', confidence=45, sentence='', rationale='', action='', tradeBias='Neutral';
   const evidence=[];
 
+  /* 0) Unified markdown state gives the scanner one coherent post-top read.
+     The separate EMA200 correction flag remains the authoritative correction confirmation. */
+  if(unifiedMarkdown && !unifiedReversalConfirmed){
+    state=unifiedSupportTest ? '🔴 MARKDOWN / POST-TOP — SUPPORT TEST' : '🔴 MARKDOWN / POST-TOP';
+    confidence=Math.max(70,Number(unified.confidence||0));
+    sentence=unifiedSupportTest
+      ? `The 15m market-cycle engine identifies a post-top markdown: price is below the major EMA structure, bearish swing structure is present, and support is being tested. RSI may be oversold, but that alone does not confirm a reversal.`
+      : 'The 15m market-cycle engine identifies a post-top markdown with bearish EMA alignment and downside structure. A bounce can occur without changing the cycle state.';
+    rationale='Unified EMA hierarchy + HH/LH/HL/LL structure + S/R location + RSI + correction context';
+    tradeBias='Neutral / Cautious Bearish';
+    action=unified.action || 'Remain defensive. Wait for support defense → higher-low → EMA14/EMA21 reclaim before treating the move as a reversal.';
+    evidence.push(`Unified cycle: ${unified.phase}`);
+    evidence.push(`Trend ${unified.trend} • Location ${unified.location} • Reversal ${unified.reversal}`);
+  }
   /* 1) Confirmation always has first authority. */
-  if(confirmed){
+  else if(confirmed){
     if(strongSupport && (isAccumPhase || isRecovery) && !isCapitulation){
       state='🟣 CORRECTION CONFIRMED — RECOVERY / RE-ACCUMULATION WATCH';
       confidence=Math.min(96,Math.round((Number(cg.confidence||100)*0.4)+(accum*0.3)+(a4h*0.2)+10));
