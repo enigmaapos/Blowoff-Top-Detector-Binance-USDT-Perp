@@ -7949,13 +7949,6 @@ function calculateUnifiedMarketCycle(item){
 
     const e14=ema(closes,14), e21=ema(closes,21), e50=ema(closes,50), e70=ema(closes,70), e200=closes.length>=200?ema(closes,200):null;
     const emaVals={ema14:e14,ema21:e21,ema50:e50,ema70:e70,ema200:e200};
-
-    // Shared context used by the Unified Market-Cycle. These values must be
-    // defined locally so warning/detection layers can never break the
-    // authoritative correction-driven cycle.
-    const phaseText=String(item.phase?.phase || item.phase?.phaseName || item.phase || item.structurePhase || '').toLowerCase();
-    const topScore=Number(item.topDetection?.score ?? item.topScore ?? 0) || 0;
-    const priorTopEvidence=String(item.topDetection?.label || item.topDetection?.state || '').trim();
     const belowAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price<v);
     const aboveAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price>v);
     const bearishStack=Number.isFinite(e200)&&e14<e21&&e21<e50&&e50<e70&&e70<e200;
@@ -8008,6 +8001,11 @@ function calculateUnifiedMarketCycle(item){
     const rsiOversold=rsi15>0&&rsi15<=30;
     const rsiStretched=rsi15>0&&rsi15<=35;
 
+    // Context used by the normal cycle detectors. Keep these defined locally so
+    // correction-authority failures cannot fall through to MARKET-CYCLE UNAVAILABLE.
+    const topScore=Number(item.topDetection?.score ?? item.topScore ?? 0) || 0;
+    const phaseText=String(item.phase?.phase || item.phase?.phaseName || item.phase || '').toLowerCase();
+
     /*
       CORRECTION LOGIC IS AUTHORITATIVE FOR THE UNIFIED CYCLE.
       The Unified Market-Cycle no longer lets a generic distribution/top warning
@@ -8030,8 +8028,16 @@ function calculateUnifiedMarketCycle(item){
     const ema14Reclaim=price>e14;
     const ema21Reclaim=price>e21;
     const reversalConfirmed=(hl>=1 && ema14Reclaim && ema21Reclaim && (hh>=1||bullishStack) && !supportFailed);
-    const returnToNormal=!!item.returnToNormal?.isReturn || /RETURN.?TO.?NORMAL|RECOVERY/i.test(String(item.phase?.phase||item.phase?.phaseName||item.phase||''));
-    const recoveryConfirmed=(reversalConfirmed || correctionRecoveryCode || returnToNormal) && !supportFailed;
+
+    // IMPORTANT: the Trader Decision's generic "return-to-normal" label is
+    // contextual and must NOT move the cycle into Support / Recovery.
+    // Recovery is authoritative only after the Correction Guide itself says
+    // POST_CORRECTION_RECOVERY, or after a confirmed correction has a real
+    // structural reversal. Oversold/bounce conditions alone never qualify.
+    const recoveryConfirmed=!supportFailed && (
+      correctionRecoveryCode ||
+      (correctionConfirmed && reversalConfirmed)
+    );
     const bounceOnly=(rsiOversold||rsiStretched) && (supportTest||price>e14) && !reversalConfirmed;
 
     let phase='NORMAL / TRENDING', code='TRENDING', state='⚪ NEUTRAL TREND', tone='neutral';
@@ -8163,14 +8169,17 @@ function calculateUnifiedMarketCycle(item){
 function getUnifiedCycleMapStage(u){
   const phase=String(u?.phase||'').toUpperCase();
   const correction=String(u?.correctionCode||u?.correctionStage||'').toUpperCase();
-  const recovery=!!u?.recoveryConfirmed || phase.includes('POST-CORRECTION') || correction.includes('POST_CORRECTION_RECOVERY');
+  const recovery=!!u?.recoveryConfirmed || correction.includes('POST_CORRECTION_RECOVERY') || phase.includes('POST-CORRECTION / RECOVERY');
   const location=String(u?.location||'').toUpperCase();
 
-  // Correction authority is applied to the visual map as well as the text verdict.
+  // The map is subordinate to the authoritative Correction Guide.
+  // A support test, oversold reading, bounce risk, or generic return-to-normal
+  // context cannot advance the cycle into Support / Recovery.
   if(recovery) return 'support';
-  if(correction.includes('SIGNIFICANT_CORRECTION_CONFIRMED') || phase.includes('MARKDOWN')) return 'markdown';
-  if(correction.includes('CORRECTION_DEVELOPING') || phase.includes('CORRECTION DEVELOPING')) return 'markdown';
+  if(correction.includes('SIGNIFICANT_CORRECTION_CONFIRMED')) return 'markdown';
+  if(correction.includes('CORRECTION_DEVELOPING') || correction.includes('DEEPENING CORRECTION')) return 'markdown';
   if(correction.includes('HIGH_CORRECTION_RISK') || correction.includes('VULNERABILITY')) return 'distribution';
+  if(phase.includes('MARKDOWN')) return 'markdown';
   if(phase.includes('DISTRIBUTION')) return 'distribution';
   if(phase.includes('MARKUP')) return 'markup';
   if(phase.includes('ACCUMULATION')) return 'awareness';
@@ -8214,7 +8223,7 @@ function renderUnifiedCycleMap(u){
       <div style="font-size:11px;font-weight:950;color:${activeStage.tone};padding:5px 8px;border-radius:999px;border:1px solid ${activeStage.tone}66;background:${activeStage.tone}12">CURRENT: ${activeStage.title}</div>
     </div>
     <div style="display:flex;align-items:stretch;gap:5px;margin-top:11px;overflow-x:auto;padding-bottom:4px">${cards}</div>
-    <div class="small" style="margin-top:7px;color:var(--muted)">Visual guide: Awareness → Markup → Resistance/Distribution → Profit/Markdown → Support/Recovery → next cycle. Correction Status is now applied to the Unified Market-Cycle; the authoritative correction layer can move the cycle into Markdown or Support/Recovery.</div>
+    <div class="small" style="margin-top:7px;color:var(--muted)">Visual guide: Awareness → Markup → Resistance/Distribution → Profit/Markdown → Support/Recovery → next cycle. Correction Status is authoritative for the Unified Market-Cycle; only POST-CORRECTION / RECOVERY can activate Support / Recovery.</div>
   </div>`;
 }
 
