@@ -8103,6 +8103,67 @@ function calculateUnifiedMarketCycle(item){
   }
 }
 
+function getUnifiedCycleMapStage(u){
+  const phase=String(u?.phase||'').toUpperCase();
+  const location=String(u?.location||'').toUpperCase();
+  const reversal=String(u?.reversal||'').toUpperCase();
+
+  // The map follows the screenshot's visual journey without changing
+  // the underlying Unified Market-Cycle or correction logic.
+  if(phase.includes('MARKDOWN') && (location.includes('SUPPORT TEST') || reversal.includes('BOUNCE') || reversal.includes('CONFIRMED'))){
+    return 'support';
+  }
+  if(phase.includes('MARKDOWN')) return 'markdown';
+  if(phase.includes('DISTRIBUTION')) return 'distribution';
+  if(phase.includes('MARKUP')) return 'markup';
+  if(phase.includes('ACCUMULATION')) return 'awareness';
+
+  // For an unresolved/neutral market, use structural location as the
+  // least-assumptive visual placement.
+  if(location.includes('RESISTANCE')) return 'distribution';
+  if(location.includes('SUPPORT')) return 'support';
+  return 'awareness';
+}
+
+function renderUnifiedCycleMap(u){
+  const active=getUnifiedCycleMapStage(u);
+  const stages=[
+    {id:'awareness',icon:'🟠',title:'AWARENESS',sub:'Support / Accumulation',tone:'#ff8a4c'},
+    {id:'markup',icon:'🟢',title:'MARKUP',sub:'Expansion / Continuation',tone:'#2dd4bf'},
+    {id:'distribution',icon:'🟠',title:'RESISTANCE / DISTRIBUTION',sub:'Topping / Exhaustion',tone:'#ff9f43'},
+    {id:'markdown',icon:'🔵',title:'PROFIT / MARKDOWN',sub:'Downtrend / Correction',tone:'#4da3ff'},
+    {id:'support',icon:'🔴',title:'SUPPORT / RECOVERY',sub:'Defense / Reversal watch',tone:'#ff5c5c'}
+  ];
+  const activeStage=stages.find(x=>x.id===active)||stages[0];
+  const cards=stages.map((x,i)=>{
+    const isActive=x.id===active;
+    const opacity=isActive?'1':'.72';
+    const border=isActive?x.tone:'rgba(255,255,255,.10)';
+    const bg=isActive?'rgba(255,255,255,.075)':'rgba(255,255,255,.025)';
+    const marker=isActive
+      ? `<div style="margin-top:7px;font-size:10px;font-weight:950;letter-spacing:.7px;color:${x.tone}">● CURRENT PHASE</div>`
+      : `<div style="margin-top:7px;font-size:10px;font-weight:800;color:var(--muted)">Cycle stage</div>`;
+    return `<div style="flex:1 1 150px;min-width:145px;opacity:${opacity};padding:10px 9px;border:1px solid ${border};border-radius:12px;background:${bg};box-shadow:${isActive?'0 0 0 1px '+x.tone+'33,0 8px 24px rgba(0,0,0,.18)':'none'};position:relative">
+      <div style="font-size:18px;line-height:1">${x.icon}</div>
+      <div style="margin-top:5px;font-size:11px;font-weight:950;line-height:1.15">${x.title}</div>
+      <div class="small" style="margin-top:4px;line-height:1.25">${x.sub}</div>
+      ${marker}
+    </div>${i<stages.length-1?`<div style="flex:0 0 auto;align-self:center;font-size:20px;color:var(--muted);padding:0 1px">→</div>`:''}`;
+  }).join('');
+
+  return `<div style="margin-top:10px;padding:11px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.018));overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:14px;font-weight:950">🧭 UNIFIED MARKET-CYCLE MAP</div>
+        <div class="small" style="margin-top:3px">Screenshot-aligned cycle path • current scanner phase is highlighted</div>
+      </div>
+      <div style="font-size:11px;font-weight:950;color:${activeStage.tone};padding:5px 8px;border-radius:999px;border:1px solid ${activeStage.tone}66;background:${activeStage.tone}12">CURRENT: ${activeStage.title}</div>
+    </div>
+    <div style="display:flex;align-items:stretch;gap:5px;margin-top:11px;overflow-x:auto;padding-bottom:4px">${cards}</div>
+    <div class="small" style="margin-top:7px;color:var(--muted)">Visual guide: Awareness → Markup → Resistance/Distribution → Profit/Markdown → Support/Recovery → next cycle. This map is a visual interpretation only; the existing Unified Market-Cycle engine remains authoritative.</div>
+  </div>`;
+}
+
 function renderUnifiedMarketCycle(item){
   const r=item||{};
   const u=r.unifiedMarketCycle || calculateUnifiedMarketCycle(r);
@@ -8112,7 +8173,8 @@ function renderUnifiedMarketCycle(item){
   return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
     <div style="font-size:16px;font-weight:950">🧭 UNIFIED MARKET-CYCLE — ${u.confidence||0}%</div>
     <div style="font-size:19px;font-weight:950;color:${tone};margin-top:3px">${u.state||'⚪ UNKNOWN'}</div>
-    <div style="margin-top:5px"><strong>Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
+    ${renderUnifiedCycleMap(u)}
+    <div style="margin-top:9px"><strong>Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
     <div style="margin-top:4px"><strong>Reversal:</strong> ${u.reversal||'—'}</div>
     <div style="margin-top:6px"><strong>EMA structure:</strong> ${e.bearishStack?'🔴 Bearish aligned':e.bullishStack?'🟢 Bullish aligned':'🟡 Mixed / transitional'} • Price ${e.belowAll?'below all major EMAs':e.aboveAll?'above all major EMAs':'between EMA layers'}</div>
     <div class="small" style="margin-top:4px">EMA14 ${fmt(e.ema14)} • EMA21 ${fmt(e.ema21)} • EMA50 ${fmt(e.ema50)} • EMA70 ${fmt(e.ema70)} • EMA200 ${fmt(e.ema200)}</div>
