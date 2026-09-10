@@ -5772,23 +5772,15 @@ function filterResultsForDist(results) {
     });
   }
 
-  // Structure Label Filter.
-  // IMPORTANT: use the EXACT same 4H chart structure label that is printed
-  // after "Structure:" by chartDrawStructure().
+  // Structure Label Filter — EXACTLY mirrors the label drawn on the 4H chart.
+  // The chart uses the last 180 visible 4H candles, so the filter must use
+  // those same candles. This fixes BEARISH RISK / BULLISH SUPPORT mismatches.
   const marketStructureFilter = el.marketStructureFilter ? el.marketStructureFilter.value : 'ALL';
   if (marketStructureFilter !== 'ALL') {
+    const wanted = String(marketStructureFilter).trim().toUpperCase();
     filtered = filtered.filter(r => {
       try {
-        const candles4h = typeof chartKlinesFor === 'function' ? chartKlinesFor(r, '4h') : [];
-        const structure4h = typeof chartStructurePivots === 'function'
-          ? chartStructurePivots(candles4h)
-          : {highs:[], lows:[]};
-        const chartLabel = typeof chartStructureBias === 'function'
-          ? String(chartStructureBias(structure4h) || 'MIXED').toUpperCase()
-          : 'MIXED';
-
-        // Exact match: BEARISH RISK is NOT grouped into BEARISH.
-        return chartLabel === String(marketStructureFilter).toUpperCase();
+        return chartStructureLabelForResult(r, '4h') === wanted;
       } catch (_) {
         return false;
       }
@@ -7596,6 +7588,17 @@ function chartKlinesFor(r, tf){
   const arr=Array.isArray(r?.[cfg.key])?r[cfg.key].slice():[];
   return arr.filter(k=>Array.isArray(k)&&k.length>=6).slice(-cfg.candles);
 }
+function chartVisibleKlinesFor(r, tf){
+  const full=chartKlinesFor(r,tf);
+  const visibleCount = tf==='1m' ? 180 : tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
+  return full.slice(-visibleCount);
+}
+function chartStructureLabelForResult(r, tf='4h'){
+  const candles=chartVisibleKlinesFor(r,tf);
+  if(!candles.length) return 'MIXED';
+  const structure=chartStructurePivots(candles);
+  return String(chartStructureBias(structure)||'MIXED').toUpperCase();
+}
 function chartEma(vals, period){
   if(!vals.length) return [];
   const p=Math.max(1,period), out=[];
@@ -7797,7 +7800,7 @@ function chartRender(symbol, tf){
   // Keep enough history for indicators, but display fewer lower-timeframe candles
   // so 15m price action is not horizontally compressed.
   const visibleCount = tf==='1m' ? 180 : tf==='15m' ? 120 : tf==='1h' ? 160 : tf==='4h' ? 180 : 100;
-  const candles=fullCandles.slice(-visibleCount);
+  const candles=chartVisibleKlinesFor(r,tf);
   host.dataset.tf=tf;
   host.querySelectorAll('.binanceTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
   if(!candles.length){ canvas.style.display='none'; wrap.innerHTML='<div class="binanceChartEmpty">No Binance candle data is available for this timeframe yet.</div>'; return; }
@@ -7980,7 +7983,6 @@ function renderCards(results){
         <div class="compactSignals decisionOnly" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
           ${badge} ${accBadge}
           ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
-          <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
         </div>
 
 <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
@@ -7999,6 +8001,8 @@ function renderCards(results){
           <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>Structure Label: BULLISH / BULLISH SUPPORT / BEARISH / BEARISH RISK / MIXED</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
+
+                <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
           <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
@@ -9456,3 +9460,6 @@ if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}
 </script>
 </body>
 </html>
+        <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
+
+
