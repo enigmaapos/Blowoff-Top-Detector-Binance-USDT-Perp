@@ -616,7 +616,7 @@ table{min-width:0!important;width:100%}.tableScroll{width:100%;overflow-x:auto;-
 @media(max-width:760px){.binanceChartCanvasWrap{height:320px}.binanceChartPanel{padding:8px}.binanceChartTitle{font-size:13px}}
 
 </style>
-<!-- v17: 4H chart default + HH/HL/LH/LL Market Structure filter; legacy 4H bearish-risk filter removed -->
+<!-- v18: Structure Label Filter mirrors the exact 4H chart label, including BEARISH RISK / BULLISH SUPPORT -->
 <!-- v3 ACTIVE-MODE FIX:
      Market/Top30/Below50, Single Search, and Favorites now have isolated
      datasets and a single active live-refresh owner. -->
@@ -892,10 +892,12 @@ body.authLocked{overflow:hidden}
           <select id="marketStructureFilter">
             <option value="ALL">All Structure Labels</option>
             <option value="BULLISH">🟢 Structure: BULLISH</option>
+            <option value="BULLISH SUPPORT">🟢 Structure: BULLISH SUPPORT</option>
             <option value="BEARISH">🔴 Structure: BEARISH</option>
+            <option value="BEARISH RISK">🔴 Structure: BEARISH RISK</option>
             <option value="MIXED">🟡 Structure: MIXED</option>
           </select>
-          <div class="dashboardHint">Filters using the same final Structure label displayed in the card.</div>
+          <div class="dashboardHint">Exact 4H chart label filter — includes BEARISH RISK and BULLISH SUPPORT.</div>
         </div>
       </div>
       <div class="controlSectionTitle" style="margin-top:14px">
@@ -5771,27 +5773,25 @@ function filterResultsForDist(results) {
   }
 
   // Structure Label Filter.
-  // Filter using the same final structure label shown in the UI.
+  // IMPORTANT: use the EXACT same 4H chart structure label that is printed
+  // after "Structure:" by chartDrawStructure().
   const marketStructureFilter = el.marketStructureFilter ? el.marketStructureFilter.value : 'ALL';
   if (marketStructureFilter !== 'ALL') {
     filtered = filtered.filter(r => {
-      const ms = r?.marketStructure || {};
-      const hh = r?.higherHighs ?? ms.higherHighs ?? r?.hh ?? r?.hhCount ?? 0;
-      const hl = r?.higherLows ?? ms.higherLows ?? r?.hl ?? r?.hlCount ?? 0;
-      const lh = r?.lowerHighs ?? ms.lowerHighs ?? r?.lh ?? r?.lhCount ?? 0;
-      const ll = r?.lowerLows ?? ms.lowerLows ?? r?.ll ?? r?.llCount ?? 0;
-      const displayedStructure =
-        (ms.bias && ms.bias !== 'MIXED') ? String(ms.bias)
-        : (Number(hh)>0 && Number(hl)>0 && Number(lh)>0 && Number(ll)>0) ? 'Mixed HH/HL + LH/LL'
-        : (Number(hh)>0 && Number(hl)>0) ? 'HH + HL — Bullish'
-        : (Number(lh)>0 && Number(ll)>0) ? 'LH + LL — Bearish'
-        : (Number(lh)>0) ? 'LH — Exhaustion'
-        : 'Structure data limited';
-      const label = displayedStructure.toUpperCase();
-      if (marketStructureFilter === 'BULLISH') return label.includes('BULLISH');
-      if (marketStructureFilter === 'BEARISH') return label.includes('BEARISH');
-      if (marketStructureFilter === 'MIXED') return label.includes('MIXED');
-      return true;
+      try {
+        const candles4h = typeof chartKlinesFor === 'function' ? chartKlinesFor(r, '4h') : [];
+        const structure4h = typeof chartStructurePivots === 'function'
+          ? chartStructurePivots(candles4h)
+          : {highs:[], lows:[]};
+        const chartLabel = typeof chartStructureBias === 'function'
+          ? String(chartStructureBias(structure4h) || 'MIXED').toUpperCase()
+          : 'MIXED';
+
+        // Exact match: BEARISH RISK is NOT grouped into BEARISH.
+        return chartLabel === String(marketStructureFilter).toUpperCase();
+      } catch (_) {
+        return false;
+      }
     });
   }
 
@@ -7985,7 +7985,7 @@ function renderCards(results){
 
 <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
           <div class="binanceChartHead">
-            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 4H chart + scanner levels, EMA200 and structure pivots</div></div>
+            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 4H chart + scanner levels, EMA200 and Structure Label</div></div>
             <div class="binanceChartControls">
               <button type="button" class="binanceTfBtn" data-tf="1m">1m</button>
               <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
@@ -7996,7 +7996,7 @@ function renderCards(results){
             </div>
           </div>
           <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>Structure pivots</span><span>— Current price</span></div>
+          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>Structure Label: BULLISH / BULLISH SUPPORT / BEARISH / BEARISH RISK / MIXED</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
 
