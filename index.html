@@ -619,6 +619,21 @@ table{min-width:0!important;width:100%}.tableScroll{width:100%;overflow-x:auto;-
 .binanceChartEmpty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted,#9fb3cc);font-size:12px;padding:20px;text-align:center}
 @media(max-width:760px){.binanceChartCanvasWrap{height:320px}.binanceChartPanel{padding:8px}.binanceChartTitle{font-size:13px}}
 
+/* ---------- v19 Dynamic Cycle Overlay Chart ---------- */
+.cycleOverlayPanel{margin:0 0 12px;padding:10px;border:1px solid rgba(255,159,67,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,159,67,.045),rgba(255,255,255,.018));box-shadow:0 8px 24px rgba(0,0,0,.12)}
+.cycleOverlayHead{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.cycleOverlayTitle{font-size:14px;font-weight:950;letter-spacing:.02em}
+.cycleOverlaySub{font-size:10px;color:var(--muted,#9fb3cc);margin-top:2px;line-height:1.35}
+.cycleOverlayControls{display:flex;gap:5px;flex-wrap:wrap}
+.cycleOverlayTfBtn{border:1px solid rgba(159,179,204,.24);background:rgba(255,255,255,.045);color:var(--text,#fff);border-radius:7px;padding:5px 8px;font-size:11px;font-weight:800;cursor:pointer}
+.cycleOverlayTfBtn.active{background:rgba(255,159,67,.13);border-color:rgba(255,159,67,.55);color:#ffe2bd}
+.cycleOverlayCanvasWrap{position:relative;width:100%;height:390px;border-radius:9px;overflow:hidden;background:#0d1724;border:1px solid rgba(255,255,255,.06)}
+.cycleOverlayCanvas{display:block;width:100%;height:100%;touch-action:none}
+.cycleOverlayLegend{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px;font-size:10px;color:var(--muted,#9fb3cc)}
+.cycleOverlayLegend span{padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.035)}
+.cycleOverlayStatus{margin-top:6px;font-size:10px;color:var(--muted,#9fb3cc);min-height:14px}
+@media(max-width:760px){.cycleOverlayCanvasWrap{height:350px}.cycleOverlayPanel{padding:8px}.cycleOverlayTitle{font-size:13px}}
+
 </style>
 <!-- v18: Structure Label Filter mirrors the exact 4H chart label, including BEARISH RISK / BULLISH SUPPORT -->
 <!-- v3 ACTIVE-MODE FIX:
@@ -7915,6 +7930,164 @@ function chartDrawLine(ctx, values, xFor, yFor, lineWidth, dash){
   values.forEach((v,i)=>{ if(v==null||!Number.isFinite(Number(v))) return; const x=xFor(i),y=yFor(Number(v)); if(!started){ctx.moveTo(x,y);started=true}else ctx.lineTo(x,y); });
   if(started) ctx.stroke(); ctx.restore();
 }
+
+/*
+ * v19 Dynamic Market-Cycle Overlay
+ * Uses the same freshly scanned result object and candle arrays as the main chart.
+ * It does not create a second market model; it visualizes existing scanner levels,
+ * liquidity/trader zones and Unified Market-Cycle state.
+ */
+function cycleOverlayStage(r){
+  try{
+    let u=r?.unifiedMarketCycle;
+    if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE') u=calculateUnifiedMarketCycle(r);
+    const stage=getUnifiedCycleMapStage(u||{});
+    const map={
+      awareness:{title:'AWARENESS',tone:'#ff8a4c',sub:'Support / accumulation awareness'},
+      markup:{title:'MARKUP / EXPANSION',tone:'#2dd4bf',sub:'Expansion / continuation'},
+      distribution:{title:'RESISTANCE / DISTRIBUTION',tone:'#ff9f43',sub:'Topping / exhaustion risk'},
+      markdown:{title:'PROFIT / MARKDOWN',tone:'#4da3ff',sub:'Profit protection / correction'},
+      support:{title:'SUPPORT / RECOVERY',tone:'#ff5c5c',sub:'Defense / recovery watch'}
+    };
+    return {stage,...(map[stage]||map.awareness),cycle:u};
+  }catch(_){ return {stage:'awareness',title:'AWARENESS',tone:'#ff8a4c',sub:'Support / accumulation awareness',cycle:{}}; }
+}
+
+function cycleOverlayLevels(r,tf,candles){
+  const levels=chartLevelCandidates(r,tf,candles);
+  const sr={support:null,resistance:null};
+  levels.forEach(l=>{ if(l.type==='support' && !sr.support) sr.support=l; if(l.type==='resistance' && !sr.resistance) sr.resistance=l; });
+  let decision={};
+  try{ decision=typeof getTraderDecisionZones==='function' ? (getTraderDecisionZones(r)||{}) : {}; }catch(_){}
+  const makeBand=(center,existing,kind)=>{
+    const c=Number(center);
+    if(!Number.isFinite(c)||c<=0) return null;
+    if(existing && Number(existing.low)>0 && Number(existing.high)>Number(existing.low)) return {low:Number(existing.low),high:Number(existing.high),center:c,source:'Trader Decision zone'};
+    const half=c*0.006;
+    return {low:c-half,high:c+half,center:c,source:kind+' structural level ±0.60%'};
+  };
+  const supportCenter=Number(sr.support?.value || decision?.buy?.center || 0);
+  const resistanceCenter=Number(sr.resistance?.value || decision?.sell?.center || 0);
+  const support=makeBand(supportCenter,decision?.buy,'Support');
+  const resistance=makeBand(resistanceCenter,decision?.sell,'Resistance');
+  let awareness=null, profit=null;
+  if(support && resistance && resistance.center>support.center){
+    const span=resistance.center-support.center;
+    const aLow=support.high;
+    const aHigh=support.center+span*0.35;
+    if(aHigh>aLow) awareness={low:aLow,high:aHigh,source:'Support-to-resistance cycle span'};
+    // Prefer the real selling zone when present; otherwise derive a bounded
+    // upper-cycle profit band from the live support/resistance span.
+    if(decision?.sell?.low && decision?.sell?.high){
+      profit={low:Number(decision.sell.low),high:Number(decision.sell.high),source:'Trader Decision selling zone'};
+    }else{
+      profit={low:resistance.center-span*0.22,high:resistance.center,source:'Upper cycle span'};
+    }
+  }else if(resistance){
+    profit={low:resistance.low,high:resistance.high,source:'Resistance / profit-taking zone'};
+  }
+  return {support,resistance,awareness,profit,decision,levels};
+}
+
+function cycleOverlayDrawBand(ctx,band,xFor,yFor,pad,w,minP,maxP,label,fill,stroke,text){
+  if(!band) return;
+  const lo=Math.max(minP,Number(band.low)), hi=Math.min(maxP,Number(band.high));
+  if(!(hi>lo)) return;
+  const y1=yFor(hi),y2=yFor(lo);
+  ctx.save();
+  ctx.fillStyle=fill; ctx.fillRect(pad.left,y1,w-pad.left-pad.right,Math.max(2,y2-y1));
+  ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  [y1,y2].forEach(y=>{ctx.beginPath();ctx.moveTo(pad.left,y);ctx.lineTo(w-pad.right,y);ctx.stroke();});
+  ctx.setLineDash([]); ctx.font='bold 10px sans-serif'; ctx.textAlign='left'; ctx.fillStyle=text;
+  ctx.fillText(label+'  '+chartFormatPrice(band.low)+'–'+chartFormatPrice(band.high),w-pad.right+5,Math.max(pad.top+12,y1+11));
+  ctx.restore();
+}
+
+function cycleOverlayArrow(ctx,x1,y1,x2,y2,color,label,align='left'){
+  const dx=x2-x1,dy=y2-y1,len=Math.max(1,Math.hypot(dx,dy)),ux=dx/len,uy=dy/len;
+  ctx.save(); ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=5; ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  const ah=13,aw=7;
+  ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-ux*ah-uy*aw,y2-uy*ah+ux*aw);ctx.lineTo(x2-ux*ah+uy*aw,y2-uy*ah-ux*aw);ctx.closePath();ctx.fill();
+  ctx.font='bold 12px sans-serif';ctx.textAlign=align;ctx.fillText(label,(x1+x2)/2+8,(y1+y2)/2-8);
+  ctx.restore();
+}
+
+function cycleOverlayRender(symbol,tf){
+  const safeSymbol=String(symbol||'');
+  const host=[...document.querySelectorAll('.cycleOverlayPanel[data-cycle-overlay-symbol]')].find(h=>String(h.dataset.cycleOverlaySymbol||'').toUpperCase()===safeSymbol.toUpperCase());
+  if(!host) return;
+  const status=host.querySelector('.cycleOverlayStatus');
+  try{
+    const r=(Array.isArray(window.results)?window.results:[]).find(x=>String(x?.symbol||'').toUpperCase()===safeSymbol.toUpperCase());
+    if(!r){if(status)status.textContent='Cycle overlay data unavailable for this symbol.';return;}
+    const canvas=host.querySelector('.cycleOverlayCanvas'),wrap=host.querySelector('.cycleOverlayCanvasWrap');
+    if(!canvas||!wrap)return;
+    host.dataset.tf=tf; host.querySelectorAll('.cycleOverlayTfBtn').forEach(b=>b.classList.toggle('active',b.dataset.tf===tf));
+    const candles=chartVisibleKlinesFor(r,tf);
+    if(!candles.length){status.textContent='No candle data is available for this timeframe yet.';return;}
+    const dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1));
+    const rect=wrap.getBoundingClientRect(),w=Math.max(300,rect.width),h=Math.max(260,rect.height);
+    canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);canvas.style.width=w+'px';canvas.style.height=h+'px';
+    const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle='#0d1724';ctx.fillRect(0,0,w,h);
+    const pad={left:8,right:118,top:28,bottom:34};
+    const plotTop=pad.top,plotBottom=h-pad.bottom;
+    const opens=candles.map(k=>Number(k[1])),highs=candles.map(k=>Number(k[2])),lows=candles.map(k=>Number(k[3])),closes=candles.map(k=>Number(k[4]));
+    const cw=Math.max(2,(w-pad.left-pad.right)/candles.length*.68);
+    let minP=Math.min(...lows),maxP=Math.max(...highs);
+    const ov=cycleOverlayLevels(r,tf,candles);
+    [ov.support,ov.resistance,ov.awareness,ov.profit].forEach(b=>{if(b){minP=Math.min(minP,Number(b.low));maxP=Math.max(maxP,Number(b.high));}});
+    const range=Math.max(maxP-minP,maxP*.0001);minP-=range*.06;maxP+=range*.06;
+    const xFor=i=>pad.left+(w-pad.left-pad.right)*(i+.5)/candles.length;
+    const yFor=p=>plotTop+(maxP-p)/(maxP-minP)*(plotBottom-plotTop);
+    // Grid and price scale.
+    chartDrawGrid(ctx,w,h,pad,plotTop,plotBottom,minP,maxP);
+    // Cycle bands are deliberately drawn first so candles remain readable.
+    cycleOverlayDrawBand(ctx,ov.awareness,xFor,yFor,pad,w,minP,maxP,'AWARENESS','rgba(255,138,76,.10)','rgba(255,138,76,.48)','#ffb080');
+    cycleOverlayDrawBand(ctx,ov.resistance,xFor,yFor,pad,w,minP,maxP,'RESISTANCE / DISTRIBUTION','rgba(255,159,67,.12)','rgba(255,159,67,.58)','#ffd0a1');
+    cycleOverlayDrawBand(ctx,ov.profit,xFor,yFor,pad,w,minP,maxP,'PROFIT / MARKDOWN','rgba(77,163,255,.10)','rgba(77,163,255,.52)','#b9dcff');
+    cycleOverlayDrawBand(ctx,ov.support,xFor,yFor,pad,w,minP,maxP,'SUPPORT / RECOVERY','rgba(255,92,92,.10)','rgba(255,92,92,.52)','#ffb3b3');
+    // Candles.
+    candles.forEach((k,i)=>{const x=xFor(i),o=opens[i],hi=highs[i],lo=lows[i],cl=closes[i],up=cl>=o;ctx.strokeStyle=up?'#2dd4bf':'#ff5c6c';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,yFor(hi));ctx.lineTo(x,yFor(lo));ctx.stroke();const top=yFor(Math.max(o,cl)),bot=yFor(Math.min(o,cl));ctx.fillStyle=up?'#2dd4bf':'#ff5c6c';ctx.fillRect(x-cw/2,top,Math.max(1,cw),Math.max(1,bot-top));});
+    // EMA200 context.
+    const full=chartKlinesFor(r,tf);
+    if(full.length>=200){const ema=chartEma(full.map(k=>Number(k[4])),200).slice(-candles.length);ctx.strokeStyle='rgba(255,255,255,.75)';chartDrawLine(ctx,ema,xFor,yFor,1.7,[]);}
+    // Dynamic cycle path: support/awareness → resistance, then resistance → support.
+    if(ov.support&&ov.resistance&&ov.resistance.center>ov.support.center){
+      const leftX=pad.left+Math.max(20,(w-pad.left-pad.right)*.18);
+      const rightX=w-pad.right-Math.max(20,(w-pad.left-pad.right)*.14);
+      const ay=yFor((ov.awareness?.low??ov.support.center));
+      const ry=yFor(ov.resistance.center);
+      const sy=yFor(ov.support.center);
+      cycleOverlayArrow(ctx,leftX,ay,rightX-30,ry,'#ff8a4c','Awareness → resistance');
+      cycleOverlayArrow(ctx,rightX-30,ry,rightX-5,sy,'#2f8cff','Profit / markdown');
+    }
+    // Current price and current stage badge.
+    const last=closes.at(-1),ly=yFor(last);ctx.save();ctx.strokeStyle='rgba(255,255,255,.50)';ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(pad.left,ly);ctx.lineTo(w-pad.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText(chartFormatPrice(last),w-pad.right+5,ly+11);ctx.restore();
+    const stage=cycleOverlayStage(r);
+    ctx.save();ctx.fillStyle='rgba(4,12,22,.82)';ctx.strokeStyle=stage.tone;ctx.lineWidth=1;ctx.beginPath();ctx.roundRect?.(10,7,Math.min(w-20,330),18,6);if(!ctx.roundRect){ctx.rect(10,7,Math.min(w-20,330),18);}ctx.fill();ctx.stroke();ctx.fillStyle=stage.tone;ctx.font='bold 10px sans-serif';ctx.textAlign='left';ctx.fillText('CURRENT CYCLE: '+stage.title,18,20);ctx.restore();
+    ctx.fillStyle='rgba(207,232,255,.48)';ctx.font='9px sans-serif';ctx.textAlign='center';
+    [0,Math.floor(candles.length/2),candles.length-1].forEach(i=>{const d=new Date(Number(candles[i][0]));ctx.fillText(d.toLocaleString(undefined,{month:'short',day:'numeric',hour:tf==='1d'?undefined:'2-digit',minute:tf==='1d'?undefined:'2-digit'}),xFor(i),h-10);});
+    const lastTime=new Date(Number(candles.at(-1)[6]||candles.at(-1)[0]));
+    status.textContent=`Dynamic overlay • ${tf} • ${candles.length} candles • ${stage.title} • Updated ${lastTime.toLocaleTimeString()}`;
+  }catch(err){console.error('Cycle overlay render error',safeSymbol,tf,err);if(status)status.textContent=`Cycle overlay error: ${err?.message||'unable to render'}`;}
+}
+
+function bindCycleOverlayCharts(){
+  document.querySelectorAll('.cycleOverlayPanel[data-cycle-overlay-symbol]').forEach(host=>{
+    if(!host.dataset.bound){
+      host.dataset.bound='1';
+      host.addEventListener('click',ev=>{const btn=ev.target.closest('.cycleOverlayTfBtn');if(btn){ev.preventDefault();cycleOverlayRender(host.dataset.cycleOverlaySymbol,btn.dataset.tf);}});
+    }
+    cycleOverlayRender(host.dataset.cycleOverlaySymbol,host.dataset.tf||'15m');
+  });
+}
+function refreshCycleOverlayCharts(){
+  document.querySelectorAll('.cycleOverlayPanel[data-cycle-overlay-symbol]').forEach(host=>{
+    try{cycleOverlayRender(host.dataset.cycleOverlaySymbol,host.dataset.tf||'15m');}catch(_){}
+  });
+}
+
 function chartRender(symbol, tf){
   const safeSymbol=String(symbol||'');
   const host=[...document.querySelectorAll('.binanceChartPanel[data-symbol]')].find(h=>String(h.dataset.symbol||'').toUpperCase()===safeSymbol.toUpperCase());
@@ -8032,6 +8205,9 @@ function bindBinanceCharts(){
 window.addEventListener('resize',()=>{
   document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>{
     chartRender(host.dataset.symbol,host.dataset.tf||'4h');
+  });
+  document.querySelectorAll('.cycleOverlayPanel[data-cycle-overlay-symbol]').forEach(host=>{
+    cycleOverlayRender(host.dataset.cycleOverlaySymbol,host.dataset.tf||'15m');
   });
 });
 document.addEventListener('toggle',ev=>{
@@ -8486,6 +8662,21 @@ function renderCards(results){
           <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
 
+        <div class="cycleOverlayPanel" data-cycle-overlay-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="15m">
+          <div class="cycleOverlayHead">
+            <div><div class="cycleOverlayTitle">🧭 Dynamic Market-Cycle Overlay</div><div class="cycleOverlaySub">Real scanner data → Awareness → Resistance/Distribution → Profit/Markdown → Support/Recovery. Zones and arrows recalculate whenever the result data changes.</div></div>
+            <div class="cycleOverlayControls">
+              <button type="button" class="cycleOverlayTfBtn active" data-tf="15m">15m</button>
+              <button type="button" class="cycleOverlayTfBtn" data-tf="1h">1H</button>
+              <button type="button" class="cycleOverlayTfBtn" data-tf="4h">4H</button>
+              <button type="button" class="cycleOverlayTfBtn" data-tf="1d">1D</button>
+            </div>
+          </div>
+          <div class="cycleOverlayCanvasWrap"><canvas class="cycleOverlayCanvas"></canvas></div>
+          <div class="cycleOverlayLegend"><span>🟠 Awareness</span><span>🟢 Markup</span><span>🟠 Resistance / Distribution</span><span>🔵 Profit / Markdown</span><span>🔴 Support / Recovery</span></div>
+          <div class="cycleOverlayStatus">Preparing dynamic cycle overlay…</div>
+        </div>
+
         ${renderUnifiedMarketCycle(r)}
 
                 <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
@@ -8606,6 +8797,7 @@ function renderCards(results){
   });
   el.cardView.innerHTML=html;
   bindBinanceCharts();
+  bindCycleOverlayCharts();
   // Re-apply saved open state after every render so live updates/sorting do not collapse details.
   el.cardView.querySelectorAll('details.coinDetails[data-symbol]').forEach(d=>{
     const sym=d.dataset.symbol;
@@ -9205,6 +9397,10 @@ function commitMarketScanResults(nextResults){
     sortResults(displayResults);
   }
 
+  // The fast DOM patch intentionally avoids rebuilding cards. Keep the shared chart
+  // data pointer synchronized with the newly completed scan before refreshing overlays.
+  window.results = displayResults.slice();
+
   // Keep the status line truthful after the atomic commit.
   if(el.message){
     el.message.innerText = filteredCount === 0 && rawCount > 0
@@ -9233,6 +9429,8 @@ function commitMarketScanResults(nextResults){
   }else{
     try{ restoreHistoricalCompareStates(); }catch(e){}
     try{ decorateQueue && decorateQueue(); }catch(e){}
+    try{ refreshCycleOverlayCharts(); }catch(e){}
+    try{ document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>chartRender(host.dataset.symbol,host.dataset.tf||'4h')); }catch(e){}
     window.__magmaSoftRefresh = false;
   }
 
