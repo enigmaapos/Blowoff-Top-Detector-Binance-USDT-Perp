@@ -723,6 +723,12 @@ body.authLocked{overflow:hidden}
           <input id="threshold" type="number" value="4" min="1" max="8"/>
           <div class="dashboardHint">Minimum score for a flag.</div>
         </div>
+        <div class="controlItem">
+          <label class="controlLabel">Alert Sound</label>
+          <button id="enableBlowoffSound" class="alt" style="width:100%">Enable Blowoff Sound</button>
+          <audio id="blowoffAlertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+          <div class="dashboardHint">Beep only when a new Blowoff / Exhaustion signal appears.</div>
+        </div>
       </div>
 
 
@@ -1062,57 +1068,70 @@ async function ensureExchangeInfo() {
   }
 }
 
-  // Audio notifications are disabled.
-  // Only the authoritative Correction: HIGH RISK / MANIA state can notify.
-  const alertedCorrectionMania = new Set();
+  // ==================== ALERT SOUND: BLOWOFF / EXHAUSTION ONLY ====================
+  // A sound is played only when a symbol newly enters a Blowoff/Exhaustion
+  // state. It does not play again on every refresh while the signal remains active.
+  const alertedBlowoffExhaustion = new Set();
+  const alertAudio = document.getElementById('blowoffAlertSound');
+  const enableAlertSoundBtn = document.getElementById('enableBlowoffSound');
 
-  async function sendCorrectionManiaNotification(symbol, item){
+  if (enableAlertSoundBtn && alertAudio) {
+    enableAlertSoundBtn.addEventListener('click', async () => {
+      try {
+        await alertAudio.play();
+        alertAudio.pause();
+        alertAudio.currentTime = 0;
+        enableAlertSoundBtn.textContent = '🔊 Sound Enabled';
+      } catch (err) {
+        console.warn('Sound unlock failed:', err);
+      }
+    });
+  }
+
+  function playBlowoffExhaustionAlert(symbol) {
+    if (!alertAudio) return;
     try {
-      if (!('Notification' in window)) return;
-      if (Notification.permission === 'default') {
-        try { await Notification.requestPermission(); } catch (_) { return; }
+      alertAudio.currentTime = 0;
+      const p = alertAudio.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(err => console.warn('Blowoff/Exhaustion sound play rejected:', err));
       }
-      if (Notification.permission !== 'granted') return;
-      const cg = item?.correctionGuide || {};
-      const body = `${symbol} • Correction: HIGH RISK / MANIA • ${(cg.reasons || []).slice(0,3).join('; ') || 'Extreme correction-risk conditions detected.'}`;
-      if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg && typeof reg.showNotification === 'function') {
-          await reg.showNotification('🔥 Correction: HIGH RISK / MANIA', {
-            body,
-            tag: `correction-mania-${symbol}`,
-            renotify: true
-          });
-          return;
-        }
-      }
-      if (typeof Notification === 'function') {
-        new Notification('🔥 Correction: HIGH RISK / MANIA', {body});
-      }
+      console.log('Blowoff/Exhaustion alert sound:', symbol);
     } catch (err) {
-      console.warn('Correction notification skipped:', err);
+      console.warn('Blowoff/Exhaustion sound error:', err);
     }
   }
 
-  function triggerCorrectionManiaNotifications(results){
+  function triggerBlowoffExhaustionSounds(results) {
     if (!Array.isArray(results)) return;
+
     const seen = new Set();
+    const blowoffThreshold = Math.max(1, parseInt(el.threshold?.value, 10) || 4);
+
     for (const item of results) {
       if (!item?.symbol) continue;
       const symbol = String(item.symbol).toUpperCase();
       seen.add(symbol);
-      const code = String(item.correctionGuide?.code || '').toUpperCase();
-      if (code === 'HIGH_CORRECTION_RISK_MANIA') {
-        if (!alertedCorrectionMania.has(symbol)) {
-          alertedCorrectionMania.add(symbol);
-          sendCorrectionManiaNotification(symbol, item);
+
+      const blowoffScore = Number(item.score);
+      const exhaustionConfidence = Number(item.preCrash?.confidence ?? item.preCrashConfidence);
+      const blowoffActive = Number.isFinite(blowoffScore) && blowoffScore >= blowoffThreshold;
+      const exhaustionActive = Number.isFinite(exhaustionConfidence) && exhaustionConfidence >= 50;
+      const active = blowoffActive || exhaustionActive;
+
+      if (active) {
+        if (!alertedBlowoffExhaustion.has(symbol)) {
+          alertedBlowoffExhaustion.add(symbol);
+          playBlowoffExhaustionAlert(symbol);
         }
       } else {
-        alertedCorrectionMania.delete(symbol);
+        alertedBlowoffExhaustion.delete(symbol);
       }
     }
-    for (const symbol of [...alertedCorrectionMania.keys()]) {
-      if (!seen.has(symbol)) alertedCorrectionMania.delete(symbol);
+
+    // Remove symbols that are no longer present in the completed scan.
+    for (const symbol of [...alertedBlowoffExhaustion.keys()]) {
+      if (!seen.has(symbol)) alertedBlowoffExhaustion.delete(symbol);
     }
   }
 
@@ -8907,9 +8926,10 @@ async function runScan(once=false, suppliedSession=null){
     commitScannerSurface('main');
     commitMarketScanResults(results);
 
-    // ONLY alert condition: Correction = HIGH RISK / MANIA.
-    // No blowoff, accumulation, timing, or sound notifications.
-    triggerCorrectionManiaNotifications(window.lastScanResults);
+    // ONLY alert condition: a NEW Blowoff / Exhaustion signal.
+    // No browser notifications, correction notifications, timing sounds,
+    // accumulation alerts, or repeated sounds while the signal remains active.
+    triggerBlowoffExhaustionSounds(window.lastScanResults);
 
     running=false;
 
@@ -9118,7 +9138,6 @@ el.oneShot.addEventListener('click', ()=>{
   runScan(true, session);
 });
 el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensitivity.value; });
-if('Notification' in window){ try{ Notification.requestPermission().catch(()=>{}); } catch(e){} }
 (async function ping(){ try{ await safeFetch(API_BASE + '/fapi/v1/ping', { allowIfNotRunning: true }); } catch(e){ console.warn('ping failed', e); } })();
 
 </script>
