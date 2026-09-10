@@ -666,6 +666,13 @@ body.authLocked{overflow:hidden}
 .ttPriorityPanel{margin:9px 0 2px;padding:12px;border-radius:12px;border:1px solid rgba(126,220,255,.18);background:linear-gradient(180deg,rgba(126,220,255,.055),rgba(255,255,255,.018));box-shadow:0 8px 22px rgba(0,0,0,.12)}
 .ttPriorityHeader{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.ttPriorityTitle{font-size:12px;font-weight:950;letter-spacing:.07em;text-transform:uppercase;color:#cfe8ff}.ttPriorityScore{font-size:22px;font-weight:950;line-height:1}.ttPriorityState{margin-top:3px;font-size:15px;font-weight:950}.ttPriorityReason{margin-top:6px;font-size:11px;line-height:1.45;color:#dbe8f5}.ttPriorityGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:9px}.ttMini{padding:7px 8px;border:1px solid rgba(255,255,255,.07);border-radius:8px;background:rgba(255,255,255,.025)}.ttMini b{display:block;font-size:10px;color:#9fb3cc;text-transform:uppercase;letter-spacing:.04em}.ttMini span{display:block;margin-top:3px;font-size:12px;font-weight:900}.ttTrigger{margin-top:8px;padding:8px 9px;border-radius:8px;border:1px solid rgba(255,217,102,.18);background:rgba(255,217,102,.035);font-size:11px;line-height:1.4}.ttQueue{margin:10px 0;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.018)}.ttQueueTitle{font-size:12px;font-weight:950;letter-spacing:.06em;text-transform:uppercase;color:#cfe8ff}.ttQueueRow{display:grid;grid-template-columns:28px 1fr 62px 110px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.055)}.ttQueueRow:last-child{border-bottom:0}.ttQueueRank{font-weight:950;color:#9fb3cc}.ttQueueSym{font-weight:950}.ttQueueState{font-size:10px;font-weight:900}.ttQueueScore{text-align:right;font-weight:950}.ttQueueHint{font-size:10px;color:#8195ad;margin-top:2px}.ttLegend{margin-top:8px;font-size:10px;color:#8195ad;line-height:1.4}@media(max-width:760px){.ttPriorityGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.ttQueueRow{grid-template-columns:24px 1fr 58px}.ttQueueState{display:none}}
 </style>
+<style id="unified-cycle-filter-ui">
+  .filtersZone #unifiedCycleFilter{
+    width:100%;min-height:42px;font-weight:800;font-size:14px;
+    border:1px solid rgba(126,220,255,.55);
+    box-shadow:0 0 0 1px rgba(126,220,255,.08),0 5px 18px rgba(0,0,0,.14);
+  }
+</style>
 <style id="trader-zone-overlap-ui">
 .filtersZone #traderZoneFilter{
   width:100%;min-height:42px;font-weight:800;font-size:14px;
@@ -909,6 +916,21 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Exact 4H chart label filter — includes BEARISH RISK and BULLISH SUPPORT.</div>
         </div>
       </div>
+      <div class="controlGrid two" style="margin-top:10px">
+        <div class="controlItem">
+          <label class="controlLabel">🧭 Unified Market-Cycle Filter</label>
+          <select id="unifiedCycleFilter">
+            <option value="ALL">All Market-Cycle Stages</option>
+            <option value="awareness">🟠 AWARENESS — Support / Accumulation</option>
+            <option value="markup">🟢 MARKUP — Expansion / Continuation</option>
+            <option value="distribution">🟠 RESISTANCE / DISTRIBUTION — Topping / Exhaustion</option>
+            <option value="markdown">🔵 PROFIT / MARKDOWN — Downtrend / Correction</option>
+            <option value="support">🔴 SUPPORT / RECOVERY — Defense / Reversal watch</option>
+          </select>
+          <div class="dashboardHint">Filters by the exact active stage highlighted in the 🧭 UNIFIED MARKET-CYCLE MAP.</div>
+        </div>
+      </div>
+
       <div class="controlSectionTitle" style="margin-top:14px">
         <span>🎯</span> 6 · Trader Decision & Entry Filters
       </div>
@@ -1038,6 +1060,7 @@ const el = {
   hvdFilter: document.getElementById('hvdFilter'),
   liquidityFilter: document.getElementById('liquidityFilter'),
   marketStructureFilter: document.getElementById('marketStructureFilter'),
+  unifiedCycleFilter: document.getElementById('unifiedCycleFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
   smcDirectionFilter: document.getElementById('smcDirectionFilter')
 };
@@ -5645,6 +5668,18 @@ function traderZoneFilterMatches(r, filter){
   return true;
 }
 
+function unifiedCycleFilterMatches(r, filter){
+  if(filter === 'ALL') return true;
+  const item = r || {};
+  let u = item.unifiedMarketCycle;
+  if(!u || u.code === 'ERROR' || u.state === '⚪ MARKET-CYCLE UNAVAILABLE'){
+    try{
+      if(typeof calculateUnifiedMarketCycle === 'function') u = calculateUnifiedMarketCycle(item);
+    }catch(_){}
+  }
+  return getUnifiedCycleMapStage(u || {}) === filter;
+}
+
 function filterResultsForDist(results) {
   // When Favorites mode is active, include the persistent favorite snapshots
   // in addition to the current scan. This makes favorites discoverable even
@@ -5673,6 +5708,14 @@ function filterResultsForDist(results) {
   const biasFilter = el.biasFilter ? el.biasFilter.value : 'ALL';
   if (biasFilter !== 'ALL') {
     filtered = filtered.filter(r => traderBiasMatches(r, biasFilter));
+  }
+
+  // Dedicated Unified Market-Cycle Map filter.
+  // This uses the exact same stage-resolution function that highlights the
+  // current stage in the rendered cycle map, so filtering and display cannot drift.
+  const unifiedCycleFilter = el.unifiedCycleFilter ? el.unifiedCycleFilter.value : 'ALL';
+  if (unifiedCycleFilter !== 'ALL') {
+    filtered = filtered.filter(r => unifiedCycleFilterMatches(r, unifiedCycleFilter));
   }
 
   // Entry-status filters use the same status intelligence that powers the
@@ -6204,6 +6247,9 @@ if (el.liquidityFilter) {
 }
 if (el.marketStructureFilter) {
   el.marketStructureFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.unifiedCycleFilter) {
+  el.unifiedCycleFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.smcBreakerFilter) {
   el.smcBreakerFilter.addEventListener('change', () => {
@@ -9110,7 +9156,7 @@ function commitMarketScanResults(nextResults){
     try {
       const ids = [
         'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
-        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter',
+        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','unifiedCycleFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
       const active = ids.some(id => {
