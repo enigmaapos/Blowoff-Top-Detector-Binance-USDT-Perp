@@ -8005,6 +8005,8 @@ function calculateUnifiedMarketCycle(item){
     // correction-authority failures cannot fall through to MARKET-CYCLE UNAVAILABLE.
     const topScore=Number(item.topDetection?.score ?? item.topScore ?? 0) || 0;
     const phaseText=String(item.phase?.phase || item.phase?.phaseName || item.phase || '').toLowerCase();
+    const priorTopEvidence=topScore>=40 || /distribution|topping|breakdown|top/i.test(phaseText);
+    const returnToNormal=item.returnToNormal || {};
 
     /*
       CORRECTION LOGIC IS AUTHORITATIVE FOR THE UNIFIED CYCLE.
@@ -8022,6 +8024,8 @@ function calculateUnifiedMarketCycle(item){
     const vulnerability=correctionCode==='VULNERABILITY_INCREASING' || correctionCode==='HIGH_VULNERABILITY';
     const overboughtSupported=correctionCode==='OVERBOUGHT_CONTINUATION_SUPPORTED';
     const correctionRecoveryCode=correctionCode==='POST_CORRECTION_RECOVERY';
+    // Return-to-normal is context only. It never authorizes Support / Recovery.
+    const returnToNormalActive=!!returnToNormal?.isReturn;
 
     // A unified reversal confirmation requires a real structural recovery,
     // not RSI alone: HL + EMA14/21 reclaim + bullish structure/stack.
@@ -8073,7 +8077,7 @@ function calculateUnifiedMarketCycle(item){
       phase='POST-CORRECTION / RECOVERY'; code='POST_CORRECTION_RECOVERY'; state='🟣 POST-CORRECTION / RECOVERY'; tone='purple';
       reasons.push('Significant correction was confirmed by the authoritative correction layer');
       reasons.push('Recovery structure is confirmed: higher-low + EMA14/EMA21 reclaim');
-      if(correctionRecoveryCode || returnToNormal) reasons.push('Correction guide / return-to-normal recovery context is active');
+      if(correctionRecoveryCode || returnToNormalActive) reasons.push('Correction guide / return-to-normal recovery context is active');
     }else if(correctionConfirmed){
       phase='MARKDOWN / POST-TOP'; code='MARKDOWN_POST_TOP'; state='🔴 MARKDOWN / POST-TOP'; tone='red';
       reasons.push('15m EMA200 correction confirmation is active');
