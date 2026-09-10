@@ -673,46 +673,6 @@ body.authLocked{overflow:hidden}
   box-shadow:0 0 0 1px rgba(126,220,255,.08),0 5px 18px rgba(0,0,0,.14);
 }
 </style>
-
-<style id="compact-decision-ui">
-  /* Compact primary UI: only the trader-facing decision remains above the fold.
-     All diagnostic/evidence panels stay inside Detailed evidence. */
-  #tableView{display:none !important}
-  #cardView{display:block !important}
-  .compactDecisionSummary{
-    margin-top:10px;padding:13px 14px;border-radius:12px;
-    border:1px solid rgba(126,220,255,.16);
-    border-left:4px solid var(--compact-accent,#7edcff);
-    background:linear-gradient(180deg,rgba(126,220,255,.045),rgba(255,255,255,.018));
-  }
-  .compactCycleState{font-size:18px;font-weight:950;line-height:1.25;margin-top:3px}
-.compactCycle{font-size:16px;font-weight:950;color:#dff7ff;margin-bottom:9px}
-  .compactDecisionTitle{font-size:12px;font-weight:950;letter-spacing:.07em;color:#cfe8ff}
-  .compactState{font-size:16px;font-weight:950;margin-top:3px;line-height:1.25}
-  .compactLine{font-size:12px;line-height:1.45;margin-top:2px;color:#e6eef8}
-  .compactLiquidity{
-    margin-top:9px;padding:9px 10px;border-radius:9px;
-    background:rgba(255,255,255,.025);border:1px solid rgba(126,220,255,.10);
-    line-height:1.4;
-  }
-  .compactLiq{font-weight:900}
-  .compactLiq.rejection{color:#ff9b9b}
-  .compactLiq.acceptance{color:#8ff0b0}
-  .compactLiq.pending{color:#ffd966}
-  .compactLiq.approaching{color:#ffb46a}
-  .compactLiq.neutral{color:#b9c8d8}
-  .compactLiqDecision{margin-top:4px;font-size:11px;color:#dbe8f5}
-  .compactTopTitle{
-    margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07);
-    font-size:11px;font-weight:950;letter-spacing:.06em;color:#dff7ff;
-  }
-  .compactTopTitle span{float:right;color:#8195ad;font-size:9px;font-weight:700;letter-spacing:0}
-  @media(max-width:600px){
-    .compactDecisionSummary{padding:11px 12px}
-    .compactCycle{font-size:15px}
-    .compactState{font-size:15px}
-  }
-</style>
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -8369,145 +8329,6 @@ function renderUnifiedMarketCycle(item){
   </div>`;
 }
 
-
-function renderCompactDecisionSummary(item){
-  const r=item||{};
-  const rec=getFinalRecommendation(r);
-  const u=(r.unifiedMarketCycle && r.unifiedMarketCycle.code!=='ERROR')
-    ? r.unifiedMarketCycle
-    : calculateUnifiedMarketCycle(r);
-  const entry=getEntryStatusSnapshot(r)||{};
-  const liq=r.liquidity || (typeof detectLiquidityIntelligence==='function' ? detectLiquidityIntelligence(r) : {});
-  const liqScore=Number(liq?.score||0);
-  const liqEvent=String(liq?.event||'NONE');
-  const liqState=String(liq?.state||'');
-  const above=liq?.nearestAbove;
-  const below=liq?.nearestBelow;
-
-  const checks=r.accumChecks||[];
-  const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
-  const a4h=Number(tf['4h']||0), a1d=Number(tf['1d']||0);
-  const rsi4h=Number(r.rsi4h||0);
-  const phase=String(r.phase?.phase||r.phase||'').toLowerCase();
-  const reasons=(r.phase?.reasons||[]).map(String);
-  const hasLH=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(r.lowerHighCount||0)>0 || r.lowerHigh===true;
-  const hasHL=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(r.higherLowCount||0)>0 || r.hasHigherLow===true;
-  const distribution=/distribution|breakdown/i.test(phase);
-  const correction=r.correctionGuide||{};
-  const ema200=correction.ema200Stretch15;
-  const correctionConfirmed=!!(rec.confirmed || (ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(correction.label||'')));
-  const overheated=rsi4h>=80;
-
-  let currentState='⚪ NO CLEAR EDGE';
-  let readiness='⚪ Structure unresolved';
-  let bias=rec.tradeBias||'Neutral';
-  let longEntry='⚠️ Staged / conditional';
-  let shortEntry='⏸ Wait for structure';
-
-  if(distribution || hasLH){
-    currentState='🟠 STRUCTURE WEAKENING';
-    readiness='🟠 Structure unresolved';
-    bias='Bearish Risk / Neutral';
-    longEntry='❌ Wait — structure weak';
-    shortEntry='⚠️ Conditional — rejection first';
-  }else if(correctionConfirmed){
-    currentState='🔴 CORRECTION ACTIVE';
-    readiness='🔴 Correction active';
-    bias='Neutral / Cautious Bearish';
-    longEntry=(a4h>=60 && a1d>=55 && hasHL)?'🟡 Recovery long — staged only':'❌ Wait — correction still active';
-    shortEntry='🟠 Conditional — rejection / failed bounce';
-  }else if(overheated && Number(r.preCrash?.score||0)>=6){
-    currentState='🟠 HIGH-RISK / TOPPING VULNERABLE';
-    readiness='🟠 High-risk / structurally vulnerable';
-    bias='Bearish / Cautious';
-    longEntry='❌ Don’t chase';
-    shortEntry='🟠 Wait for rejection / failed bounce';
-  }else if(a4h>=60 && a1d>=55 && hasHL && !overheated){
-    currentState='🟢 CONTROLLED RECOVERY / CONTINUATION';
-    readiness='🟢 Long setup developing';
-    bias='Bullish / Controlled';
-    longEntry='🟢 Confirmed structure — staged';
-    shortEntry='⏸ Wait / low priority';
-  }else{
-    currentState='🟠 STRUCTURE UNRESOLVED';
-    readiness='🟠 Structure unresolved';
-    bias=rec.tradeBias||'Neutral';
-    longEntry='⚠️ Staged / conditional';
-    shortEntry='⏸ Wait for structure';
-  }
-
-  if(entry.long){
-    const map={CONFIRMED:'🟢 Confirmed / staged',STAGED:'🟡 Staged / conditional',CONDITIONAL:'🟡 Conditional',WAIT:'⏸ Wait',NOT_READY:'❌ Not yet / wait',DONT_CHASE:'🚫 Don’t chase'};
-    if(map[entry.long]) longEntry=map[entry.long];
-  }
-  if(entry.short){
-    const map={CONDITIONAL:'🟠 Conditional',WAIT:'⏸ Wait',REJECTION:'🟠 Rejection / failed bounce',LOWER_HIGH:'🔴 Failed bounce / lower-high',ACCEPTANCE:'🔴 Acceptance below liquidity'};
-    if(map[entry.short]) shortEntry=map[entry.short];
-  }
-
-  const correctionText=correctionConfirmed
-    ? '🔴 Confirmed'
-    : (correction.code==='CORRECTION_DEVELOPING' ? '🟠 Developing' : '🟢 Not confirmed');
-
-  const tone=u.tone==='red'?'#ff5c5c':u.tone==='orange'?'#ff9f43':u.tone==='green'?'#2dd4bf':'#7edcff';
-  const cycleScore=Math.round(Number(u.confidence||r.similarity*100||0));
-
-  const liqTone=/REJECTION/i.test(liqState)||/REJECTION/i.test(liqEvent)
-    ? 'rejection'
-    : /ACCEPTANCE/i.test(liqState)||/ACCEPTANCE/i.test(liqEvent)
-      ? 'acceptance'
-      : /PENDING/i.test(liqState)||/PENDING/i.test(liqEvent)
-        ? 'pending'
-        : /APPROACHING/i.test(liqState)||/APPROACHING/i.test(liqEvent)
-          ? 'approaching'
-          : 'neutral';
-
-  const liqLabel=liqTone==='rejection'?'🔴 REJECTION'
-    : liqTone==='acceptance'?'🟢 ACCEPTANCE'
-    : liqTone==='pending'?'🟡 OUTCOME PENDING'
-    : liqTone==='approaching'?'🟠 APPROACHING'
-    : '⚪ NO DOMINANT EVENT';
-
-  const aboveTxt=above
-    ? `Above ${Number(above.distancePct)>=0?'+':''}${Number(above.distancePct).toFixed(2)}% • ${above.type} • ${above.tf} • ${above.strength}/100`
-    : 'No mapped upside pool';
-  const belowTxt=below
-    ? `Below ${Number(below.distancePct)>=0?'+':''}${Number(below.distancePct).toFixed(2)}% • ${below.type} • ${below.tf} • ${below.strength}/100`
-    : 'No mapped downside pool';
-
-  let liqDecision='No dominant liquidity event is active; use nearby pools as reaction/target zones.';
-  if(/UPSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent))
-    liqDecision='Upside liquidity sweep rejected: bearish reversal risk is elevated; wait for lower-high/structure confirmation before shorting.';
-  else if(/UPSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent))
-    liqDecision='Upside liquidity sweep accepted: continuation is favored while price holds above the pool.';
-  else if(/DOWNSIDE LIQUIDITY SWEEP.*REJECTION/i.test(liqEvent))
-    liqDecision='Downside liquidity sweep rejected: reclaim supports recovery/reversal; do not automatically short.';
-  else if(/DOWNSIDE LIQUIDITY SWEEP.*ACCEPTANCE/i.test(liqEvent))
-    liqDecision='Downside liquidity sweep accepted: downside continuation is favored while price holds below the pool.';
-  else if(/LIQUIDITY SWEEP/i.test(liqEvent))
-    liqDecision='Liquidity was swept, but the outcome is pending: wait for rejection/reclaim or acceptance.';
-
-  return `
-    <div class="compactDecisionSummary" style="--compact-accent:${tone}">
-      <div class="compactCycle">🧭 UNIFIED MARKET-CYCLE — ${cycleScore}%</div>
-      <div class="compactCycleState">${u.state||'⚪ UNKNOWN'}</div>
-      <div class="compactDecisionTitle">🎯 TRADER DECISION</div>
-      <div class="compactState">${readiness}</div>
-      <div class="compactLine"><strong>Current state:</strong> ${currentState}</div>
-      <div class="compactLine"><strong>Bias:</strong> ${bias}</div>
-      <div class="compactLine"><strong>Correction:</strong> ${correctionText}</div>
-      <div class="compactLine"><strong>Long entry:</strong> ${longEntry}</div>
-      <div class="compactLine"><strong>Short entry:</strong> ${shortEntry}</div>
-      <div class="compactLiquidity">
-        <div><strong>💧 Liquidity context:</strong> <span class="compactLiq ${liqTone}">${liqLabel}</span> <span class="small">• Strength ${liqScore}/100</span></div>
-        <div class="small">${liqEvent || 'NO DOMINANT EVENT'}</div>
-        <div class="small">${aboveTxt}<br>${belowTxt}</div>
-        <div class="compactLiqDecision">${liqDecision}</div>
-      </div>
-      <div class="compactTopTitle">🎯 TOP-DETECTION STACK <span>Detailed evidence ↓</span></div>
-    </div>`;
-}
-
 function renderCards(results){
   // PROFESSIONAL MOBILE CARD: Data → State → Evidence → Decision → Levels → Details
   const showShort = el.showShort.checked;
@@ -8600,7 +8421,9 @@ function renderCards(results){
           <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
 
-        ${renderCompactDecisionSummary(r)}
+        ${renderUnifiedMarketCycle(r)}
+
+                <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
           <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
@@ -8608,12 +8431,9 @@ function renderCards(results){
 
         
 
-        <!-- Full diagnostic layers are intentionally hidden from the primary UI.
-             They remain available under Detailed evidence. -->
-        ${renderUnifiedMarketCycle(r)}
-        <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
-
-        <!-- Top Detection + High-Volume Doji remain inside Detailed Evidence. -->
+        <!-- Top Detection + High-Volume Doji are part of Detailed Evidence.
+             The detector/render function already exists; this call keeps it visible
+             inside the per-coin expandable evidence section. -->
         ${renderTopDetectionStack(r)}
 
         <div class="sigList" style="margin-top:0">
