@@ -6,7 +6,7 @@
 
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Blowoff Scanner • Secure Login</title>
+<title>Blowoff Scanner • Secure Login • Unified Correction Cycle</title>
 <style>
   :root{
     --bg:#07101a;
@@ -981,6 +981,7 @@ body.authLocked{overflow:hidden}
 </div>
 
 <script>
+/* BUILD: FINAL-UNIFIED-CORRECTION-CYCLE-2026-09-10 */
 /* ANALYSIS ARCHITECTURE: 1 Context → 2 Warning → 3 Support → 4 Confirmation. */
 /* ======================================================
    Full detector with Correction Status sorting (client-side).
@@ -7947,7 +7948,14 @@ function calculateUnifiedMarketCycle(item){
         ema:{},structure:{},support:null,resistance:null,meta:{}};
     }
 
-    const e14=ema(closes,14), e21=ema(closes,21), e50=ema(closes,50), e70=ema(closes,70), e200=closes.length>=200?ema(closes,200):null;
+    const e14=ema(closes,14), e21=ema(closes,21), e50=ema(closes,50), e70=ema(closes,70);
+    // Use the authoritative scanner EMA200 when the visible 15m history is
+    // shorter than 200 candles. This keeps the Unified Market-Cycle aligned
+    // with the Correction Guide instead of becoming UNKNOWN merely because
+    // the chart display uses a shorter candle window.
+    const correctionGuideSource=(item.correctionGuide && typeof item.correctionGuide==='object')?item.correctionGuide:{};
+    const e200FromScanner=Number(item.ema200_15 ?? item.ema20015 ?? item.ema200_15m ?? correctionGuideSource.ema200_15 ?? correctionGuideSource.ema20015 ?? 0);
+    const e200=closes.length>=200?ema(closes,200):(Number.isFinite(e200FromScanner)&&e200FromScanner>0?e200FromScanner:null);
     const emaVals={ema14:e14,ema21:e21,ema50:e50,ema70:e70,ema200:e200};
     const belowAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price<v);
     const aboveAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price>v);
@@ -8005,7 +8013,7 @@ function calculateUnifiedMarketCycle(item){
     // correction-authority failures cannot fall through to MARKET-CYCLE UNAVAILABLE.
     const topScore=Number(item.topDetection?.score ?? item.topScore ?? 0) || 0;
     const phaseText=String(item.phase?.phase || item.phase?.phaseName || item.phase || '').toLowerCase();
-    const priorTopEvidence=topScore>=40 || /distribution|topping|breakdown|top/i.test(phaseText);
+    const priorTopEvidenceFlag=topScore>=40 || /distribution|topping|breakdown|top/i.test(phaseText);
     const returnToNormal=item.returnToNormal || {};
 
     /*
@@ -8163,7 +8171,7 @@ function calculateUnifiedMarketCycle(item){
       ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull},
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
-      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bounceOnly,recoveryConfirmed}
+      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bounceOnly,recoveryConfirmed}
     };
   }catch(err){
     return {code:'ERROR',phase:'UNKNOWN',state:'⚪ MARKET-CYCLE UNAVAILABLE',confidence:0,authoritative:false,tone:'neutral',trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',action:'Use the existing independent detectors until the unified engine recovers.',reasons:[`Unified market-cycle error: ${err.message}`],ema:{},structure:{},support:null,resistance:null,meta:{}};
@@ -8233,7 +8241,10 @@ function renderUnifiedCycleMap(u){
 
 function renderUnifiedMarketCycle(item){
   const r=item||{};
-  const u=r.unifiedMarketCycle || calculateUnifiedMarketCycle(r);
+  let u=r.unifiedMarketCycle;
+  // Never preserve a stale/failed Unified Market-Cycle object. Recompute from
+  // the current result whenever the cached object is missing or errored.
+  if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE') u=calculateUnifiedMarketCycle(r);
   const tone=u.tone==='red'?'#ff5c5c':u.tone==='orange'?'#ff9f43':u.tone==='green'?'#2dd4bf':'#7edcff';
   const e=u.ema||{}, st=u.structure||{}, m=u.meta||{};
   const fmt=v=>Number.isFinite(Number(v))?(Number(v)<1?Number(v).toPrecision(7):Number(v).toFixed(6)):'—';
