@@ -1,4 +1,3 @@
-<!-- BUILD: CORRECTION-CONSISTENCY-FIX-2026-09-10 -->
 
 <!doctype html>
 <html lang="en">
@@ -7,7 +6,7 @@
 
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Blowoff Scanner • Secure Login • Unified Correction Cycle</title>
+<title>Blowoff Scanner • Secure Login</title>
 <style>
   :root{
     --bg:#07101a;
@@ -650,8 +649,6 @@ body.authLocked{overflow:hidden}
 .bearStructPanel{margin-top:10px;padding:12px 13px;border-radius:11px;border:1px solid rgba(255,92,92,.18);border-left:5px solid #ff7b7b;background:rgba(255,92,92,.035)}
 .bearStructTitle{font-size:12px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:#ffd0d0}
 .bearStructState{font-size:18px;font-weight:950;margin-top:3px;line-height:1.25}
-.bearStructPanel.bearStructNeutral{border-left-color:#7edcff}
-
 .bearStructReason{margin-top:5px;font-size:12px;line-height:1.45;color:#e6eef8}
 .bearStructSteps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:9px}
 .bearStructStep{padding:7px 6px;border-radius:8px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);min-width:0}
@@ -984,7 +981,6 @@ body.authLocked{overflow:hidden}
 </div>
 
 <script>
-/* BUILD: FINAL-UNIFIED-CORRECTION-CYCLE-2026-09-10 */
 /* ANALYSIS ARCHITECTURE: 1 Context → 2 Warning → 3 Support → 4 Confirmation. */
 /* ======================================================
    Full detector with Correction Status sorting (client-side).
@@ -1696,27 +1692,11 @@ function classifySimilarityPhase(sim) {
   // Unified Cycle Match display helper.
   // Falls back to the classifier for older/cached result objects.
 
-function getAuthoritativeMarketPhase(r){
-  const item=r||{};
-  const cg=(item.correctionGuide && typeof item.correctionGuide==='object') ? item.correctionGuide : (typeof getCorrectionGuide==='function' ? getCorrectionGuide(item) : {});
-  const code=String(cg.code||'').toUpperCase();
-  const label=String(cg.label||'').toUpperCase();
-  if(code==='POST_CORRECTION_RECOVERY') return {name:'POST-CORRECTION / RECOVERY', confidence:Number(cg.confidence||75), code};
-  if(code==='SIGNIFICANT_CORRECTION_CONFIRMED') return {name:'MARKDOWN / POST-TOP — SIGNIFICANT CORRECTION CONFIRMED', confidence:Number(cg.confidence||100), code};
-  if(code==='CORRECTION_DEVELOPING' || /CORRECTION DEVELOPING|DEEPENING CORRECTION/.test(label)) return {name:'CORRECTION DEVELOPING — NOT CONFIRMED', confidence:Number(cg.confidence||70), code:'CORRECTION_DEVELOPING'};
-  if(code==='HIGH_CORRECTION_RISK_MANIA') return {name:'HIGH CORRECTION RISK / MANIA', confidence:Number(cg.confidence||90), code};
-  if(code==='HIGH_CORRECTION_RISK' || code==='HIGH_VULNERABILITY') return {name:'HIGH CORRECTION RISK', confidence:Number(cg.confidence||80), code};
-  if(code==='VULNERABILITY_INCREASING') return {name:'VULNERABILITY INCREASING', confidence:Number(cg.confidence||55), code};
-  if(code==='OVERBOUGHT_CONTINUATION_SUPPORTED') return {name:'OVERBOUGHT / CONTINUATION SUPPORTED', confidence:Number(cg.confidence||65), code};
-  const p=item.phase;
-  return {name:p && typeof p==='object' ? (p.phaseName||p.phase||'Unknown') : (p||'Unknown'), confidence:p && typeof p==='object' && p.confidence!=null ? Number(p.confidence)||0 : 0, code};
-}
-
 function renderPhaseComparison(r){
   const cycle = getCycleDisplay(r || {});
-  const authoritative = getAuthoritativeMarketPhase(r || {});
-  const market = authoritative.name;
-  const confidence = `${Math.round(authoritative.confidence||0)}% correction/phase confidence`;
+  const p = r && r.phase;
+  const market = p && typeof p === 'object' ? (p.phaseName || p.phase || 'Unknown') : (p || 'Unknown');
+  const confidence = p && typeof p === 'object' && p.confidence != null ? `${Math.round(Number(p.confidence)||0)}% confidence` : 'Structural classification';
   return `<div class="phaseCompare">
     <div class="phaseBox"><div class="phaseBoxLabel">Market Phase</div><div class="phaseBoxValue">${market}</div><div class="phaseBoxSub">${confidence}</div></div>
     <div class="phaseBox cycle"><div class="phaseBoxLabel">Cycle Phase</div><div class="phaseBoxValue">${cycle.cyclePhase}</div><div class="phaseBoxSub">Similarity ${cycle.similarityPct}%</div></div>
@@ -1761,13 +1741,8 @@ function calculateOverallMarketVerdict(r){
   const blowoff = Number(r.score || 0);
   const similarity = Number(cycle.similarityPct ?? r.cycleMatch ?? 0);
 
-  const authoritative = getAuthoritativeMarketPhase(r);
-  const correctionCode = String(authoritative.code||'').toUpperCase();
   const phase = marketPhase.toLowerCase();
   const cyc = String(cycle.cyclePhase || "").toLowerCase();
-  const correctionDeveloping = correctionCode==='CORRECTION_DEVELOPING';
-  const correctionConfirmed = correctionCode==='SIGNIFICANT_CORRECTION_CONFIRMED';
-  const postCorrectionRecovery = correctionCode==='POST_CORRECTION_RECOVERY';
 
   /*
    * Hierarchy:
@@ -1791,19 +1766,7 @@ function calculateOverallMarketVerdict(r){
 
   let verdict, tone, reason;
 
-  if (postCorrectionRecovery) {
-    verdict = "POST-CORRECTION / RECOVERY";
-    tone = "bull";
-    reason = "The Correction Guide has moved the market into post-correction recovery. Support/recovery is allowed only from this authoritative recovery state.";
-  } else if (correctionConfirmed) {
-    verdict = "SIGNIFICANT CORRECTION CONFIRMED";
-    tone = "bear";
-    reason = "The Correction Guide has confirmed a significant correction through the authoritative 15m EMA200 layer. Other warning layers are context, not confirmation.";
-  } else if (correctionDeveloping) {
-    verdict = "CORRECTION DEVELOPING — NOT CONFIRMED";
-    tone = "warn";
-    reason = "The Correction Guide detects downside progression, but the 15m EMA200 confirmation threshold has not been crossed. Distribution/breakdown signals remain warning context.";
-  } else if (strongBearStructure && (broadDistribution || highLateCycleRisk)) {
+  if (strongBearStructure && (broadDistribution || highLateCycleRisk)) {
     verdict = "BEARISH STRUCTURE";
     tone = "bear";
     reason = "The current structural bias is bearish, and the broader phase/cycle signals reinforce weakening demand and selling pressure.";
@@ -4378,27 +4341,15 @@ function renderBearishStructureDetector(r){
   const color=b.breakdown?'#ff5c5c':b.retest?'#ff9f43':b.bos?'#ff9f43':b.choch?'#ffd966':b.mss?'#ffd966':'#7edcff';
   const corr=Number(r.correctionGuide?.ema200Stretch15);
   const correctionConfirmed=Number.isFinite(corr)&&corr<0;
-
-  // Keep the structure detector visually separate from the authoritative
-  // correction layer. A zero-stage result means the bearish sequence has
-  // simply not been confirmed yet; it must not read like a bearish verdict.
-  const noStructureConfirmation = !b.confirmed && Number(b.stageRank||0)===0;
-  const displayState = noStructureConfirmation
-    ? '⚪ BEARISH STRUCTURE NOT CONFIRMED'
-    : b.state;
-  const displayReason = noStructureConfirmation
-    ? 'The independent 4H MSS → CHoCH → BOS → Retest → Breakdown sequence has not been confirmed yet.'
-    : b.reason;
-
   return `<div class="bearStructPanel" style="border-left-color:${color}">
-    <div class="bearStructTitle">📉 BEARISH STRUCTURE CHECK</div>
-    <div class="bearStructState" style="color:${color}">${mspEscape(displayState)} <span style="font-size:12px;color:#cfe8ff;font-weight:800">(${Number(b.confidence||0)}%)</span></div>
-    <div class="bearStructReason">${mspEscape(displayReason)}</div>
+    <div class="bearStructTitle">📉 UNIFIED BEARISH STRUCTURE</div>
+    <div class="bearStructState" style="color:${color}">${mspEscape(b.state)} <span style="font-size:12px;color:#cfe8ff;font-weight:800">(${Number(b.confidence||0)}%)</span></div>
+    <div class="bearStructReason">${mspEscape(b.reason)}</div>
     <div class="bearStructSteps">${labels.map(x=>`<div class="bearStructStep"><div class="bsLabel">${x[0]}</div><div class="bsValue">${x[1]}</div></div>`).join('')}</div>
     <div class="bearStructMeta">
       ${b.mssLevel!=null?`MSS level ${Number(b.mssLevel).toPrecision(8)} • `:''}${b.bosLevel!=null?`BOS ${Number(b.bosLevel).toPrecision(8)} • `:''}${b.retestLevel!=null?`Retest ${Number(b.retestLevel).toPrecision(8)}`:''}
     </div>
-    <div class="bearStructAuthority">${correctionConfirmed?'🔴 SIGNIFICANT CORRECTION CONFIRMED remains authoritative. Bearish structure is supporting context only.':'Independent price-action check only. It does not confirm a significant correction; the separate 15m EMA200 correction layer remains authoritative.'}</div>
+    <div class="bearStructAuthority">${correctionConfirmed?'🔴 SIGNIFICANT CORRECTION CONFIRMED remains authoritative. Bearish structure is supporting context only.':'Structure detector is an independent bearish price-action layer. It does not confirm a significant correction; only the separate 15m EMA200 correction layer can do that.'}</div>
   </div>`;
 }
 
@@ -6404,8 +6355,6 @@ function getShortTermRecommendation(item){
   if(!ups.length) ups=['—'];
 
   let bias='Neutral', sentence='', plan='';
-  const cgCode=String(cg.code||'').toUpperCase();
-  const developing=cgCode==='CORRECTION_DEVELOPING' || /CORRECTION DEVELOPING|DEEPENING CORRECTION/i.test(String(cg.label||''));
   if(confirmed){
     if(accum>=60 && rsi4h<65){
       bias='Recovery Watch';
@@ -6416,10 +6365,6 @@ function getShortTermRecommendation(item){
       sentence='Significant correction is confirmed; avoid chasing either direction until price establishes a clear support/rejection or higher-low.';
       plan='For shorts, wait for a failed bounce/rejection. For longs, wait for a 15m/1h higher-low plus improving 4H accumulation. Use actual structural levels for invalidation.';
     }
-  }else if(developing){
-    bias='Bearish / Developing Correction';
-    sentence='The Correction Guide shows downside progression, but significant correction confirmation is not active because 15m EMA200 stretch remains at or above 0%.';
-    plan='Prefer a failed bounce/rejection for a short, or wait for support defense and a higher-low. Do not treat developing correction status as confirmed correction.';
   }else if((phase.toLowerCase().includes('breakdown')||phase.toLowerCase().includes('distribution')) || (rsi4h>=78&&accum<50)){
     bias='Bearish';
     sentence='Short-term downside risk is elevated: exhaustion and/or weakening structure are present, but correction confirmation is not active yet.';
@@ -6451,14 +6396,13 @@ function getFinalRecommendation(item){
   const phaseLc=phase.toLowerCase();
   const cg=r.correctionGuide||{};
   const cgLabel=String(cg.label||'').toUpperCase();
-  const cgCode=String(cg.code||'').toUpperCase();
   const confirmed=isSignificantCorrectionConfirmed(r);
-  const developing=cgCode==='CORRECTION_DEVELOPING' || cgLabel.includes('DEVELOPING');
+  const developing=cgLabel.includes('DEVELOPING');
   const rtn=!!r.returnToNormal?.isReturn;
   const isAccumPhase=/accumulation|re-accumulation/.test(phaseLc);
   const isDistribution=/distribution|breakdown/.test(phaseLc);
   const isCapitulation=/capitulation/.test(phaseLc);
-  const isRecovery=cgCode==='POST_CORRECTION_RECOVERY';
+  const isRecovery=/recovery|return-to-normal/.test(phaseLc)||rtn;
   const blowoffStrong = (Number(r.score||0)>=7 && rsi4h>=80 && vol>=2) || (rsi4h>=88 && vol>=3 && Number(r.topDetection?.score||0)>=75);
   const exhaustion = rsi4h>=75 || vol>=2 || ema70>=20 || wick>=1.5 || warningScore>=6 || blow>=20;
   const strongSupport = accum>=65 && a4h>=55 && a1h>=50;
@@ -6494,16 +6438,7 @@ function getFinalRecommendation(item){
     evidence.push(`Correction ${cgLabel||'CONFIRMED'}`);
     evidence.push(`15m EMA200 stretch ${Number(cg.ema200Stretch15||0).toFixed(2)}%`);
   }
-  /* 2) Correction developing has priority over generic distribution/top warnings. */
-  else if(developing){
-    state='🟠 CORRECTION DEVELOPING — NOT CONFIRMED';
-    confidence=Math.min(95,Math.max(60,Number(cg.confidence||70)));
-    sentence='The Correction Guide detects active downside progression, but the significant-correction confirmation threshold has not been reached.';
-    rationale=`Correction Guide: ${cgLabel||'CORRECTION DEVELOPING'} • 15m EMA200 stretch ${Number(cg.ema200Stretch15||0).toFixed(2)}%`;
-    tradeBias='Bearish Risk / Wait';
-    action='Do not treat the developing warning as a confirmed correction. Prefer a failed bounce/rejection for a short, or wait for support defense and a higher-low. Reassess if 15m EMA200 stretch falls below 0%.';
-  }
-  /* 3) True blowoff gets its own state instead of being flattened into "overheated". */
+  /* 2) True blowoff gets its own state instead of being flattened into "overheated". */
   else if(blowoffStrong){
     state='🔥 BLOWOFF / MANIA — HIGH EXHAUSTION RISK';
     confidence=Math.min(97,Math.round(55 + Math.min(20,(rsi4h-80)*0.8) + Math.min(12,(vol-2)*4) + Math.min(10,warningScore*1.25)));
@@ -7142,7 +7077,7 @@ function renderTraderDecisionBlock(r, compact=false){
   const ema70=Number(item.ema70DistPct||0);
   const cg=item.correctionGuide||{};
   const ema200=cg.ema200Stretch15;
-  const phase=String(getAuthoritativeMarketPhase(item).name||'Unknown');
+  const phase=String(item.phase?.phase||item.phase||'Unknown');
   const phaseLc=phase.toLowerCase();
   const reasons=(item.phase?.reasons||[]).map(String);
   const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
@@ -7994,341 +7929,6 @@ window.addEventListener('load',()=>{
   setTimeout(()=>document.querySelectorAll('.binanceChartPanel[data-symbol]').forEach(host=>chartRender(host.dataset.symbol,host.dataset.tf||'4h')),60);
 });
 
-function calculateUnifiedMarketCycle(item){
-  item=item||{};
-  try{
-    const k=Array.isArray(item.k15m)?item.k15m:[];
-    const now=Date.now();
-    const bars=k.filter(x=>Array.isArray(x) && (!Number.isFinite(Number(x[6])) || Number(x[6])<=now));
-    const closes=bars.map(x=>Number(x[4])).filter(Number.isFinite);
-    const highs=bars.map(x=>Number(x[2])).filter(Number.isFinite);
-    const lows=bars.map(x=>Number(x[3])).filter(Number.isFinite);
-    const price=Number(item.closeNow ?? closes.at(-1) ?? 0);
-    const clamp=(n,a=0,b=100)=>Math.max(a,Math.min(b,Number.isFinite(Number(n))?Number(n):0));
-    const pct=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&b>0?((a/b)-1)*100:null;
-    if(closes.length<50 || !Number.isFinite(price) || price<=0){
-      return {code:'INSUFFICIENT_DATA',phase:'INSUFFICIENT DATA',state:'⚪ MARKET-CYCLE DATA INSUFFICIENT',confidence:0,authoritative:false,
-        trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',reasons:['At least 50 completed 15m candles are required for the unified cycle engine.'],
-        ema:{},structure:{},support:null,resistance:null,meta:{}};
-    }
-
-    const e14=ema(closes,14), e21=ema(closes,21), e50=ema(closes,50), e70=ema(closes,70);
-    // Use the authoritative scanner EMA200 when the visible 15m history is
-    // shorter than 200 candles. This keeps the Unified Market-Cycle aligned
-    // with the Correction Guide instead of becoming UNKNOWN merely because
-    // the chart display uses a shorter candle window.
-    const correctionGuideSource=(item.correctionGuide && typeof item.correctionGuide==='object')?item.correctionGuide:{};
-    const e200FromScanner=Number(item.ema200_15 ?? item.ema20015 ?? item.ema200_15m ?? correctionGuideSource.ema200_15 ?? correctionGuideSource.ema20015 ?? 0);
-    const e200=closes.length>=200?ema(closes,200):(Number.isFinite(e200FromScanner)&&e200FromScanner>0?e200FromScanner:null);
-    const emaVals={ema14:e14,ema21:e21,ema50:e50,ema70:e70,ema200:e200};
-    const belowAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price<v);
-    const aboveAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price>v);
-    const bearishStack=Number.isFinite(e200)&&e14<e21&&e21<e50&&e50<e70&&e70<e200;
-    const bullishStack=Number.isFinite(e200)&&e14>e21&&e21>e50&&e50>e70&&e70>e200;
-    const fastBear=e14<e21&&e21<e50;
-    const fastBull=e14>e21&&e21>e50;
-
-    function pivots(values,look=2){
-      const out=[];
-      for(let i=look;i<values.length-look;i++){
-        let ok=true;
-        for(let j=1;j<=look;j++){
-          if(values[i] < values[i-j] || values[i] < values[i+j]){ok=false;break;}
-        }
-        if(ok) out.push({index:i,price:values[i]});
-      }
-      return out;
-    }
-    const ph=pivots(highs,2), pl=pivots(lows,2);
-    const lastHighs=ph.slice(-6), lastLows=pl.slice(-6);
-    let hh=0,lh=0,hl=0,ll=0;
-    for(let i=1;i<lastHighs.length;i++){
-      if(lastHighs[i].price>lastHighs[i-1].price*1.001) hh++;
-      else if(lastHighs[i].price<lastHighs[i-1].price*0.999) lh++;
-    }
-    for(let i=1;i<lastLows.length;i++){
-      if(lastLows[i].price>lastLows[i-1].price*1.001) hl++;
-      else if(lastLows[i].price<lastLows[i-1].price*0.999) ll++;
-    }
-    const bearishStructure=(lh>=1&&ll>=1)||(lh>=2)||(ll>=2);
-    const bullishStructure=(hh>=1&&hl>=1)||(hh>=2)||(hl>=2);
-
-    const supportCandidates=[];
-    const resistanceCandidates=[];
-    for(const x of pl) if(x.price<=price*1.003) supportCandidates.push(x.price);
-    for(const x of ph) if(x.price>=price*0.997) resistanceCandidates.push(x.price);
-    const externalSupport=[item.supportLevel,item.support,item.marketStructure?.support,item.liquidity?.nearestBelow?.price].map(Number).filter(v=>Number.isFinite(v)&&v>0&&v<=price*1.02);
-    const externalResistance=[item.resistanceLevel,item.resistance,item.marketStructure?.resistance,item.liquidity?.nearestAbove?.price].map(Number).filter(v=>Number.isFinite(v)&&v>=price*0.98);
-    const allSupports=[...supportCandidates,...externalSupport];
-    const allResistances=[...resistanceCandidates,...externalResistance];
-    const support=allSupports.length?allSupports.reduce((a,b)=>Math.abs(b-price)<Math.abs(a-price)?b:a):null;
-    const resistance=allResistances.length?allResistances.reduce((a,b)=>Math.abs(b-price)<Math.abs(a-price)?b:a):null;
-    const supportDist=support?Math.abs(pct(price,support)):null;
-    const resistanceDist=resistance?Math.abs(pct(resistance,price)):null;
-    const supportTest=Number.isFinite(supportDist)&&support<=price*1.015&&price>=support*0.997;
-    const supportFailed=Number.isFinite(supportDist)&&support!==null&&price<support*0.997;
-    const nearResistance=Number.isFinite(resistanceDist)&&resistance>=price*0.997&&resistance<=price*1.03;
-
-    const rsi15=Number(item.rsi15||0);
-    const rsiOversold=rsi15>0&&rsi15<=30;
-    const rsiStretched=rsi15>0&&rsi15<=35;
-
-    // Context used by the normal cycle detectors. Keep these defined locally so
-    // correction-authority failures cannot fall through to MARKET-CYCLE UNAVAILABLE.
-    const topScore=Number(item.topDetection?.score ?? item.topScore ?? 0) || 0;
-    const phaseText=String(item.phase?.phase || item.phase?.phaseName || item.phase || '').toLowerCase();
-    const priorTopEvidenceFlag=topScore>=40 || /distribution|topping|breakdown|top/i.test(phaseText);
-    const returnToNormal=item.returnToNormal || {};
-
-    /*
-      CORRECTION LOGIC IS AUTHORITATIVE FOR THE UNIFIED CYCLE.
-      The Unified Market-Cycle no longer lets a generic distribution/top warning
-      override a confirmed correction or a confirmed post-correction recovery.
-      This keeps the cycle, correction guide and trader decision layers uniform.
-    */
-    const cg=(item.correctionGuide && typeof item.correctionGuide==='object') ? item.correctionGuide : (typeof getCorrectionGuide==='function' ? getCorrectionGuide(item) : {});
-    const correctionCode=String(cg.code||'').toUpperCase();
-    const correctionLabel=String(cg.label||'').toUpperCase();
-    const correctionConfirmed=correctionCode==='SIGNIFICANT_CORRECTION_CONFIRMED' || Number(cg.ema200Stretch15)<0;
-    const correctionDeveloping=correctionCode==='CORRECTION_DEVELOPING' || /CORRECTION DEVELOPING|DEEPENING CORRECTION/.test(correctionLabel);
-    const highRiskMania=correctionCode==='HIGH_CORRECTION_RISK_MANIA' || /HIGH RISK \/ MANIA/.test(correctionLabel);
-    const highRisk=correctionCode==='HIGH_CORRECTION_RISK' || /HIGH RISK/.test(correctionLabel);
-    const vulnerability=correctionCode==='VULNERABILITY_INCREASING' || correctionCode==='HIGH_VULNERABILITY';
-    const overboughtSupported=correctionCode==='OVERBOUGHT_CONTINUATION_SUPPORTED';
-    const correctionRecoveryCode=correctionCode==='POST_CORRECTION_RECOVERY';
-    // Return-to-normal is context only. It never authorizes Support / Recovery.
-    const returnToNormalActive=!!returnToNormal?.isReturn;
-
-    // A unified reversal confirmation requires a real structural recovery,
-    // not RSI alone: HL + EMA14/21 reclaim + bullish structure/stack.
-    const ema14Reclaim=price>e14;
-    const ema21Reclaim=price>e21;
-    const reversalConfirmed=(hl>=1 && ema14Reclaim && ema21Reclaim && (hh>=1||bullishStack) && !supportFailed);
-
-    // IMPORTANT: the Trader Decision's generic "return-to-normal" label is
-    // contextual and must NOT move the cycle into Support / Recovery.
-    // Recovery is authoritative only after the Correction Guide itself says
-    // POST_CORRECTION_RECOVERY, or after a confirmed correction has a real
-    // structural reversal. Oversold/bounce conditions alone never qualify.
-    const recoveryConfirmed=!supportFailed && (
-      correctionRecoveryCode ||
-      (correctionConfirmed && reversalConfirmed)
-    );
-    const bounceOnly=(rsiOversold||rsiStretched) && (supportTest||price>e14) && !reversalConfirmed;
-
-    let phase='NORMAL / TRENDING', code='TRENDING', state='⚪ NEUTRAL TREND', tone='neutral';
-    let trend='MIXED', momentum=rsiOversold?'OVERSOLD / STRETCHED':rsiStretched?'STRETCHED':rsi15>=70?'OVERBOUGHT':'NORMAL';
-    let location='BETWEEN STRUCTURAL LEVELS';
-    const reasons=[];
-
-    if(bearishStack && belowAll) trend='STRONG BEARISH';
-    else if(fastBear && !aboveAll) trend='BEARISH';
-    else if(bullishStack && aboveAll) trend='STRONG BULLISH';
-    else if(fastBull && !belowAll) trend='BULLISH';
-    else if(recoveryConfirmed && (fastBull || ema14Reclaim || ema21Reclaim)) trend='RECOVERING';
-
-    const markdownCore=(belowAll&&bearishStack&&bearishStructure&&(correctionConfirmed||Math.abs(Number(item.dropPctFromPeak||0))>=10));
-    const markdownSimple=(belowAll&&bearishStack&&(correctionConfirmed||Math.abs(Number(item.dropPctFromPeak||0))>=15||lh>=2||ll>=2));
-    const distributionCore=(nearResistance && (lh>=1 || topScore>=45 || /distribution|breakdown/.test(phaseText)) && !belowAll);
-    const markupCore=(aboveAll&&bullishStack&&bullishStructure&&!distributionCore);
-    const accumulationCore=(Math.max(0,Number(item.accumCombined?.confidence||0))>=60 && !markdownCore && !distributionCore && (hl>=1||supportTest));
-
-    /*
-      PRIORITY ORDER:
-      1) Confirmed correction + confirmed recovery -> SUPPORT / RECOVERY
-      2) Confirmed significant correction -> MARKDOWN / POST-TOP
-      3) Developing correction -> PROFIT / MARKDOWN
-      4) Pre-correction risk / mania -> RESISTANCE / DISTRIBUTION
-      5) Supported overbought -> MARKUP / continuation
-      6) Normal structural cycle logic
-
-      This is the key uniformity fix: correction status is applied BEFORE
-      distribution/markup/accumulation can claim the Unified Market-Cycle.
-    */
-    if(correctionConfirmed && recoveryConfirmed){
-      phase='POST-CORRECTION / RECOVERY'; code='POST_CORRECTION_RECOVERY'; state='🟣 POST-CORRECTION / RECOVERY'; tone='purple';
-      reasons.push('Significant correction was confirmed by the authoritative correction layer');
-      reasons.push('Recovery structure is confirmed: higher-low + EMA14/EMA21 reclaim');
-      if(correctionRecoveryCode) reasons.push('Correction Guide explicitly reports post-correction recovery');
-    }else if(correctionConfirmed){
-      phase='MARKDOWN / POST-TOP'; code='MARKDOWN_POST_TOP'; state='🔴 MARKDOWN / POST-TOP'; tone='red';
-      reasons.push('15m EMA200 correction confirmation is active');
-      if(bearishStack) reasons.push('Bearish 15m EMA alignment: EMA14 < EMA21 < EMA50 < EMA70 < EMA200');
-      if(lh||ll) reasons.push(`Bearish swing structure: LH ${lh} • LL ${ll}`);
-      if(supportTest) reasons.push('Price is testing structural support');
-    }else if(correctionDeveloping){
-      phase='CORRECTION DEVELOPING'; code='CORRECTION_DEVELOPING'; state='🟠 CORRECTION DEVELOPING'; tone='orange';
-      reasons.push('Correction guide is developing downside progression but 15m EMA200 confirmation is not active');
-      if(lh||ll) reasons.push(`Bearish swing structure: LH ${lh} • LL ${ll}`);
-      if(Number(cg.ema200Stretch15)>=0) reasons.push(`15m EMA200 stretch ${Number(cg.ema200Stretch15).toFixed(2)}%`);
-    }else if(highRiskMania || highRisk || vulnerability){
-      phase='DISTRIBUTION'; code='DISTRIBUTION'; state='🟠 DISTRIBUTION / TOPPING'; tone='orange';
-      reasons.push(`Correction guide: ${cg.label||'pre-correction risk'}`);
-      if(nearResistance) reasons.push('Price is near structural resistance');
-      if(lh) reasons.push(`Lower-high evidence ${lh}`);
-    }else if(distributionCore){
-      phase='DISTRIBUTION'; code='DISTRIBUTION'; state='🟠 DISTRIBUTION / TOPPING'; tone='orange';
-      reasons.push('Price is near structural resistance');
-      if(lh) reasons.push(`Lower-high evidence ${lh}`);
-      if(topScore>=45) reasons.push(`Top-detection stack ${topScore}/100`);
-    }else if(overboughtSupported && markupCore){
-      phase='MARKUP'; code='MARKUP'; state='🟢 MARKUP / EXPANSION'; tone='green';
-      reasons.push('Correction guide supports continuation; no significant correction is confirmed');
-      reasons.push('Price is above all major 15m EMAs');
-    }else if(markupCore){
-      phase='MARKUP'; code='MARKUP'; state='🟢 MARKUP / EXPANSION'; tone='green';
-      reasons.push('Price is above all major 15m EMAs');
-      reasons.push('Bullish EMA14 > EMA21 > EMA50 > EMA70 > EMA200 alignment');
-      if(hh||hl) reasons.push(`Bullish structure: HH ${hh} • HL ${hl}`);
-    }else if(accumulationCore){
-      phase='ACCUMULATION / RE-ACCUMULATION'; code='ACCUMULATION'; state='🟢 ACCUMULATION / BASE'; tone='green';
-      reasons.push(`Accumulation confidence ${Math.round(Number(item.accumCombined?.confidence||0))}%`);
-      if(supportTest) reasons.push('Price is testing structural support');
-      if(hl) reasons.push(`Higher-low evidence ${hl}`);
-    }
-
-    // Location uses the closest actionable level, but recovery has priority
-    // over a nearby resistance label so the cycle does not regress to topping.
-    if(recoveryConfirmed && (supportTest || correctionConfirmed)) location='SUPPORT / RECOVERY';
-    else if(supportFailed) location='SUPPORT FAILED';
-    else if(nearResistance) location='RESISTANCE TEST';
-    else if(supportTest) location='SUPPORT TEST';
-
-    if(supportTest) reasons.push(`Support ${Number(support).toPrecision(8)} • ${supportDist.toFixed(2)}% from price`);
-    if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
-    if(rsiOversold){ momentum='OVERSOLD / STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — oversold condition`); }
-    else if(rsiStretched){ momentum='STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — stretched`); }
-    if(reversalConfirmed){ reasons.push('Higher-low + EMA14/EMA21 reclaim + bullish structure'); }
-    else if(bounceOnly){ reasons.push('Oversold/support bounce risk exists, but reversal confirmation is absent'); }
-
-    if(phase==='MARKDOWN / POST-TOP' && supportTest && !recoveryConfirmed) state='🔴 MARKDOWN / POST-TOP → 🟡 SUPPORT TEST';
-    if(phase==='CORRECTION DEVELOPING' && nearResistance) state='🟠 CORRECTION DEVELOPING → 🟠 RESISTANCE TEST';
-    if(phase==='POST-CORRECTION / RECOVERY') state='🟣 POST-CORRECTION / RECOVERY';
-
-    let confidence=35;
-    if(phase==='POST-CORRECTION / RECOVERY') confidence=70+(reversalConfirmed?12:0)+(correctionRecoveryCode?8:0);
-    else if(phase==='MARKDOWN / POST-TOP') confidence=55+(belowAll?12:0)+(bearishStack?10:0)+(bearishStructure?10:0)+(correctionConfirmed?10:0);
-    else if(phase==='CORRECTION DEVELOPING') confidence=Math.max(60,Math.min(95,Number(cg.confidence||70)));
-    else if(phase==='MARKUP') confidence=55+(aboveAll?15:0)+(bullishStack?12:0)+(bullishStructure?10:0);
-    else if(phase==='DISTRIBUTION') confidence=55+(lh?12:0)+(topScore>=45?10:0)+(nearResistance?10:0);
-    else if(phase.includes('ACCUMULATION')) confidence=50+Math.min(25,Number(item.accumCombined?.confidence||0)*0.25)+(hl?10:0);
-    confidence=clamp(Math.round(confidence),0,98);
-
-    const action=(phase==='POST-CORRECTION / RECOVERY')
-      ? 'Correction is complete enough to enter recovery-watch mode. Do not chase; require sustained higher-lows, liquidity acceptance and stronger 4H/1D support before scaling.'
-      : phase==='MARKDOWN / POST-TOP'
-        ? 'Correction is confirmed. Stay defensive; wait for support defense + higher-low + EMA reclaim for recovery, or failed bounce/lower-high for continuation.'
-        : phase==='CORRECTION DEVELOPING'
-          ? 'Correction is developing but not confirmed. Avoid chasing; wait for support/rejection structure or 15m EMA200 confirmation.'
-          : phase==='MARKUP'
-            ? 'Favor pullbacks that hold the EMA structure and form higher-lows; avoid chasing extreme expansion.'
-            : phase==='DISTRIBUTION'
-              ? 'Avoid chasing the upside. Wait for rejection/lower-high or a clean breakout with acceptance.'
-              : phase.includes('ACCUMULATION')
-                ? 'Watch for support defense and higher-lows; strengthen the bullish case only after structure confirms.'
-                : 'Wait for structural resolution before committing heavily.';
-
-    return {
-      code,phase,state,confidence,tone,trend,momentum,location,reversal:reversalConfirmed?'CONFIRMED':bounceOnly?'BOUNCE RISK — NOT REVERSAL':'NOT CONFIRMED',action,
-      correctionStage:cg.label||'🟢 CONTINUATION',correctionCode:correctionCode||'NO_SIGNIFICANT_CORRECTION_SIGNAL',correctionConfirmed,recoveryConfirmed,
-      reasons:reasons.slice(0,10),authoritative:true,
-      ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull},
-      structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
-      support:support?Number(support):null,resistance:resistance?Number(resistance):null,
-      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bounceOnly,recoveryConfirmed}
-    };
-  }catch(err){
-    return {code:'ERROR',phase:'UNKNOWN',state:'⚪ MARKET-CYCLE UNAVAILABLE',confidence:0,authoritative:false,tone:'neutral',trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',action:'Use the existing independent detectors until the unified engine recovers.',reasons:[`Unified market-cycle error: ${err.message}`],ema:{},structure:{},support:null,resistance:null,meta:{}};
-  }
-}
-
-function getUnifiedCycleMapStage(u){
-  const phase=String(u?.phase||'').toUpperCase();
-  const correction=String(u?.correctionCode||u?.correctionStage||'').toUpperCase();
-  const recovery=!!u?.recoveryConfirmed || correction.includes('POST_CORRECTION_RECOVERY') || phase.includes('POST-CORRECTION / RECOVERY');
-  const location=String(u?.location||'').toUpperCase();
-
-  // Correction Guide is authoritative for the cycle map. A support test,
-  // oversold RSI, bounce risk, or generic return-to-normal state cannot
-  // activate Support / Recovery by itself.
-  if(recovery) return 'support';
-  if(correction.includes('SIGNIFICANT_CORRECTION_CONFIRMED')) return 'markdown';
-  if(correction.includes('CORRECTION_DEVELOPING') || correction.includes('DEEPENING CORRECTION')) return 'markdown';
-  if(correction.includes('HIGH_CORRECTION_RISK') || correction.includes('VULNERABILITY')) return 'distribution';
-  if(phase.includes('MARKDOWN')) return 'markdown';
-  if(phase.includes('DISTRIBUTION')) return 'distribution';
-  if(phase.includes('MARKUP')) return 'markup';
-  if(phase.includes('ACCUMULATION')) return 'awareness';
-  if(location.includes('RESISTANCE')) return 'distribution';
-  if(location.includes('SUPPORT')) return 'support';
-  return 'awareness';
-}
-
-function renderUnifiedCycleMap(u){
-  const active=getUnifiedCycleMapStage(u);
-  const stages=[
-    {id:'awareness',icon:'🟠',title:'AWARENESS',sub:'Support / Accumulation',tone:'#ff8a4c'},
-    {id:'markup',icon:'🟢',title:'MARKUP',sub:'Expansion / Continuation',tone:'#2dd4bf'},
-    {id:'distribution',icon:'🟠',title:'RESISTANCE / DISTRIBUTION',sub:'Topping / Exhaustion',tone:'#ff9f43'},
-    {id:'markdown',icon:'🔵',title:'PROFIT / MARKDOWN',sub:'Downtrend / Correction',tone:'#4da3ff'},
-    {id:'support',icon:'🔴',title:'SUPPORT / RECOVERY',sub:'Defense / Reversal watch',tone:'#ff5c5c'}
-  ];
-  const activeStage=stages.find(x=>x.id===active)||stages[0];
-  const cards=stages.map((x,i)=>{
-    const isActive=x.id===active;
-    const opacity=isActive?'1':'.72';
-    const border=isActive?x.tone:'rgba(255,255,255,.10)';
-    const bg=isActive?'rgba(255,255,255,.075)':'rgba(255,255,255,.025)';
-    const marker=isActive
-      ? `<div style="margin-top:7px;font-size:10px;font-weight:950;letter-spacing:.7px;color:${x.tone}">● CURRENT PHASE</div>`
-      : `<div style="margin-top:7px;font-size:10px;font-weight:800;color:var(--muted)">Cycle stage</div>`;
-    return `<div style="flex:1 1 150px;min-width:145px;opacity:${opacity};padding:10px 9px;border:1px solid ${border};border-radius:12px;background:${bg};box-shadow:${isActive?'0 0 0 1px '+x.tone+'33,0 8px 24px rgba(0,0,0,.18)':'none'};position:relative">
-      <div style="font-size:18px;line-height:1">${x.icon}</div>
-      <div style="margin-top:5px;font-size:11px;font-weight:950;line-height:1.15">${x.title}</div>
-      <div class="small" style="margin-top:4px;line-height:1.25">${x.sub}</div>
-      ${marker}
-    </div>${i<stages.length-1?`<div style="flex:0 0 auto;align-self:center;font-size:20px;color:var(--muted);padding:0 1px">→</div>`:''}`;
-  }).join('');
-
-  return `<div style="margin-top:10px;padding:11px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.018));overflow:hidden">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-      <div>
-        <div style="font-size:14px;font-weight:950">🧭 UNIFIED MARKET-CYCLE MAP</div>
-        <div class="small" style="margin-top:3px">Screenshot-aligned cycle path • current scanner phase is highlighted</div>
-      </div>
-      <div style="font-size:11px;font-weight:950;color:${activeStage.tone};padding:5px 8px;border-radius:999px;border:1px solid ${activeStage.tone}66;background:${activeStage.tone}12">CURRENT: ${activeStage.title}</div>
-    </div>
-    <div style="display:flex;align-items:stretch;gap:5px;margin-top:11px;overflow-x:auto;padding-bottom:4px">${cards}</div>
-    <div class="small" style="margin-top:7px;color:var(--muted)">Visual guide: Awareness → Markup → Resistance/Distribution → Profit/Markdown → Support/Recovery → next cycle. Correction Status is authoritative for the Unified Market-Cycle; only POST-CORRECTION / RECOVERY can activate Support / Recovery.</div>
-  </div>`;
-}
-
-function renderUnifiedMarketCycle(item){
-  const r=item||{};
-  let u=r.unifiedMarketCycle;
-  // Never preserve a stale/failed Unified Market-Cycle object. Recompute from
-  // the current result whenever the cached object is missing or errored.
-  if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE') u=calculateUnifiedMarketCycle(r);
-  const tone=u.tone==='red'?'#ff5c5c':u.tone==='orange'?'#ff9f43':u.tone==='green'?'#2dd4bf':'#7edcff';
-  const e=u.ema||{}, st=u.structure||{}, m=u.meta||{};
-  const fmt=v=>Number.isFinite(Number(v))?(Number(v)<1?Number(v).toPrecision(7):Number(v).toFixed(6)):'—';
-  return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
-    <div style="font-size:16px;font-weight:950">🧭 UNIFIED MARKET-CYCLE — ${u.confidence||0}%</div>
-    <div style="font-size:19px;font-weight:950;color:${tone};margin-top:3px">${u.state||'⚪ UNKNOWN'}</div>
-    ${renderUnifiedCycleMap(u)}
-    <div style="margin-top:9px"><strong>Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
-    <div style="margin-top:4px"><strong>Correction authority:</strong> ${u.correctionStage||'—'}${u.recoveryConfirmed?' • 🟣 Recovery state active':''}</div>
-    <div style="margin-top:4px"><strong>Reversal:</strong> ${u.reversal||'—'}</div>
-    <div style="margin-top:6px"><strong>EMA structure:</strong> ${e.bearishStack?'🔴 Bearish aligned':e.bullishStack?'🟢 Bullish aligned':'🟡 Mixed / transitional'} • Price ${e.belowAll?'below all major EMAs':e.aboveAll?'above all major EMAs':'between EMA layers'}</div>
-    <div class="small" style="margin-top:4px">EMA14 ${fmt(e.ema14)} • EMA21 ${fmt(e.ema21)} • EMA50 ${fmt(e.ema50)} • EMA70 ${fmt(e.ema70)} • EMA200 ${fmt(e.ema200)}</div>
-    <div style="margin-top:5px"><strong>Structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
-    <div style="margin-top:5px"><strong>Support:</strong> ${fmt(u.support)} • <strong>Resistance:</strong> ${fmt(u.resistance)}</div>
-    <div style="margin-top:7px"><strong>🎯 Decision:</strong> ${u.action||'Wait for structural resolution.'}</div>
-    <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(u.reasons||[]).slice(0,6).join(' • ')||'No unified evidence available.'}</div>
-    <div class="small" style="margin-top:6px;color:var(--muted)">This synthesis does not turn RSI oversold into a long signal. A reversal requires structure recovery, not oscillator level alone.</div>
-  </div>`;
-}
-
 function renderCards(results){
   // PROFESSIONAL MOBILE CARD: Data → State → Evidence → Decision → Levels → Details
   const showShort = el.showShort.checked;
@@ -8420,8 +8020,6 @@ function renderCards(results){
           <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>Structure Label: BULLISH / BULLISH SUPPORT / BEARISH / BEARISH RISK / MIXED</span><span>— Current price</span></div>
           <div class="binanceChartStatus">Preparing Binance candle chart…</div>
         </div>
-
-        ${renderUnifiedMarketCycle(r)}
 
                 <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
 
@@ -9881,5 +9479,6 @@ el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensiti
 </script>
 </body>
 </html>
+        <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
 
 
