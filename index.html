@@ -763,8 +763,7 @@ body.authLocked{overflow:hidden}
         </div>
         <div class="controlItem">
           <label class="controlLabel">Alert Output</label>
-          <button id="enableSound" class="alt" style="width:100%">Enable Sound</button>
-          <audio id="scoreAlert" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+          <div class="small" style="line-height:1.4">🔔 Browser notification only when <strong>Correction: HIGH RISK / MANIA</strong>.</div>
         </div>
         <div class="controlItem">
           <label class="controlToggle">
@@ -889,18 +888,14 @@ body.authLocked{overflow:hidden}
       </div>
       <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">📐 Market Structure Filter</label>
+          <label class="controlLabel">📐 Structure Label Filter</label>
           <select id="marketStructureFilter">
-            <option value="ALL">All Market Structures</option>
-            <option value="BULLISH">🟢 Bullish — HH + HL</option>
-            <option value="BEARISH">🔴 Bearish — LH + LL</option>
-            <option value="HH">⬆️ Higher High (HH)</option>
-            <option value="HL">↗️ Higher Low (HL)</option>
-            <option value="LH">↘️ Lower High (LH)</option>
-            <option value="LL">⬇️ Lower Low (LL)</option>
-            <option value="MIXED">🟡 Mixed Structure</option>
+            <option value="ALL">All Structure Labels</option>
+            <option value="BULLISH">🟢 Structure: BULLISH</option>
+            <option value="BEARISH">🔴 Structure: BEARISH</option>
+            <option value="MIXED">🟡 Structure: MIXED</option>
           </select>
-          <div class="dashboardHint">Filters the same 4H HH / HL / LH / LL market structure shown on each Binance chart.</div>
+          <div class="dashboardHint">Filters using the same final Structure label displayed in the card.</div>
         </div>
       </div>
       <div class="controlSectionTitle" style="margin-top:14px">
@@ -1065,119 +1060,59 @@ async function ensureExchangeInfo() {
   }
 }
 
-  // Track symbols that are currently in a blowoff state so the sound fires
-// only when a symbol newly reaches the configured blowoff threshold.
-const alertedBlowoffSymbols = new Set();
+  // Audio notifications are disabled.
+  // Only the authoritative Correction: HIGH RISK / MANIA state can notify.
+  const alertedCorrectionMania = new Set();
 
-// cache audio element
-const scoreAudio = document.getElementById('scoreAlert');
-
-// Add an "unlock" click so browsers allow playback
-const enableBtn = document.getElementById('enableSound');
-if (enableBtn) {
-  enableBtn.addEventListener('click', async () => {
+  async function sendCorrectionManiaNotification(symbol, item){
     try {
-      // attempt a short play/pause to unlock audio on many browsers
-      await scoreAudio.play();
-      scoreAudio.pause();
-      scoreAudio.currentTime = 0;
-      enableBtn.innerText = 'Sound Enabled';
-      enableBtn.disabled = true;
-      console.log('Audio unlocked (user gesture).');
-    } catch (e) {
-      console.warn('Audio unlock failed:', e);
-      enableBtn.innerText = 'Enable Sound (failed)';
-    }
-  });
-}
-
-// Play the alert sound only for a newly detected blowoff.
-function playBlowoffAlert(symbol) {
-  if (!scoreAudio) { console.warn('scoreAudio missing'); return; }
-  try {
-    scoreAudio.currentTime = 0;
-    const p = scoreAudio.play();
-    if (p && typeof p.catch === 'function') p.catch(err => {
-      console.warn('Blowoff sound play rejected:', err);
-    });
-    console.log('Blowoff alert sound:', symbol);
-  } catch (err) {
-    console.warn('playBlowoffAlert error', err);
-  }
-}
-
-// Timing-only alert state. Blowoff score, accumulation, favorites, and
-// ordinary scan results do NOT play the notification sound anymore.
-const alertedTimingStates = new Map();
-
-// Distinctive short two-tone entry chime generated locally. This avoids
-// relying on an external sound file and is used ONLY for timing alerts.
-function playTimingAlert(symbol, side, level) {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const now = ctx.currentTime;
-    const notes = side === 'short' ? [660, 440] : [523.25, 783.99];
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
-    gain.connect(ctx.destination);
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      osc.connect(gain);
-      osc.start(now + i * 0.16);
-      osc.stop(now + 0.16 + i * 0.16);
-    });
-    setTimeout(() => { try { ctx.close(); } catch (_) {} }, 700);
-    console.log(`Timing alert sound: ${symbol} ${side} ${level}`);
-  } catch (err) {
-    console.warn('Timing alert sound skipped:', err);
-  }
-}
-
-function getTimingAlertLevel(item) {
-  try {
-    const t = calculateTimingFramework(item, 'short');
-    const l = t.long;
-    const s = t.short;
-    if (s.entry === 'CONFIRMED') return {side:'short', level:'CONFIRMED'};
-    if (s.entry === 'EARLY') return {side:'short', level:'EARLY'};
-    if (l.entry === 'CONFIRMED') return {side:'long', level:'CONFIRMED'};
-    if (l.entry === 'EARLY') return {side:'long', level:'EARLY'};
-    return {side:null, level:'NOT YET'};
-  } catch (_) {
-    return {side:null, level:'NOT YET'};
-  }
-}
-
-// Play a sound only when SHORT/LONG timing advances into EARLY or CONFIRMED.
-// NOT YET never sounds. The state must first return to NOT YET before a
-// later EARLY/CONFIRMED transition can alert again.
-function triggerTimingSounds(results) {
-  if (!Array.isArray(results)) return;
-  const seen = new Set();
-  for (const item of results) {
-    if (!item?.symbol) continue;
-    const symbol = String(item.symbol).toUpperCase();
-    const state = getTimingAlertLevel(item);
-    const key = `${state.side || 'none'}:${state.level}`;
-    seen.add(symbol);
-    const previous = alertedTimingStates.get(symbol) || 'none:NOT YET';
-    if ((state.level === 'EARLY' || state.level === 'CONFIRMED') && previous !== key) {
-      alertedTimingStates.set(symbol, key);
-      playTimingAlert(symbol, state.side, state.level);
-    } else if (state.level === 'NOT YET') {
-      alertedTimingStates.set(symbol, 'none:NOT YET');
+      if (!('Notification' in window)) return;
+      if (Notification.permission === 'default') {
+        try { await Notification.requestPermission(); } catch (_) { return; }
+      }
+      if (Notification.permission !== 'granted') return;
+      const cg = item?.correctionGuide || {};
+      const body = `${symbol} • Correction: HIGH RISK / MANIA • ${(cg.reasons || []).slice(0,3).join('; ') || 'Extreme correction-risk conditions detected.'}`;
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg && typeof reg.showNotification === 'function') {
+          await reg.showNotification('🔥 Correction: HIGH RISK / MANIA', {
+            body,
+            tag: `correction-mania-${symbol}`,
+            renotify: true
+          });
+          return;
+        }
+      }
+      if (typeof Notification === 'function') {
+        new Notification('🔥 Correction: HIGH RISK / MANIA', {body});
+      }
+    } catch (err) {
+      console.warn('Correction notification skipped:', err);
     }
   }
-  for (const symbol of [...alertedTimingStates.keys()]) {
-    if (!seen.has(symbol)) alertedTimingStates.delete(symbol);
+
+  function triggerCorrectionManiaNotifications(results){
+    if (!Array.isArray(results)) return;
+    const seen = new Set();
+    for (const item of results) {
+      if (!item?.symbol) continue;
+      const symbol = String(item.symbol).toUpperCase();
+      seen.add(symbol);
+      const code = String(item.correctionGuide?.code || '').toUpperCase();
+      if (code === 'HIGH_CORRECTION_RISK_MANIA') {
+        if (!alertedCorrectionMania.has(symbol)) {
+          alertedCorrectionMania.add(symbol);
+          sendCorrectionManiaNotification(symbol, item);
+        }
+      } else {
+        alertedCorrectionMania.delete(symbol);
+      }
+    }
+    for (const symbol of [...alertedCorrectionMania.keys()]) {
+      if (!seen.has(symbol)) alertedCorrectionMania.delete(symbol);
+    }
   }
-}
 
 // Validate quick: symbol must end with USDT for futures perpetual USDT pairs
 function looksLikeUSDTPerp(sym) {
@@ -5835,27 +5770,28 @@ function filterResultsForDist(results) {
     });
   }
 
-  // Dedicated Market Structure filter.
-  // Uses the same 4H HH / HL / LH / LL structure already exposed by the
-  // scanner and drawn on the Binance chart.
+  // Structure Label Filter.
+  // Filter using the same final structure label shown in the UI.
   const marketStructureFilter = el.marketStructureFilter ? el.marketStructureFilter.value : 'ALL';
   if (marketStructureFilter !== 'ALL') {
     filtered = filtered.filter(r => {
       const ms = r?.marketStructure || {};
-      const hh = Number(r?.higherHighs ?? ms.higherHighs ?? 0) > 0;
-      const hl = Number(r?.higherLows ?? ms.higherLows ?? 0) > 0;
-      const lh = Number(r?.lowerHighs ?? ms.lowerHighs ?? 0) > 0;
-      const ll = Number(r?.lowerLows ?? ms.lowerLows ?? 0) > 0;
-      switch (marketStructureFilter) {
-        case 'BULLISH': return hh && hl && !ll && !lh;
-        case 'BEARISH': return lh && ll && !hh && !hl;
-        case 'HH': return hh;
-        case 'HL': return hl;
-        case 'LH': return lh;
-        case 'LL': return ll;
-        case 'MIXED': return (hh || hl) && (lh || ll);
-        default: return true;
-      }
+      const hh = r?.higherHighs ?? ms.higherHighs ?? r?.hh ?? r?.hhCount ?? 0;
+      const hl = r?.higherLows ?? ms.higherLows ?? r?.hl ?? r?.hlCount ?? 0;
+      const lh = r?.lowerHighs ?? ms.lowerHighs ?? r?.lh ?? r?.lhCount ?? 0;
+      const ll = r?.lowerLows ?? ms.lowerLows ?? r?.ll ?? r?.llCount ?? 0;
+      const displayedStructure =
+        (ms.bias && ms.bias !== 'MIXED') ? String(ms.bias)
+        : (Number(hh)>0 && Number(hl)>0 && Number(lh)>0 && Number(ll)>0) ? 'Mixed HH/HL + LH/LL'
+        : (Number(hh)>0 && Number(hl)>0) ? 'HH + HL — Bullish'
+        : (Number(lh)>0 && Number(ll)>0) ? 'LH + LL — Bearish'
+        : (Number(lh)>0) ? 'LH — Exhaustion'
+        : 'Structure data limited';
+      const label = displayedStructure.toUpperCase();
+      if (marketStructureFilter === 'BULLISH') return label.includes('BULLISH');
+      if (marketStructureFilter === 'BEARISH') return label.includes('BEARISH');
+      if (marketStructureFilter === 'MIXED') return label.includes('MIXED');
+      return true;
     });
   }
 
@@ -7952,8 +7888,8 @@ function bindBinanceCharts(){
         if(fit){ ev.preventDefault(); chartRender(host.dataset.symbol,host.dataset.tf||'4h'); }
       });
     }
-    // The Binance Futures chart is displayed directly under Trader Decision,
-    // outside the collapsible Detailed Evidence <details>. Render it immediately.
+    // The Binance Futures chart is displayed directly below the compact
+    // symbol/score/accumulation/exhaustion/trader-decision area.
     chartRender(host.dataset.symbol,host.dataset.tf||'4h');
   });
 }
@@ -8031,22 +7967,7 @@ function renderCards(results){
 
     html += `
       <div class="resultCard coinCard" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}">
-<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
-          <div class="binanceChartHead">
-            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 4H structure chart + scanner levels, EMA200 and HH / HL / LH / LL market structure</div></div>
-            <div class="binanceChartControls">
-              <button type="button" class="binanceTfBtn" data-tf="1m">1m</button>
-              <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
-              <button type="button" class="binanceTfBtn" data-tf="1h">1H</button>
-              <button type="button" class="binanceTfBtn active" data-tf="4h">4H</button>
-              <button type="button" class="binanceTfBtn" data-tf="1d">1D</button>
-              <button type="button" class="binanceChartAction" data-action="fit">↻</button>
-            </div>
-          </div>
-          <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
-          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>HH / HL / LH / LL</span><span>— Current price</span></div>
-          <div class="binanceChartStatus">Preparing Binance candle chart…</div>
-        </div>
+
 
         <div class="coinRow1">
           <div>
@@ -8062,7 +7983,22 @@ function renderCards(results){
           <div style="flex:1 1 100%">${renderTraderDecisionBlock(r, true)}</div>
         </div>
 
-
+<div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
+          <div class="binanceChartHead">
+            <div><div class="binanceChartTitle">📊 Binance Futures Chart</div><div class="binanceChartSub">Live Binance candles • 4H chart + scanner levels, EMA200 and structure pivots</div></div>
+            <div class="binanceChartControls">
+              <button type="button" class="binanceTfBtn" data-tf="1m">1m</button>
+              <button type="button" class="binanceTfBtn" data-tf="15m">15m</button>
+              <button type="button" class="binanceTfBtn" data-tf="1h">1H</button>
+              <button type="button" class="binanceTfBtn active" data-tf="4h">4H</button>
+              <button type="button" class="binanceTfBtn" data-tf="1d">1D</button>
+              <button type="button" class="binanceChartAction" data-action="fit">↻</button>
+            </div>
+          </div>
+          <div class="binanceChartCanvasWrap"><canvas class="binanceChartCanvas"></canvas></div>
+          <div class="binanceChartLegend"><span>EMA200</span><span>🟢 Support</span><span>🟠 Resistance</span><span>Structure pivots</span><span>— Current price</span></div>
+          <div class="binanceChartStatus">Preparing Binance candle chart…</div>
+        </div>
 
         <details class="coinDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedDetailSymbols.has(r.symbol)?'open':''} style="margin-top:10px">
           <summary><strong>${expandedDetailSymbols.has(r.symbol)?'− Detailed evidence':'＋ Detailed evidence'}</strong></summary>
@@ -8967,54 +8903,9 @@ async function runScan(once=false, suppliedSession=null){
     commitScannerSurface('main');
     commitMarketScanResults(results);
 
-    // TIMING-ONLY SOUND RULE: sound only when SHORT/LONG entry timing
-    // advances from NOT YET into EARLY or CONFIRMED. Blowoff score and
-    // accumulation alerts are silent.
-    triggerTimingSounds(window.lastScanResults);
-
-    // Browser notifications remain informational and follow the configured alert mode.
-    const condEnabled = el.condAlert.checked;
-    const accumThreshold = Math.max(0, Math.min(100, parseInt(el.accumAlertThreshold.value,10) || 50));
-    const blowoffThreshold = parseInt(el.threshold.value,10) || 4;
-    const flagged = window.lastScanResults.filter(r => r.score >= blowoffThreshold);
-    const flaggedCond = flagged.filter(r => r.accumCombined && r.accumCombined.confidence >= accumThreshold);
-    // Notifications are optional. Never let browser notification support stop a scan.
-    // Some WebView/Android environments expose Notification but do not allow
-    // `new Notification(...)`; use a service-worker registration when available.
-    async function sendScannerNotification(title, body){
-      try {
-        if (!('Notification' in window)) return;
-        if (Notification.permission === 'default') {
-          try { await Notification.requestPermission(); } catch (_) { return; }
-        }
-        if (Notification.permission !== 'granted') return;
-
-        if ('serviceWorker' in navigator) {
-          const reg = await navigator.serviceWorker.getRegistration();
-          if (reg && typeof reg.showNotification === 'function') {
-            await reg.showNotification(title, {
-              body,
-              tag: 'magma-scanner-alert',
-              renotify: true
-            });
-          }
-        }
-      } catch (err) {
-        console.warn('Scanner notification skipped:', err);
-      }
-    }
-
-    if(condEnabled && flaggedCond.length){
-      sendScannerNotification(
-        'Blowoff+Accum Alert',
-        flaggedCond.map(x => `${x.symbol} acc:${x.accumCombined.confidence}%`).slice(0,6).join(', ')
-      );
-    } else if(!condEnabled && flagged.length){
-      sendScannerNotification(
-        'Blowoff Detected',
-        flagged.map(f=>f.symbol).slice(0,6).join(', ')
-      );
-    }
+    // ONLY alert condition: Correction = HIGH RISK / MANIA.
+    // No blowoff, accumulation, timing, or sound notifications.
+    triggerCorrectionManiaNotifications(window.lastScanResults);
 
     running=false;
 
