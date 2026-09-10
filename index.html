@@ -685,7 +685,8 @@ body.authLocked{overflow:hidden}
     border-left:4px solid var(--compact-accent,#7edcff);
     background:linear-gradient(180deg,rgba(126,220,255,.045),rgba(255,255,255,.018));
   }
-  .compactCycle{font-size:16px;font-weight:950;color:#dff7ff;margin-bottom:9px}
+  .compactCycleState{font-size:18px;font-weight:950;line-height:1.25;margin-top:3px}
+.compactCycle{font-size:16px;font-weight:950;color:#dff7ff;margin-bottom:9px}
   .compactDecisionTitle{font-size:12px;font-weight:950;letter-spacing:.07em;color:#cfe8ff}
   .compactState{font-size:16px;font-weight:950;margin-top:3px;line-height:1.25}
   .compactLine{font-size:12px;line-height:1.45;margin-top:2px;color:#e6eef8}
@@ -8403,24 +8404,24 @@ function renderCompactDecisionSummary(item){
   let longEntry='⚠️ Staged / conditional';
   let shortEntry='⏸ Wait for structure';
 
-  if(correctionConfirmed){
-    currentState='🔴 CORRECTION ACTIVE';
-    readiness='🔴 Correction active';
-    bias='Neutral / Cautious Bearish';
-    longEntry=(a4h>=60 && a1d>=55 && hasHL)?'🟡 Recovery long — staged only':'❌ Wait — correction still active';
-    shortEntry=(hasLH||distribution)?'🟠 Conditional — rejection / failed bounce':'⏸ Wait for rejection / structure';
-  }else if(overheated && (distribution || Number(r.preCrash?.score||0)>=6)){
-    currentState='🟠 HIGH-RISK / TOPPING VULNERABLE';
-    readiness='🟠 High-risk / structurally vulnerable';
-    bias='Bearish / Cautious';
-    longEntry='❌ Don’t chase';
-    shortEntry='🟠 Wait for rejection / failed bounce';
-  }else if((distribution || hasLH)){
+  if(distribution || hasLH){
     currentState='🟠 STRUCTURE WEAKENING';
     readiness='🟠 Structure unresolved';
     bias='Bearish Risk / Neutral';
     longEntry='❌ Wait — structure weak';
     shortEntry='⚠️ Conditional — rejection first';
+  }else if(correctionConfirmed){
+    currentState='🔴 CORRECTION ACTIVE';
+    readiness='🔴 Correction active';
+    bias='Neutral / Cautious Bearish';
+    longEntry=(a4h>=60 && a1d>=55 && hasHL)?'🟡 Recovery long — staged only':'❌ Wait — correction still active';
+    shortEntry='🟠 Conditional — rejection / failed bounce';
+  }else if(overheated && Number(r.preCrash?.score||0)>=6){
+    currentState='🟠 HIGH-RISK / TOPPING VULNERABLE';
+    readiness='🟠 High-risk / structurally vulnerable';
+    bias='Bearish / Cautious';
+    longEntry='❌ Don’t chase';
+    shortEntry='🟠 Wait for rejection / failed bounce';
   }else if(a4h>=60 && a1d>=55 && hasHL && !overheated){
     currentState='🟢 CONTROLLED RECOVERY / CONTINUATION';
     readiness='🟢 Long setup developing';
@@ -8489,11 +8490,12 @@ function renderCompactDecisionSummary(item){
   return `
     <div class="compactDecisionSummary" style="--compact-accent:${tone}">
       <div class="compactCycle">🧭 UNIFIED MARKET-CYCLE — ${cycleScore}%</div>
+      <div class="compactCycleState">${u.state||'⚪ UNKNOWN'}</div>
       <div class="compactDecisionTitle">🎯 TRADER DECISION</div>
       <div class="compactState">${readiness}</div>
       <div class="compactLine"><strong>Current state:</strong> ${currentState}</div>
       <div class="compactLine"><strong>Bias:</strong> ${bias}</div>
-      <div class="compactLine"><strong>Correction:</strong> ${correctionText} • ${correction.label||'CONTINUATION'}</div>
+      <div class="compactLine"><strong>Correction:</strong> ${correctionText}</div>
       <div class="compactLine"><strong>Long entry:</strong> ${longEntry}</div>
       <div class="compactLine"><strong>Short entry:</strong> ${shortEntry}</div>
       <div class="compactLiquidity">
