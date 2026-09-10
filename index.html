@@ -1,3 +1,4 @@
+<!-- BUILD: FINAL-UNIFIED-CYCLE-GRADUATED-MARKUP-2026-09-10
 <!-- BUILD: CORRECTION-CONSISTENCY-FIX-2026-09-10 -->
 
 <!doctype html>
@@ -8181,19 +8182,34 @@ function calculateUnifiedMarketCycle(item){
     const markupCore=(aboveAll&&bullishStack&&bullishStructure&&!distributionCore);
     const accumulationCore=(Math.max(0,Number(item.accumCombined?.confidence||0))>=60 && !markdownCore && !distributionCore && (hl>=1||supportTest));
 
+    // A confirmed recovery is a correction-state outcome, not necessarily the
+    // final cycle phase. Once recovery has completed and the market has
+    // re-established the full bullish EMA/structure stack, the Unified
+    // Market-Cycle graduates into MARKUP / EXPANSION while Correction Guide
+    // remains ⚫ RECOVERY. This cleanly separates "what happened" (correction)
+    // from "where price is now" (cycle phase).
+    const recoveryGraduatedToMarkup=!!(correctionConfirmed && recoveryConfirmed && reversalConfirmed && markupCore);
+
     /*
       PRIORITY ORDER:
-      1) Confirmed correction + confirmed recovery -> SUPPORT / RECOVERY
-      2) Confirmed significant correction -> MARKDOWN / POST-TOP
-      3) Developing correction -> PROFIT / MARKDOWN
-      4) Pre-correction risk / mania -> RESISTANCE / DISTRIBUTION
-      5) Supported overbought -> MARKUP / continuation
-      6) Normal structural cycle logic
+      1) Completed post-correction recovery + full bullish expansion -> MARKUP
+      2) Confirmed correction + recovery not yet graduated -> POST-CORRECTION / RECOVERY
+      3) Confirmed significant correction -> MARKDOWN / POST-TOP
+      4) Developing correction -> PROFIT / MARKDOWN
+      5) Pre-correction risk / mania -> RESISTANCE / DISTRIBUTION
+      6) Supported overbought -> MARKUP / continuation
+      7) Normal structural cycle logic
 
-      This is the key uniformity fix: correction status is applied BEFORE
-      distribution/markup/accumulation can claim the Unified Market-Cycle.
+      Correction Guide remains authoritative for correction status, but it no
+      longer freezes the broader cycle at SUPPORT / RECOVERY after the market
+      has demonstrably recovered and resumed expansion.
     */
-    if(correctionConfirmed && recoveryConfirmed){
+    if(recoveryGraduatedToMarkup){
+      phase='MARKUP'; code='MARKUP'; state='🟢 MARKUP / EXPANSION'; tone='green';
+      reasons.push('Post-correction recovery has graduated into markup: bullish EMA alignment + structure are re-established');
+      reasons.push('Correction Guide remains in RECOVERY; the broader cycle is now MARKUP / EXPANSION');
+      reasons.push('Higher-low + EMA14/EMA21 reclaim + bullish structure are confirmed');
+    }else if(correctionConfirmed && recoveryConfirmed){
       phase='POST-CORRECTION / RECOVERY'; code='POST_CORRECTION_RECOVERY'; state='🟣 POST-CORRECTION / RECOVERY'; tone='purple';
       reasons.push('Significant correction was confirmed by the authoritative correction layer');
       reasons.push('Recovery structure is confirmed: higher-low + EMA14/EMA21 reclaim');
@@ -8296,10 +8312,11 @@ function getUnifiedCycleMapStage(u){
   const recovery=!!u?.recoveryConfirmed || correction.includes('POST_CORRECTION_RECOVERY') || phase.includes('POST-CORRECTION / RECOVERY');
   const location=String(u?.location||'').toUpperCase();
 
-  // Correction Guide is authoritative for the cycle map. A support test,
-  // oversold RSI, bounce risk, or generic return-to-normal state cannot
-  // activate Support / Recovery by itself.
-  if(recovery) return 'support';
+  // Correction Guide is authoritative for the correction state, but a
+  // completed recovery can graduate the broader cycle into MARKUP. Therefore
+  // explicit Unified Market-Cycle phase takes precedence when it is MARKUP.
+  if(phase==='MARKUP' || phase.includes('MARKUP / EXPANSION')) return 'markup';
+  if(recovery && phase.includes('POST-CORRECTION / RECOVERY')) return 'support';
   if(correction.includes('SIGNIFICANT_CORRECTION_CONFIRMED')) return 'markdown';
   if(correction.includes('CORRECTION_DEVELOPING') || correction.includes('DEEPENING CORRECTION')) return 'markdown';
   if(correction.includes('HIGH_CORRECTION_RISK') || correction.includes('VULNERABILITY')) return 'distribution';
