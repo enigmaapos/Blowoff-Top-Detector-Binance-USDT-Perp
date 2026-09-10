@@ -7949,6 +7949,13 @@ function calculateUnifiedMarketCycle(item){
 
     const e14=ema(closes,14), e21=ema(closes,21), e50=ema(closes,50), e70=ema(closes,70), e200=closes.length>=200?ema(closes,200):null;
     const emaVals={ema14:e14,ema21:e21,ema50:e50,ema70:e70,ema200:e200};
+
+    // Shared context used by the Unified Market-Cycle. These values must be
+    // defined locally so warning/detection layers can never break the
+    // authoritative correction-driven cycle.
+    const phaseText=String(item.phase?.phase || item.phase?.phaseName || item.phase || item.structurePhase || '').toLowerCase();
+    const topScore=Number(item.topDetection?.score ?? item.topScore ?? 0) || 0;
+    const priorTopEvidence=String(item.topDetection?.label || item.topDetection?.state || '').trim();
     const belowAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price<v);
     const aboveAll=[e14,e21,e50,e70,e200].every(v=>Number.isFinite(v)&&v>0&&price>v);
     const bearishStack=Number.isFinite(e200)&&e14<e21&&e21<e50&&e50<e70&&e70<e200;
