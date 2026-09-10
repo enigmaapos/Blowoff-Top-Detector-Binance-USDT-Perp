@@ -1,3 +1,4 @@
+<!-- BUILD: CORRECTION-CONSISTENCY-FIX-2026-09-10 -->
 
 <!doctype html>
 <html lang="en">
@@ -1693,11 +1694,27 @@ function classifySimilarityPhase(sim) {
   // Unified Cycle Match display helper.
   // Falls back to the classifier for older/cached result objects.
 
+function getAuthoritativeMarketPhase(r){
+  const item=r||{};
+  const cg=(item.correctionGuide && typeof item.correctionGuide==='object') ? item.correctionGuide : (typeof getCorrectionGuide==='function' ? getCorrectionGuide(item) : {});
+  const code=String(cg.code||'').toUpperCase();
+  const label=String(cg.label||'').toUpperCase();
+  if(code==='POST_CORRECTION_RECOVERY') return {name:'POST-CORRECTION / RECOVERY', confidence:Number(cg.confidence||75), code};
+  if(code==='SIGNIFICANT_CORRECTION_CONFIRMED') return {name:'MARKDOWN / POST-TOP — SIGNIFICANT CORRECTION CONFIRMED', confidence:Number(cg.confidence||100), code};
+  if(code==='CORRECTION_DEVELOPING' || /CORRECTION DEVELOPING|DEEPENING CORRECTION/.test(label)) return {name:'CORRECTION DEVELOPING — NOT CONFIRMED', confidence:Number(cg.confidence||70), code:'CORRECTION_DEVELOPING'};
+  if(code==='HIGH_CORRECTION_RISK_MANIA') return {name:'HIGH CORRECTION RISK / MANIA', confidence:Number(cg.confidence||90), code};
+  if(code==='HIGH_CORRECTION_RISK' || code==='HIGH_VULNERABILITY') return {name:'HIGH CORRECTION RISK', confidence:Number(cg.confidence||80), code};
+  if(code==='VULNERABILITY_INCREASING') return {name:'VULNERABILITY INCREASING', confidence:Number(cg.confidence||55), code};
+  if(code==='OVERBOUGHT_CONTINUATION_SUPPORTED') return {name:'OVERBOUGHT / CONTINUATION SUPPORTED', confidence:Number(cg.confidence||65), code};
+  const p=item.phase;
+  return {name:p && typeof p==='object' ? (p.phaseName||p.phase||'Unknown') : (p||'Unknown'), confidence:p && typeof p==='object' && p.confidence!=null ? Number(p.confidence)||0 : 0, code};
+}
+
 function renderPhaseComparison(r){
   const cycle = getCycleDisplay(r || {});
-  const p = r && r.phase;
-  const market = p && typeof p === 'object' ? (p.phaseName || p.phase || 'Unknown') : (p || 'Unknown');
-  const confidence = p && typeof p === 'object' && p.confidence != null ? `${Math.round(Number(p.confidence)||0)}% confidence` : 'Structural classification';
+  const authoritative = getAuthoritativeMarketPhase(r || {});
+  const market = authoritative.name;
+  const confidence = `${Math.round(authoritative.confidence||0)}% correction/phase confidence`;
   return `<div class="phaseCompare">
     <div class="phaseBox"><div class="phaseBoxLabel">Market Phase</div><div class="phaseBoxValue">${market}</div><div class="phaseBoxSub">${confidence}</div></div>
     <div class="phaseBox cycle"><div class="phaseBoxLabel">Cycle Phase</div><div class="phaseBoxValue">${cycle.cyclePhase}</div><div class="phaseBoxSub">Similarity ${cycle.similarityPct}%</div></div>
@@ -1742,8 +1759,13 @@ function calculateOverallMarketVerdict(r){
   const blowoff = Number(r.score || 0);
   const similarity = Number(cycle.similarityPct ?? r.cycleMatch ?? 0);
 
+  const authoritative = getAuthoritativeMarketPhase(r);
+  const correctionCode = String(authoritative.code||'').toUpperCase();
   const phase = marketPhase.toLowerCase();
   const cyc = String(cycle.cyclePhase || "").toLowerCase();
+  const correctionDeveloping = correctionCode==='CORRECTION_DEVELOPING';
+  const correctionConfirmed = correctionCode==='SIGNIFICANT_CORRECTION_CONFIRMED';
+  const postCorrectionRecovery = correctionCode==='POST_CORRECTION_RECOVERY';
 
   /*
    * Hierarchy:
@@ -1767,7 +1789,19 @@ function calculateOverallMarketVerdict(r){
 
   let verdict, tone, reason;
 
-  if (strongBearStructure && (broadDistribution || highLateCycleRisk)) {
+  if (postCorrectionRecovery) {
+    verdict = "POST-CORRECTION / RECOVERY";
+    tone = "bull";
+    reason = "The Correction Guide has moved the market into post-correction recovery. Support/recovery is allowed only from this authoritative recovery state.";
+  } else if (correctionConfirmed) {
+    verdict = "SIGNIFICANT CORRECTION CONFIRMED";
+    tone = "bear";
+    reason = "The Correction Guide has confirmed a significant correction through the authoritative 15m EMA200 layer. Other warning layers are context, not confirmation.";
+  } else if (correctionDeveloping) {
+    verdict = "CORRECTION DEVELOPING — NOT CONFIRMED";
+    tone = "warn";
+    reason = "The Correction Guide detects downside progression, but the 15m EMA200 confirmation threshold has not been crossed. Distribution/breakdown signals remain warning context.";
+  } else if (strongBearStructure && (broadDistribution || highLateCycleRisk)) {
     verdict = "BEARISH STRUCTURE";
     tone = "bear";
     reason = "The current structural bias is bearish, and the broader phase/cycle signals reinforce weakening demand and selling pressure.";
@@ -6356,6 +6390,8 @@ function getShortTermRecommendation(item){
   if(!ups.length) ups=['—'];
 
   let bias='Neutral', sentence='', plan='';
+  const cgCode=String(cg.code||'').toUpperCase();
+  const developing=cgCode==='CORRECTION_DEVELOPING' || /CORRECTION DEVELOPING|DEEPENING CORRECTION/i.test(String(cg.label||''));
   if(confirmed){
     if(accum>=60 && rsi4h<65){
       bias='Recovery Watch';
@@ -6366,6 +6402,10 @@ function getShortTermRecommendation(item){
       sentence='Significant correction is confirmed; avoid chasing either direction until price establishes a clear support/rejection or higher-low.';
       plan='For shorts, wait for a failed bounce/rejection. For longs, wait for a 15m/1h higher-low plus improving 4H accumulation. Use actual structural levels for invalidation.';
     }
+  }else if(developing){
+    bias='Bearish / Developing Correction';
+    sentence='The Correction Guide shows downside progression, but significant correction confirmation is not active because 15m EMA200 stretch remains at or above 0%.';
+    plan='Prefer a failed bounce/rejection for a short, or wait for support defense and a higher-low. Do not treat developing correction status as confirmed correction.';
   }else if((phase.toLowerCase().includes('breakdown')||phase.toLowerCase().includes('distribution')) || (rsi4h>=78&&accum<50)){
     bias='Bearish';
     sentence='Short-term downside risk is elevated: exhaustion and/or weakening structure are present, but correction confirmation is not active yet.';
@@ -6397,13 +6437,14 @@ function getFinalRecommendation(item){
   const phaseLc=phase.toLowerCase();
   const cg=r.correctionGuide||{};
   const cgLabel=String(cg.label||'').toUpperCase();
+  const cgCode=String(cg.code||'').toUpperCase();
   const confirmed=isSignificantCorrectionConfirmed(r);
-  const developing=cgLabel.includes('DEVELOPING');
+  const developing=cgCode==='CORRECTION_DEVELOPING' || cgLabel.includes('DEVELOPING');
   const rtn=!!r.returnToNormal?.isReturn;
   const isAccumPhase=/accumulation|re-accumulation/.test(phaseLc);
   const isDistribution=/distribution|breakdown/.test(phaseLc);
   const isCapitulation=/capitulation/.test(phaseLc);
-  const isRecovery=/recovery|return-to-normal/.test(phaseLc)||rtn;
+  const isRecovery=cgCode==='POST_CORRECTION_RECOVERY';
   const blowoffStrong = (Number(r.score||0)>=7 && rsi4h>=80 && vol>=2) || (rsi4h>=88 && vol>=3 && Number(r.topDetection?.score||0)>=75);
   const exhaustion = rsi4h>=75 || vol>=2 || ema70>=20 || wick>=1.5 || warningScore>=6 || blow>=20;
   const strongSupport = accum>=65 && a4h>=55 && a1h>=50;
@@ -6439,7 +6480,16 @@ function getFinalRecommendation(item){
     evidence.push(`Correction ${cgLabel||'CONFIRMED'}`);
     evidence.push(`15m EMA200 stretch ${Number(cg.ema200Stretch15||0).toFixed(2)}%`);
   }
-  /* 2) True blowoff gets its own state instead of being flattened into "overheated". */
+  /* 2) Correction developing has priority over generic distribution/top warnings. */
+  else if(developing){
+    state='🟠 CORRECTION DEVELOPING — NOT CONFIRMED';
+    confidence=Math.min(95,Math.max(60,Number(cg.confidence||70)));
+    sentence='The Correction Guide detects active downside progression, but the significant-correction confirmation threshold has not been reached.';
+    rationale=`Correction Guide: ${cgLabel||'CORRECTION DEVELOPING'} • 15m EMA200 stretch ${Number(cg.ema200Stretch15||0).toFixed(2)}%`;
+    tradeBias='Bearish Risk / Wait';
+    action='Do not treat the developing warning as a confirmed correction. Prefer a failed bounce/rejection for a short, or wait for support defense and a higher-low. Reassess if 15m EMA200 stretch falls below 0%.';
+  }
+  /* 3) True blowoff gets its own state instead of being flattened into "overheated". */
   else if(blowoffStrong){
     state='🔥 BLOWOFF / MANIA — HIGH EXHAUSTION RISK';
     confidence=Math.min(97,Math.round(55 + Math.min(20,(rsi4h-80)*0.8) + Math.min(12,(vol-2)*4) + Math.min(10,warningScore*1.25)));
@@ -7078,7 +7128,7 @@ function renderTraderDecisionBlock(r, compact=false){
   const ema70=Number(item.ema70DistPct||0);
   const cg=item.correctionGuide||{};
   const ema200=cg.ema200Stretch15;
-  const phase=String(item.phase?.phase||item.phase||'Unknown');
+  const phase=String(getAuthoritativeMarketPhase(item).name||'Unknown');
   const phaseLc=phase.toLowerCase();
   const reasons=(item.phase?.reasons||[]).map(String);
   const hasHigherLow=reasons.some(x=>/higher[- ]?low/i.test(x)) || Number(item.higherLowCount||0)>0 || item.hasHigherLow===true;
@@ -8085,7 +8135,7 @@ function calculateUnifiedMarketCycle(item){
       phase='POST-CORRECTION / RECOVERY'; code='POST_CORRECTION_RECOVERY'; state='🟣 POST-CORRECTION / RECOVERY'; tone='purple';
       reasons.push('Significant correction was confirmed by the authoritative correction layer');
       reasons.push('Recovery structure is confirmed: higher-low + EMA14/EMA21 reclaim');
-      if(correctionRecoveryCode || returnToNormalActive) reasons.push('Correction guide / return-to-normal recovery context is active');
+      if(correctionRecoveryCode) reasons.push('Correction Guide explicitly reports post-correction recovery');
     }else if(correctionConfirmed){
       phase='MARKDOWN / POST-TOP'; code='MARKDOWN_POST_TOP'; state='🔴 MARKDOWN / POST-TOP'; tone='red';
       reasons.push('15m EMA200 correction confirmation is active');
@@ -8184,9 +8234,9 @@ function getUnifiedCycleMapStage(u){
   const recovery=!!u?.recoveryConfirmed || correction.includes('POST_CORRECTION_RECOVERY') || phase.includes('POST-CORRECTION / RECOVERY');
   const location=String(u?.location||'').toUpperCase();
 
-  // The map is subordinate to the authoritative Correction Guide.
-  // A support test, oversold reading, bounce risk, or generic return-to-normal
-  // context cannot advance the cycle into Support / Recovery.
+  // Correction Guide is authoritative for the cycle map. A support test,
+  // oversold RSI, bounce risk, or generic return-to-normal state cannot
+  // activate Support / Recovery by itself.
   if(recovery) return 'support';
   if(correction.includes('SIGNIFICANT_CORRECTION_CONFIRMED')) return 'markdown';
   if(correction.includes('CORRECTION_DEVELOPING') || correction.includes('DEEPENING CORRECTION')) return 'markdown';
