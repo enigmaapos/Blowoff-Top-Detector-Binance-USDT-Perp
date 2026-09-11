@@ -698,7 +698,7 @@ body.authLocked{overflow:hidden}
 <div class="card-panel">
   <h1>Blowoff + Multi-Detector Top Scanner</h1>
   <div class="small" style="margin-top:6px;color:var(--muted)">
-    Multi-timeframe accumulation detector (15m / 1h / 4h), sensitivity slider, conditional alert (blowoff + accumulation) and AI recommendations (long-term + short-term).
+    Multi-timeframe accumulation detector (15m / 1h / 4h), sensitivity slider, Blowoff/Exhaustion alert and AI recommendations (long-term + short-term).
     Run on a local server to avoid CORS (e.g., <code>python -m http.server</code>).
   </div>
 
@@ -918,6 +918,21 @@ body.authLocked{overflow:hidden}
           </select>
           <div class="dashboardHint">Exact 4H chart label filter — includes BEARISH RISK and BULLISH SUPPORT.</div>
         </div>
+        <div class="controlItem">
+          <label class="controlLabel">📈 EMA Structure Filter</label>
+          <select id="emaStructureFilter">
+            <option value="ALL">All EMA Structures</option>
+            <option value="BULLISH_ABOVE_ALL">🟢 Bullish aligned • Price above all major EMAs</option>
+            <option value="BULLISH">🟢 Bullish aligned</option>
+            <option value="BEARISH_BELOW_ALL">🔴 Bearish aligned • Price below all major EMAs</option>
+            <option value="BEARISH">🔴 Bearish aligned</option>
+            <option value="MIXED">🟡 Mixed / transitional</option>
+            <option value="ABOVE_ALL">⬆️ Price above all major EMAs</option>
+            <option value="BELOW_ALL">⬇️ Price below all major EMAs</option>
+            <option value="BETWEEN">↔️ Price between EMA layers</option>
+          </select>
+          <div class="dashboardHint">Uses the same 15m EMA structure calculated by the Unified Market-Cycle engine: EMA14 / 21 / 50 / 70 / 200.</div>
+        </div>
       </div>
       <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
@@ -1062,6 +1077,7 @@ const el = {
   hvdFilter: document.getElementById('hvdFilter'),
   liquidityFilter: document.getElementById('liquidityFilter'),
   marketStructureFilter: document.getElementById('marketStructureFilter'),
+  emaStructureFilter: document.getElementById('emaStructureFilter'),
   unifiedCycleFilter: document.getElementById('unifiedCycleFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
   smcDirectionFilter: document.getElementById('smcDirectionFilter')
@@ -5729,6 +5745,31 @@ function unifiedCycleFilterMatches(r, filter){
   return getUnifiedCycleMapStage(u || {}) === filter;
 }
 
+function emaStructureFilterMatches(r, filter){
+  if(filter==='ALL') return true;
+  const item=r||{};
+  let u=item.unifiedMarketCycle;
+  if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE'){
+    try{
+      if(typeof calculateUnifiedMarketCycle==='function') u=calculateUnifiedMarketCycle(item);
+    }catch(_){}
+  }
+  const e=u?.ema||{};
+  const bullish=!!e.bullishStack;
+  const bearish=!!e.bearishStack;
+  const above=!!e.aboveAll;
+  const below=!!e.belowAll;
+  if(filter==='BULLISH_ABOVE_ALL') return bullish && above;
+  if(filter==='BULLISH') return bullish;
+  if(filter==='BEARISH_BELOW_ALL') return bearish && below;
+  if(filter==='BEARISH') return bearish;
+  if(filter==='MIXED') return !bullish && !bearish;
+  if(filter==='ABOVE_ALL') return above;
+  if(filter==='BELOW_ALL') return below;
+  if(filter==='BETWEEN') return !above && !below;
+  return true;
+}
+
 function filterResultsForDist(results) {
   // When Favorites mode is active, include the persistent favorite snapshots
   // in addition to the current scan. This makes favorites discoverable even
@@ -5765,6 +5806,14 @@ function filterResultsForDist(results) {
   const unifiedCycleFilter = el.unifiedCycleFilter ? el.unifiedCycleFilter.value : 'ALL';
   if (unifiedCycleFilter !== 'ALL') {
     filtered = filtered.filter(r => unifiedCycleFilterMatches(r, unifiedCycleFilter));
+  }
+
+  // Dedicated EMA Structure filter. This reads the exact EMA state exposed by
+  // the Unified Market-Cycle renderer, so filtering cannot disagree with the
+  // displayed "EMA structure" line.
+  const emaStructureFilter = el.emaStructureFilter ? el.emaStructureFilter.value : 'ALL';
+  if (emaStructureFilter !== 'ALL') {
+    filtered = filtered.filter(r => emaStructureFilterMatches(r, emaStructureFilter));
   }
 
   // Entry-status filters use the same status intelligence that powers the
@@ -6297,6 +6346,9 @@ if (el.liquidityFilter) {
 }
 if (el.marketStructureFilter) {
   el.marketStructureFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.emaStructureFilter) {
+  el.emaStructureFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.unifiedCycleFilter) {
   el.unifiedCycleFilter.addEventListener('change', () => renderActiveView(true));
@@ -9391,7 +9443,7 @@ function commitMarketScanResults(nextResults){
     try {
       const ids = [
         'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
-        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','unifiedCycleFilter',
+        'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
       const active = ids.some(id => {
