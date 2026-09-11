@@ -7309,7 +7309,10 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('new lower-low / renewed distribution');
   } else if(distribution || structureBear) {
     currentState='🟠 STRUCTURE WEAKENING';
-    bias='Bearish Risk / Neutral';
+    // Keep the master market/structural bias dominant. Distribution/exhaustion
+    // is a short-term risk condition, not an automatic bearish trend flip.
+    const masterBias=String(rec.structuralBias||rec.marketBias||rec.tradeBias||'').toUpperCase();
+    bias=/BULLISH|LONG/.test(masterBias) ? 'Bullish • Bearish Risk Elevated' : 'Bearish Risk / Neutral';
     longEntry='❌ Wait — structure weak';
     shortEntry='⚠️ Conditional — rejection first';
     bestAction='Structure is weakening, but do not chase the first breakdown. Wait for a failed bounce/lower-high for shorts or a higher-low plus accumulation recovery for longs.';
