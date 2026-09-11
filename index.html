@@ -4378,7 +4378,9 @@ function renderSMCBreakerBlock(r){
   const cg=r.correctionGuide||{};
   const correctionConfirmed=Number.isFinite(Number(cg.ema200Stretch15)) && Number(cg.ema200Stretch15)<0;
   const bearState=String(bear.state||'');
-  const bearishDeveloping=/MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED|RETEST CONFIRMED|BEARISH BREAKDOWN/i.test(bearState);
+  const bearishDeveloping=/MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED|RETEST CONFIRMED|BEARISH BREAKDOWN|BEARISH/i.test(bearState);
+  const bullishState=String(r.bullishStructure?.state||'');
+  const bullishDeveloping=/MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED|RETEST CONFIRMED|BULLISH BREAKOUT|BULLISH/i.test(bullishState);
   const topScore=Number(r.topDetection?.score||0);
   const topLabel=String(r.topDetection?.label||'');
   const topDeveloping=/TOPPING|DISTRIBUTION|RISK/i.test(topLabel) || topScore>=40;
@@ -4393,7 +4395,9 @@ function renderSMCBreakerBlock(r){
     : b.retest
       ? 'Price is interacting with the breaker zone. Wait for a clean rejection/continuation on 15m before treating it as an entry.'
       : 'Wait for price to return to the breaker zone. This is a watch/retest zone, not an entry until the retest is confirmed.';
-  const conflict=(bull && bearishDeveloping) || (!bull && /MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED/i.test(String(bear.state||''))===false && false);
+  /* A breaker only conflicts with lower-timeframe structure when the 15m
+     structure is explicitly developing in the opposite direction. */
+  const conflict=(bull && bearishDeveloping) || (!bull && bullishDeveloping);
   const conflictText=conflict
     ? `⚠️ SMC/STRUCTURE CONFLICT — 4H ${bull?'bullish breaker':'bearish breaker'} vs 15m ${bearState.replace(/^.*?—\s*/,'')||'structure'} `
     : '';
@@ -4416,7 +4420,12 @@ function renderSMCBreakerBlock(r){
     ['▣','Breaker',b.bos?'DEFINED':'PENDING'],
     ['↩','Retest',b.continuation?'CONFIRMED':b.retest?'ACTIVE':'WAIT']
   ];
-  const zoneTitle=b.continuation ? (bull?'4H SMC ZONE — 15m ENTRY REQUIRED':'4H SMC ZONE — 15m ENTRY REQUIRED') : 'WATCH / RETEST ZONE';
+  const zoneTitle=b.continuation
+    ? '4H SMC SETUP ZONE'
+    : '4H SMC WATCH / RETEST ZONE';
+  const zoneStatus=b.continuation
+    ? 'Zone timeframe: 4H • Execution timeframe: 15m'
+    : 'Zone timeframe: 4H • Retest / execution confirmation: 15m';
   return `<div class="smcBreakerPanel" style="border-left:4px solid ${accent}">
     <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
     <div class="smcBreakerReason">${mspEscape(b.reason||'')} <span style="opacity:.8">(4H setup confirmation; not a 15m entry signal)</span></div>
@@ -4433,6 +4442,7 @@ function renderSMCBreakerBlock(r){
     </div>
     <div class="smcBreakerZone ${bull?'':'smcBreakerZoneBear'}" style="border-color:${accent}33">
       <div class="smcBreakerZoneTitle" style="color:${accent}">${bull?'🟢 BULLISH':'🔴 BEARISH'} ${zoneTitle}</div>
+      <div class="smcBreakerMeta" style="margin-top:4px"><strong>${zoneStatus}</strong></div>
       <div class="smcBreakerZoneGrid">
         <div class="smcBreakerMetric"><span>${b.continuation?'Entry zone':'Watch / retest zone'}</span><strong>${money(b.entryLow)} — ${money(b.entryHigh)}</strong></div>
         <div class="smcBreakerMetric"><span>Invalidation</span><strong>${money(b.invalidation)}</strong></div>
