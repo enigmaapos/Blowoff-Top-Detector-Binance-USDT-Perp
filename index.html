@@ -6797,92 +6797,6 @@ function calculateEntryPathFramework(item, side, statusCode){
   return {price,ema50,ema200,state,stateIcon,stateText,sideLabel,entryLabel,primarySide,contested:!!zones?.contested,entryZoneObj,targetZoneObj,referenceEntry,maeBoundary,maePct,expectedTarget,mfePct,fromEntryTo50,fromEntryTo200,fmt,fp};
 }
 
-function calculateTimingFramework(item, side){
-  const r=item||{};
-  const candles=Array.isArray(r.k1mEntry)?r.k1mEntry:[];
-  const price=Number(r.closeNow ?? candles.at(-1)?.[4] ?? 0);
-  const requested=String(side||'').toLowerCase();
-  const zones=(()=>{try{return getTraderDecisionZones(r)||{};}catch(e){return {};}})();
-  const shortZone=zones.sell, longZone=zones.buy;
-  const phase=String(r.phase?.phase||r.phase||'');
-  const cg=r.correctionGuide||getCorrectionGuide(r)||{};
-  const rsi4h=Number(r.rsi4h||0), accum=Number(r.accumCombined?.confidence??r.accum??0);
-  const ema70=Number(r.ema70DistPct||0), blow=Number(r.score||0);
-  const dist=/distribution|breakdown/i.test(phase);
-  const setupShort = dist || rsi4h>=78 || ema70>=12 || blow>=10 || !!r.lowerHigh || String(cg.code||'').includes('RISK') || String(cg.code||'').includes('DEVELOPING');
-  const setupLong = !setupShort && (accum>=55 || /accumulation|re-accumulation|recovery/i.test(phase));
-
-  // Confirmed 1m entry structure from completed candles only. The latest candle is
-  // treated as the current bar and is not used as a confirmed pivot.
-  const bars=candles.slice(-80);
-  const pivH=[], pivL=[];
-  for(let i=2;i<bars.length-2;i++){
-    const h=Number(bars[i]?.[2]), l=Number(bars[i]?.[3]);
-    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
-    let sh=h>Number(bars[i-1]?.[2])&&h>=Number(bars[i+1]?.[2]);
-    let sl=l<Number(bars[i-1]?.[3])&&l<=Number(bars[i+1]?.[3]);
-    for(let j=2;j<=2;j++){
-      sh=sh&&h>Number(bars[i-j]?.[2])&&h>=Number(bars[i+j]?.[2]);
-      sl=sl&&l<Number(bars[i-j]?.[3])&&l<=Number(bars[i+j]?.[3]);
-    }
-    if(sh)pivH.push({i,price:h});
-    if(sl)pivL.push({i,price:l});
-  }
-  const lastH=pivH.at(-1), prevH=pivH.at(-2), lastL=pivL.at(-1), prevL=pivL.at(-2);
-  const lh=!!(lastH&&prevH&&lastH.price<prevH.price);
-  const ll=!!(lastL&&prevL&&lastL.price<prevL.price);
-  const hl=!!(lastL&&prevL&&lastL.price>prevL.price);
-  const hh=!!(lastH&&prevH&&lastH.price>prevH.price);
-  const latest=bars.at(-1), prev=bars.at(-2);
-  const latestClose=Number(latest?.[4]), latestHigh=Number(latest?.[2]), latestLow=Number(latest?.[3]);
-  const prevLow=Number(prev?.[3]), prevHigh=Number(prev?.[2]);
-  const bearishBreak=ll || (Number.isFinite(latestClose)&&Number.isFinite(prevLow)&&latestClose<prevLow);
-  const bullishBreak=hh || (Number.isFinite(latestClose)&&Number.isFinite(prevHigh)&&latestClose>prevHigh);
-
-  const rejectionShort=!!(shortZone && Number.isFinite(price) && Number(price)>=Number(shortZone.low) && Number(price)<=Number(shortZone.high) && Number.isFinite(latestHigh) && Number.isFinite(latestClose) && latestHigh>latestClose && ((latestHigh-latestClose)/(Math.max(1e-12,latestHigh-Number(latestLow))))>=0.35);
-  const rejectionLong=!!(longZone && Number.isFinite(price) && Number(price)>=Number(longZone.low) && Number(price)<=Number(longZone.high) && Number.isFinite(latestLow) && Number.isFinite(latestClose) && latestClose>latestLow && ((latestClose-latestLow)/(Math.max(1e-12,Number(latestHigh)-latestLow)))>=0.35);
-  const shortLocation=!!(shortZone?.inside||shortZone?.near);
-  const longLocation=!!(longZone?.inside||longZone?.near);
-  const shortEarly=rejectionShort&&lh;
-  const shortStrong=shortEarly&&bearishBreak;
-  const shortBest=shortStrong && ll;
-  const longEarly=rejectionLong&&hl;
-  const longStrong=longEarly&&bullishBreak;
-  const longBest=longStrong && hh;
-  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'EARLY':'NOT YET';
-  const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'EARLY':'NOT YET';
-  const correctionConfirmed=Number(cg.ema200Stretch15)<0;
-  const primary=requested==='long'?'long':requested==='short'?'short':shortLocation&&!longLocation?'short':longLocation&&!shortLocation?'long':setupShort?'short':'long';
-  return {short:{setup:setupShort,location:shortLocation,rejection:rejectionShort,lh,ll:bearishBreak,entry:shortEntry,best:shortBest},long:{setup:setupLong,location:longLocation,reclaim:rejectionLong,hl,hh:bullishBreak,entry:longEntry,best:longBest},correctionConfirmed,primary};
-}
-
-function renderTimingPanel(item, side){
-  const t=calculateTimingFramework(item,side);
-  const s=t.short, l=t.long;
-  const row=(icon,label,val)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)"><span>${icon} ${label}</span><strong>${val?'YES':'NO'}</strong></div>`;
-  const entry=(v)=>v==='CONFIRMED'?'🔴 CONFIRMED':v==='EARLY'?'🟠 EARLY':'🟡 NOT YET';
-  return `<div class="timingFramework" style="margin-top:10px;padding:10px;border:1px solid rgba(255,210,90,.20);border-radius:10px;background:rgba(255,210,90,.035)">
-    <div style="font-weight:900">🎯 SHORT TIMING <span style="font-size:11px;color:var(--muted)">• 1m ENTRY EXECUTION</span></div>
-    ${row('🟠','SHORT SETUP',s.setup)}
-    ${row('🟢','SELLING LOCATION',s.location)}
-    ${row('⚠️','1m REJECTION',s.rejection)}
-    ${row('🟠','1m LOWER HIGH',s.lh)}
-    ${row('🔴','1m LOWER LOW / BEARISH BREAK',s.ll)}
-    <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🔴 SHORT ENTRY</span><strong>${entry(s.entry)}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = 1m Rejection + 1m LH • 🔴 CONFIRMED = stronger 1m bearish entry sequence (bearish break / LL).</div>
-    <div style="margin-top:10px;font-weight:900">🎯 LONG TIMING <span style="font-size:11px;color:var(--muted)">• 1m ENTRY EXECUTION</span></div>
-    ${row('🟢','LONG SETUP',l.setup)}
-    ${row('🟢','BUYING LOCATION',l.location)}
-    ${row('⚠️','1m DEFENSE / RECLAIM',l.reclaim)}
-    ${row('🟠','1m HIGHER LOW',l.hl)}
-    ${row('🟢','1m HIGHER HIGH / BULLISH BREAK',l.hh)}
-    <div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0"><span>🟢 LONG ENTRY</span><strong>${entry(l.entry).replace('🔴','🟢')}</strong></div>
-    <div style="margin-top:6px;font-size:11px;color:var(--muted)">🟠 EARLY = 1m Defense/Reclaim + 1m HL • 🟢 CONFIRMED = stronger 1m bullish entry sequence (bullish break / HH).</div>
-    <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:8px"><span>🔴 SIGNIFICANT CORRECTION</span><strong>${t.correctionConfirmed?'CONFIRMED':'NOT CONFIRMED'}</strong></div>
-    <div style="margin-top:5px;font-size:11px;color:var(--muted)">15m EMA200 is a correction-depth confirmation layer, NOT an entry requirement. A short/long entry can be confirmed before EMA200 confirmation.</div>
-  </div>`;
-}
-
 function renderEntryPathFramework(item, side, statusCode){
   const x=calculateEntryPathFramework(item,side,statusCode);
   const entry=x.entryZoneObj;
@@ -6895,7 +6809,6 @@ function renderEntryPathFramework(item, side, statusCode){
     : `<div style="margin-top:6px"><strong>📍 Planned reference entry:</strong> ${x.referenceEntry>0?x.fmt(x.referenceEntry):'—'}${entry?` • ${zoneText} ${x.primarySide==='short'?'selling':'buying'} zone`:''}</div>`;
   return `<div class="entryPathFramework" style="margin-top:9px;padding:10px;border-radius:9px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.12)">
     <div style="font-weight:900">📐 ENTRY PATH / EXCURSION</div>
-    ${renderTimingPanel(item,x.primarySide)}
     <div style="margin-top:5px"><strong>${x.entryLabel}</strong> • ${x.sideLabel}</div>
     ${locationLine}
     <div style="margin-top:6px"><strong>📉 MAE framework:</strong> The active planned entry zone and its adverse edge define the scenario MAE. EMA50/EMA200 remain structural context.</div>
