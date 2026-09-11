@@ -5647,17 +5647,19 @@ function getEntryStatusSnapshot(r){
   }catch(_){ }
 
   if(reversalBear){
+    const cont=(()=>{try{return calculateReversalContinuation(item);}catch(_){return null;}})();
     const t=timing?.short||{};
     const shortCode=t.entry==='CONFIRMED'?'CONFIRMED':t.rejection&&t.lh?'LOWER_HIGH':t.rejection?'REJECTION':'WAIT';
     return {long:'WAIT', short:shortCode,
       longLabel:'⏸ Wait — final decision is bearish reversal',
-      shortLabel:shortCode==='CONFIRMED'?'🟢 15m rejection + lower-high confirmed':shortCode==='LOWER_HIGH'?'🟠 15m lower-high present — execution confirmation pending':'⏸ Wait for 15m rejection + lower-high'};
+      shortLabel:shortCode==='CONFIRMED'?(cont?.confirmed?'🟢 Continuation confirmed • 15m execution confirmed':'🟢 15m rejection + lower-high confirmed'):shortCode==='LOWER_HIGH'?(cont?.developing?'🟠 Continuation developing • execution confirmation pending':'🟠 15m lower-high present — execution confirmation pending'):'⏸ Wait for 15m rejection + lower-high', continuation:cont};
   }
   if(reversalBull){
+    const cont=(()=>{try{return calculateReversalContinuation(item);}catch(_){return null;}})();
     const t=timing?.long||{};
     const longCode=t.entry==='CONFIRMED'?'CONFIRMED':t.reclaim&&t.hl?'ACCEPTANCE':t.reclaim?'CONDITIONAL':'WAIT';
     return {long:longCode, short:'WAIT',
-      longLabel:longCode==='CONFIRMED'?'🟢 15m reclaim + higher-low confirmed':longCode==='ACCEPTANCE'?'🟠 15m higher-low present — execution confirmation pending':'⏸ Wait for 15m reclaim + higher-low',
+      longLabel:longCode==='CONFIRMED'?(cont?.confirmed?'🟢 Continuation confirmed • 15m execution confirmed':'🟢 15m reclaim + higher-low confirmed'):longCode==='ACCEPTANCE'?(cont?.developing?'🟠 Continuation developing • execution confirmation pending':'🟠 15m higher-low present — execution confirmation pending'):'⏸ Wait for 15m reclaim + higher-low', continuation:cont,
       shortLabel:'⏸ Wait — final decision is bullish reversal'};
   }
 
@@ -6673,6 +6675,44 @@ function getShortTermRecommendation(item){
   return {bias,sentence,plan,targets:downs,upside:ups,accum,rsi15,rsi1h,rsi4h,vol15,vol4};
 }
 
+/* ---------- Reversal Continuation Engine ---------- */
+function calculateReversalContinuation(item){
+  const r=item||{};
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function')?calculateUnifiedMarketCycle(r):null;
+    let direction=u?.meta?.bearishReversalConfirmed?'BEARISH':u?.meta?.bullishReversalConfirmed?'BULLISH':'NONE';
+    const raw=Array.isArray(r.k15m)?r.k15m:[], now=Date.now();
+    const bars=raw.filter(k=>Array.isArray(k)&&(!Number.isFinite(Number(k[6]))||Number(k[6])<=now));
+    if(bars.length<25) return {state:direction==='NONE'?'NOT_ACTIVE':'DEVELOPING',direction,confirmed:false,developing:direction!=='NONE',score:direction==='NONE'?0:25,label:direction==='NONE'?'NOT ACTIVE':`${direction} REVERSAL CONTINUATION DEVELOPING`,shortLabel:direction==='NONE'?'No confirmed reversal':'Need more completed 15m data',reasons:direction==='NONE'?[]:['Reversal confirmed; more completed 15m candles are needed for continuation validation.'],evidence:[]};
+    const c=bars.map(k=>Number(k[4])), h=bars.map(k=>Number(k[2])), l=bars.map(k=>Number(k[3]));
+    const e14=ema(c,14),e21=ema(c,21),ph=[],pl=[];
+    // If the initial reversal has already pushed through EMA200, the Unified
+    // reversal flag can legitimately turn off. Continuation is reconstructed
+    // only from a meaningful completed 15m structural pair, avoiding ordinary
+    // one-swing pullbacks being mislabeled as reversal continuation.
+    for(let i=2;i<bars.length-2;i++){if(!Number.isFinite(h[i])||!Number.isFinite(l[i]))continue;let H=true,L=true;for(let j=1;j<=2;j++){H=H&&h[i]>=h[i-j]&&h[i]>=h[i+j];L=L&&l[i]<=l[i-j]&&l[i]<=l[i+j];}if(H)ph.push({i,price:h[i]});if(L)pl.push({i,price:l[i]});}
+    const hs=ph.slice(-8),ls=pl.slice(-8),lh=[],ll=[],hl=[],hh=[];
+    for(let i=1;i<hs.length;i++){if(hs[i].price<hs[i-1].price*.999)lh.push({prev:hs[i-1],cur:hs[i]});if(hs[i].price>hs[i-1].price*1.001)hh.push({prev:hs[i-1],cur:hs[i]});}
+    for(let i=1;i<ls.length;i++){if(ls[i].price<ls[i-1].price*.999)ll.push({prev:ls[i-1],cur:ls[i]});if(ls[i].price>ls[i-1].price*1.001)hl.push({prev:ls[i-1],cur:ls[i]});}
+    if(direction==='NONE'){
+      const bullRegime=!!u?.meta?.ema70Above200, bearRegime=!!u?.meta?.ema70Below200;
+      const bearishPair=lh.length>0&&ll.length>0, bullishPair=hl.length>0&&hh.length>0;
+      const fastBear=Number.isFinite(e14)&&Number.isFinite(e21)&&e14<e21, fastBull=Number.isFinite(e14)&&Number.isFinite(e21)&&e14>e21;
+      direction=(bullRegime&&bearishPair&&fastBear)?'BEARISH':(bearRegime&&bullishPair&&fastBull)?'BULLISH':'NONE';
+    }
+    if(direction==='NONE') return {state:'NOT_ACTIVE',direction:'NONE',confirmed:false,developing:false,score:0,label:'NOT ACTIVE',shortLabel:'No confirmed reversal',reasons:[],evidence:[]};
+    const last=c.at(-1),p1=c.at(-2),p2=c.at(-3),bearCloses=last<p1&&p1<=p2,bullCloses=last>p1&&p1>=p2,bearEma=last<e14&&last<e21,bullEma=last>e14&&last>e21;
+    const a=direction==='BEARISH', firstA=a?lh.at(-1):hl.at(-1), firstB=a?ll.at(-1):hh.at(-1);
+    const br=a?!!(firstA&&last<firstA.prev.price):!!(firstA&&last>firstA.prev.price);
+    const second=a?!!((firstA&&firstB&&firstB.cur.i>firstA.cur.i)||(lh.length>=2&&firstB&&lh.at(-2).cur.i>firstB.cur.i)||(ll.length>=2&&firstA&&ll.at(-2).cur.i>firstA.cur.i)):!!((firstA&&firstB&&firstB.cur.i>firstA.cur.i)||(hl.length>=2&&firstB&&hl.at(-2).cur.i>firstB.cur.i)||(hh.length>=2&&firstA&&hh.at(-2).cur.i>firstA.cur.i));
+    const ev=(a?[firstA&&'lower-high after reversal',firstB&&'lower-low / downside structure',br&&'close below prior reversal structure',bearEma&&'15m price below EMA14/EMA21',bearCloses&&'two-bar bearish follow-through']:[firstA&&'higher-low after reversal',firstB&&'higher-high / upside structure',br&&'close above prior reversal structure',bullEma&&'15m price above EMA14/EMA21',bullCloses&&'two-bar bullish follow-through']).filter(Boolean);
+    const em=a?bearEma:bullEma, bc=a?bearCloses:bullCloses;
+    const confirmed=second&&(br||em||bc), developing=!!(firstA||firstB||br||em);
+    const score=Math.min(100,25+ev.length*10+(second?20:0));
+    return {state:confirmed?'CONFIRMED':developing?'DEVELOPING':'NOT_ACTIVE',direction,confirmed,developing,score,label:confirmed?`${direction} REVERSAL CONTINUATION CONFIRMED`:developing?`${direction} REVERSAL CONTINUATION DEVELOPING`:'NOT ACTIVE',shortLabel:confirmed?'Continuation confirmed':developing?'Continuation developing':'No continuation',reasons:ev,evidence:ev,meta:{second,br,em,bc}};
+  }catch(err){return {state:'ERROR',direction:'NONE',confirmed:false,developing:false,score:0,label:'CONTINUATION UNAVAILABLE',shortLabel:'Continuation engine error',reasons:[String(err?.message||err)],evidence:[]};}
+}
+
 /* ---------- Final AI synthesis layer: Data -> State -> Evidence -> Read -> Bias -> Action ---------- */
 function getFinalRecommendation(item){
   const r=item||{};
@@ -6708,12 +6748,14 @@ function getFinalRecommendation(item){
   const ema70Below200 = !!unifiedForFinal?.meta?.ema70Below200;
   const ema70CrossBullish = !!unifiedForFinal?.meta?.ema70CrossBullish;
   const ema70CrossBearish = !!unifiedForFinal?.meta?.ema70CrossBearish;
+  const reversalContinuation=(()=>{try{return calculateReversalContinuation(r);}catch(_){return null;}})();
+  const continuationConfirmed=!!reversalContinuation?.confirmed, continuationDeveloping=!!reversalContinuation?.developing;
 
   let state='⚪ NO CLEAR EDGE', confidence=45, sentence='', rationale='', action='', tradeBias='Neutral';
   const evidence=[];
 
   /* 1) Final directional reversal authority. Correction remains a separate confirmation layer. */
-  if(finalBearishReversal){
+  if(finalBearishReversal && !continuationConfirmed && !continuationDeveloping){
     state='🔴 BEARISH REVERSAL CONFIRMED';
     confidence=75;
     sentence='Directional reversal is confirmed from the scanner evidence. This does not mean a short entry has already triggered.';
@@ -6721,7 +6763,7 @@ function getFinalRecommendation(item){
     tradeBias='Bearish Reversal Confirmed';
     action='Do not chase. Wait for the 15m selling-zone rejection + lower-high execution trigger before entering short.';
     evidence.push('BEARISH REVERSAL CONFIRMED');
-  } else if(finalBullishReversal){
+  } else if(finalBullishReversal && !continuationConfirmed && !continuationDeveloping){
     state='🟢 BULLISH REVERSAL CONFIRMED';
     confidence=75;
     sentence='Directional reversal is confirmed from the scanner evidence. This does not mean a long entry has already triggered.';
@@ -6729,6 +6771,24 @@ function getFinalRecommendation(item){
     tradeBias='Bullish Reversal Confirmed';
     action='Do not chase. Wait for the 15m buying-zone reclaim + higher-low execution trigger before entering long.';
     evidence.push('BULLISH REVERSAL CONFIRMED');
+  } else if(continuationConfirmed){
+    const bear=reversalContinuation.direction==='BEARISH';
+    state=bear?'🔴 BEARISH REVERSAL CONTINUATION CONFIRMED':'🟢 BULLISH REVERSAL CONTINUATION CONFIRMED';
+    confidence=Math.min(96,Math.max(82,Number(reversalContinuation.score||82)));
+    sentence=bear?'Bearish reversal continuation is confirmed by a second 15m downside leg.':'Bullish reversal continuation is confirmed by a second 15m upside leg.';
+    rationale='Reversal Continuation Engine: post-reversal structural follow-through';
+    tradeBias=bear?'Bearish Reversal Continuation':'Bullish Reversal Continuation';
+    action=bear?'Favor SHORT, but require the completed 15m rejection + lower-high execution gate; do not chase.':'Favor LONG, but require the completed 15m reclaim + higher-low execution gate; do not chase.';
+    evidence.push(...(reversalContinuation.evidence||[]).map(x=>`Continuation: ${x}`));
+  } else if(continuationDeveloping){
+    const bear=reversalContinuation.direction==='BEARISH';
+    state=bear?'🟠 BEARISH REVERSAL CONTINUATION DEVELOPING':'🟠 BULLISH REVERSAL CONTINUATION DEVELOPING';
+    confidence=Math.min(90,Math.max(70,Number(reversalContinuation.score||70)));
+    sentence=bear?'The bearish reversal is confirmed and the next downside leg is developing.':'The bullish reversal is confirmed and the next upside leg is developing.';
+    rationale='Reversal Continuation Engine: early post-reversal follow-through';
+    tradeBias=bear?'Bearish Reversal Continuation Watch':'Bullish Reversal Continuation Watch';
+    action=bear?'Keep the bearish override; wait for a second completed 15m structural leg before calling continuation confirmed.':'Keep the bullish override; wait for a second completed 15m structural leg before calling continuation confirmed.';
+    evidence.push(...(reversalContinuation.evidence||[]).map(x=>`Continuation developing: ${x}`));
   } else if(ema70CrossBullish || ema70CrossBearish){
     if(ema70CrossBullish){
       state='🟢 EMA70 / EMA200 BULLISH CROSS';
@@ -6881,7 +6941,7 @@ function getFinalRecommendation(item){
     : finalBullishReversal ? 'BULLISH REVERSAL CONFIRMED' : 'NONE';
   const direction = finalBearishReversal || /bearish/i.test(tradeBias) ? 'BEARISH'
     : finalBullishReversal || /bullish|controlled|recovery/i.test(tradeBias) ? 'BULLISH' : 'NEUTRAL';
-  return {sentence,rationale,state,confidence,action,tradeBias,direction,trend:unifiedTrend,directionalOverride,evidence,confirmed,developing,accum,rsi4h,vol,sim:simPct,blow,phase,warningScore,rsi1d,rsi15,a15,a1h,a4h};
+  return {sentence,rationale,state,confidence,action,tradeBias,direction,trend:unifiedTrend,directionalOverride,evidence,confirmed,developing,accum,rsi4h,vol,sim:simPct,blow,phase,warningScore,rsi1d,rsi15,a15,a1h,a4h,reversalContinuation,continuationState:reversalContinuation?.state||'NOT_ACTIVE',continuationConfirmed,continuationDeveloping};
 }
 
 /* ---------- PROFESSIONAL INTERPRETATION UI ---------- */
@@ -7794,7 +7854,7 @@ function renderTraderDecisionBlock(r, compact=false){
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION <span style="font-size:9px;color:#7edcff;letter-spacing:.08em">• FINAL DECISION ENGINE</span></div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
     <div class="finalDecisionAuthority"><div class="fdaTitle">FINAL DECISION ENGINE • AUTHORITATIVE</div><div class="fdaState">${currentState}</div><div class="fdaSub">All calculated scanner evidence is synthesized here. Trader Decision, entry status and primary execution path follow this result. 4H/1H = context; 15m = execution.</div></div>\n    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
-    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
+    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Reversal Continuation:</strong> ${String(rec.reversalContinuation?.label||'NOT ACTIVE')}${Number.isFinite(Number(rec.reversalContinuation?.score))?` • ${Number(rec.reversalContinuation.score)}%`:''}</div>\n    <div class="small"><strong>Continuation evidence:</strong> ${(rec.reversalContinuation?.reasons||[]).join(' • ')||'Waiting for post-reversal follow-through'}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
