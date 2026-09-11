@@ -8218,7 +8218,7 @@ function calculateUnifiedMarketCycle(item){
                 : 'Wait for structural resolution before committing heavily.';
 
     return {
-      code,phase,state,confidence,tone,trend,momentum,location,reversal:reversalConfirmed?'CONFIRMED':bounceOnly?'BOUNCE RISK — NOT REVERSAL':'NOT CONFIRMED',action,
+      code,phase,state,confidence,tone,trend,momentum,location,reversal:reversalConfirmed?'BULLISH REVERSAL / RECOVERY — CONFIRMED':bounceOnly?'BOUNCE RISK — NOT REVERSAL':'NOT CONFIRMED',action,
       correctionStage:cg.label||'🟢 CONTINUATION',correctionCode:correctionCode||'NO_SIGNIFICANT_CORRECTION_SIGNAL',correctionConfirmed,recoveryConfirmed,
       reasons:reasons.slice(0,10),authoritative:true,
       ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull},
