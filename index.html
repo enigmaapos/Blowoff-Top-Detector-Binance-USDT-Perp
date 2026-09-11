@@ -5673,6 +5673,25 @@ function getEntryStatusSnapshot(r){
       shortLabel:'⏸ Wait — final decision is bullish reversal'};
   }
 
+  // EMA70/EMA200 is the major directional regime. It determines the preferred
+  // side; the 15m timing engine remains the sole execution gate.
+  let ema70Bull=false, ema70Bear=false;
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
+    ema70Bull=!!u?.meta?.ema70Above200;
+    ema70Bear=!!u?.meta?.ema70Below200;
+  }catch(_){ }
+  if(ema70Bull && !ema70Bear){
+    const t=timing?.long||{};
+    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.reclaim&&t.hl?'ACCEPTANCE':t.reclaim?'CONDITIONAL':'WAIT';
+    return {long:code,short:'WAIT',longLabel:code==='CONFIRMED'?'🟢 15m reclaim + higher-low confirmed':'🟡 Bullish EMA70 > EMA200 — wait for 15m reclaim + higher-low',shortLabel:'⏸ Wait — EMA70 > EMA200 favors LONG'};
+  }
+  if(ema70Bear && !ema70Bull){
+    const t=timing?.short||{};
+    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.rejection&&t.lh?'LOWER_HIGH':t.rejection?'REJECTION':'WAIT';
+    return {long:'WAIT',short:code,shortLabel:code==='CONFIRMED'?'🟢 15m rejection + lower-high confirmed':'🟠 Bearish EMA70 < EMA200 — wait for 15m rejection + lower-high',longLabel:'⏸ Wait — EMA70 < EMA200 favors SHORT'};
+  }
+
   // Priority mirrors Trader Decision's branch order closely enough that the
   // filter follows the displayed entry condition rather than raw bias.
   if(postCorrection){
@@ -6662,6 +6681,10 @@ function getFinalRecommendation(item){
   const unifiedForFinal = (()=>{ try { return typeof calculateUnifiedMarketCycle==='function' ? calculateUnifiedMarketCycle(r) : null; } catch(_) { return null; } })();
   const finalBearishReversal = !!unifiedForFinal?.meta?.bearishReversalConfirmed;
   const finalBullishReversal = !!unifiedForFinal?.meta?.bullishReversalConfirmed;
+  const ema70Above200 = !!unifiedForFinal?.meta?.ema70Above200;
+  const ema70Below200 = !!unifiedForFinal?.meta?.ema70Below200;
+  const ema70CrossBullish = !!unifiedForFinal?.meta?.ema70CrossBullish;
+  const ema70CrossBearish = !!unifiedForFinal?.meta?.ema70CrossBearish;
 
   let state='⚪ NO CLEAR EDGE', confidence=45, sentence='', rationale='', action='', tradeBias='Neutral';
   const evidence=[];
@@ -6683,6 +6706,24 @@ function getFinalRecommendation(item){
     tradeBias='Bullish Reversal Confirmed';
     action='Do not chase. Wait for the 15m buying-zone reclaim + higher-low execution trigger before entering long.';
     evidence.push('BULLISH REVERSAL CONFIRMED');
+  } else if(ema70CrossBullish || ema70CrossBearish){
+    if(ema70CrossBullish){
+      state='🟢 EMA70 / EMA200 BULLISH CROSS';
+      confidence=82;
+      sentence='EMA70 has crossed above EMA200. The major EMA regime is now bullish; the cross sets direction but does not by itself trigger an entry.';
+      rationale='Authoritative EMA70/EMA200 bullish crossover';
+      tradeBias='Bullish / EMA Cross';
+      action='Favor LONG. Wait for the 15m reclaim + higher-low execution trigger before entering.';
+      evidence.push('EMA70 crossed above EMA200');
+    }else{
+      state='🔴 EMA70 / EMA200 BEARISH CROSS';
+      confidence=82;
+      sentence='EMA70 has crossed below EMA200. The major EMA regime is now bearish; the cross sets direction but does not by itself trigger an entry.';
+      rationale='Authoritative EMA70/EMA200 bearish crossover';
+      tradeBias='Bearish / EMA Cross';
+      action='Favor SHORT. Wait for the 15m rejection + lower-high execution trigger before entering.';
+      evidence.push('EMA70 crossed below EMA200');
+    }
   } else if(confirmed){
     if(strongSupport && (isAccumPhase || isRecovery) && !isCapitulation){
       state='🟣 CORRECTION CONFIRMED — RECOVERY / RE-ACCUMULATION WATCH';
@@ -7699,6 +7740,9 @@ function renderTraderDecisionBlock(r, compact=false){
     bias=String(rec.tradeBias||bias||'Neutral');
     bestAction=String(rec.action||bestAction||'Wait for confirmation.');
     decisionScore=Math.max(1,Math.min(98,Math.round(Number(rec.confidence)||45)));
+    // The final engine owns the displayed state. Clear any legacy readiness
+    // phrase before applying the specific 15m execution override.
+    readiness=String(rec.state);
     if(/BEARISH REVERSAL CONFIRMED/i.test(String(rec.state))){
       readiness='🔴 Bearish reversal confirmed • 15m execution pending';
       shortEntry='⏸ Wait — 15m rejection + lower-high';
@@ -8334,6 +8378,20 @@ function calculateUnifiedMarketCycle(item){
     const fastBear=e14<e21&&e21<e50;
     const fastBull=e14>e21&&e21>e50;
 
+    // AUTHORITATIVE MAJOR-TREND CONDITION: EMA70 versus EMA200.
+    // EMA70 above EMA200 = bullish major regime.
+    // EMA70 below EMA200 = bearish major regime.
+    // A fresh crossing of EMA70 through EMA200 marks the regime transition.
+    const ema70Above200=Number.isFinite(e70)&&Number.isFinite(e200)&&e70>e200;
+    const ema70Below200=Number.isFinite(e70)&&Number.isFinite(e200)&&e70<e200;
+    const prevBars=bars.length>=2 ? bars.slice(0,-1) : [];
+    const prevCloses=prevBars.map(x=>Number(x[4])).filter(Number.isFinite);
+    const prevE70=prevCloses.length>=70 ? ema(prevCloses,70) : null;
+    const prevE200=prevCloses.length>=200 ? ema(prevCloses,200) : e200;
+    const ema70CrossBullish=Number.isFinite(prevE70)&&Number.isFinite(prevE200)&&prevE70<=prevE200&&e70>e200;
+    const ema70CrossBearish=Number.isFinite(prevE70)&&Number.isFinite(prevE200)&&prevE70>=prevE200&&e70<e200;
+    const ema70200Direction=ema70Above200?'BULLISH':ema70Below200?'BEARISH':'NEUTRAL';
+
     function pivots(values,look=2){
       const out=[];
       for(let i=look;i<values.length-look;i++){
@@ -8415,10 +8473,10 @@ function calculateUnifiedMarketCycle(item){
     const ema21Reclaim=price>e21;
     const ema14Loss=price<e14;
     const ema21Loss=price<e21;
-    const bullishTrend=(bullishStack && aboveAll) || (fastBull && !belowAll);
-    const bearishTrend=(bearishStack && belowAll) || (fastBear && !aboveAll);
     const aboveEma200=Number.isFinite(e200) && e200>0 && price>e200;
     const belowEma200=Number.isFinite(e200) && e200>0 && price<e200;
+    const bullishTrend=ema70Above200 && (bullishStack || fastBull || aboveEma200);
+    const bearishTrend=ema70Below200 && (bearishStack || fastBear || belowEma200);
 
     const bearishReversalConfirmed=(
       bullishTrend &&
@@ -8464,10 +8522,10 @@ function calculateUnifiedMarketCycle(item){
     let location='BETWEEN STRUCTURAL LEVELS';
     const reasons=[];
 
-    if(bearishStack && belowAll) trend='STRONG BEARISH';
-    else if(fastBear && !aboveAll) trend='BEARISH';
-    else if(bullishStack && aboveAll) trend='STRONG BULLISH';
-    else if(fastBull && !belowAll) trend='BULLISH';
+    if(ema70Below200 && bearishStack && belowAll) trend='STRONG BEARISH';
+    else if(ema70Below200) trend='BEARISH';
+    else if(ema70Above200 && bullishStack && aboveAll) trend='STRONG BULLISH';
+    else if(ema70Above200) trend='BULLISH';
     else if(recoveryConfirmed && (fastBull || ema14Reclaim || ema21Reclaim)) trend='RECOVERING';
 
     const markdownCore=(belowAll&&bearishStack&&bearishStructure&&(correctionConfirmed||Math.abs(Number(item.dropPctFromPeak||0))>=10));
@@ -8618,11 +8676,11 @@ function calculateUnifiedMarketCycle(item){
             :'NOT CONFIRMED',action,
       correctionStage:cg.label||'🟢 CONTINUATION',correctionCode:correctionCode||'NO_SIGNIFICANT_CORRECTION_SIGNAL',correctionConfirmed,recoveryConfirmed,
       reasons:reasons.slice(0,10),authoritative:true,
-      ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull},
+      ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction},
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
       meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,
-          bullishRecoveryConfirmed,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed}
+          bullishRecoveryConfirmed,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction}
     };
   }catch(err){
     return {code:'ERROR',phase:'UNKNOWN',state:'⚪ MARKET-CYCLE UNAVAILABLE',confidence:0,authoritative:false,tone:'neutral',trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',action:'Use the existing independent detectors until the unified engine recovers.',reasons:[`Unified market-cycle error: ${err.message}`],ema:{},structure:{},support:null,resistance:null,meta:{}};
