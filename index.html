@@ -1933,7 +1933,7 @@ function renderOverallMarketVerdict(r){
           <div class="unifiedSignalValue">${mspEscape(v.cyclePhase)} • ${mspEscape(v.similarity)}%</div>
         </div>
         <div class="unifiedSignal">
-          <div class="unifiedSignalLabel">Raw Structural Bias</div>
+          <div class="unifiedSignalLabel">Raw Structural Bias (4H independent)</div>
           <div class="unifiedSignalValue">${mspEscape(v.structuralBias)}</div>${v.directionalOverride?`<div class="unifiedSignalLabel">Directional Override</div><div class="unifiedSignalValue">${mspEscape(v.directionalOverride)}</div>`:``}
         </div>
       </div>
@@ -6680,37 +6680,119 @@ function calculateReversalContinuation(item){
   const r=item||{};
   try{
     const u=(typeof calculateUnifiedMarketCycle==='function')?calculateUnifiedMarketCycle(r):null;
-    let direction=u?.meta?.bearishReversalConfirmed?'BEARISH':u?.meta?.bullishReversalConfirmed?'BULLISH':'NONE';
     const raw=Array.isArray(r.k15m)?r.k15m:[], now=Date.now();
     const bars=raw.filter(k=>Array.isArray(k)&&(!Number.isFinite(Number(k[6]))||Number(k[6])<=now));
-    if(bars.length<25) return {state:direction==='NONE'?'NOT_ACTIVE':'DEVELOPING',direction,confirmed:false,developing:direction!=='NONE',score:direction==='NONE'?0:25,label:direction==='NONE'?'NOT ACTIVE':`${direction} REVERSAL CONTINUATION DEVELOPING`,shortLabel:direction==='NONE'?'No confirmed reversal':'Need more completed 15m data',reasons:direction==='NONE'?[]:['Reversal confirmed; more completed 15m candles are needed for continuation validation.'],evidence:[]};
-    const c=bars.map(k=>Number(k[4])), h=bars.map(k=>Number(k[2])), l=bars.map(k=>Number(k[3]));
-    const e14=ema(c,14),e21=ema(c,21),ph=[],pl=[];
-    // If the initial reversal has already pushed through EMA200, the Unified
-    // reversal flag can legitimately turn off. Continuation is reconstructed
-    // only from a meaningful completed 15m structural pair, avoiding ordinary
-    // one-swing pullbacks being mislabeled as reversal continuation.
-    for(let i=2;i<bars.length-2;i++){if(!Number.isFinite(h[i])||!Number.isFinite(l[i]))continue;let H=true,L=true;for(let j=1;j<=2;j++){H=H&&h[i]>=h[i-j]&&h[i]>=h[i+j];L=L&&l[i]<=l[i-j]&&l[i]<=l[i+j];}if(H)ph.push({i,price:h[i]});if(L)pl.push({i,price:l[i]});}
-    const hs=ph.slice(-8),ls=pl.slice(-8),lh=[],ll=[],hl=[],hh=[];
-    for(let i=1;i<hs.length;i++){if(hs[i].price<hs[i-1].price*.999)lh.push({prev:hs[i-1],cur:hs[i]});if(hs[i].price>hs[i-1].price*1.001)hh.push({prev:hs[i-1],cur:hs[i]});}
-    for(let i=1;i<ls.length;i++){if(ls[i].price<ls[i-1].price*.999)ll.push({prev:ls[i-1],cur:ls[i]});if(ls[i].price>ls[i-1].price*1.001)hl.push({prev:ls[i-1],cur:ls[i]});}
-    if(direction==='NONE'){
-      const bullRegime=!!u?.meta?.ema70Above200, bearRegime=!!u?.meta?.ema70Below200;
-      const bearishPair=lh.length>0&&ll.length>0, bullishPair=hl.length>0&&hh.length>0;
-      const fastBear=Number.isFinite(e14)&&Number.isFinite(e21)&&e14<e21, fastBull=Number.isFinite(e14)&&Number.isFinite(e21)&&e14>e21;
-      direction=(bullRegime&&bearishPair&&fastBear)?'BEARISH':(bearRegime&&bullishPair&&fastBull)?'BULLISH':'NONE';
+    const directionFromUnified=u?.meta?.bearishReversalConfirmed?'BEARISH':u?.meta?.bullishReversalConfirmed?'BULLISH':'NONE';
+    if(bars.length<25){
+      return {state:directionFromUnified==='NONE'?'NOT_ACTIVE':'DEVELOPING',direction:directionFromUnified,confirmed:false,developing:directionFromUnified!=='NONE',score:directionFromUnified==='NONE'?0:25,
+        label:directionFromUnified==='NONE'?'NOT ACTIVE':`${directionFromUnified} REVERSAL CONTINUATION DEVELOPING`,shortLabel:directionFromUnified==='NONE'?'No confirmed reversal':'Need more completed 15m data',
+        reasons:directionFromUnified==='NONE'?[]:['Reversal confirmed; more completed 15m candles are needed for continuation validation.'],evidence:[]};
     }
-    if(direction==='NONE') return {state:'NOT_ACTIVE',direction:'NONE',confirmed:false,developing:false,score:0,label:'NOT ACTIVE',shortLabel:'No confirmed reversal',reasons:[],evidence:[]};
-    const last=c.at(-1),p1=c.at(-2),p2=c.at(-3),bearCloses=last<p1&&p1<=p2,bullCloses=last>p1&&p1>=p2,bearEma=last<e14&&last<e21,bullEma=last>e14&&last>e21;
-    const a=direction==='BEARISH', firstA=a?lh.at(-1):hl.at(-1), firstB=a?ll.at(-1):hh.at(-1);
-    const br=a?!!(firstA&&last<firstA.prev.price):!!(firstA&&last>firstA.prev.price);
-    const second=a?!!((firstA&&firstB&&firstB.cur.i>firstA.cur.i)||(lh.length>=2&&firstB&&lh.at(-2).cur.i>firstB.cur.i)||(ll.length>=2&&firstA&&ll.at(-2).cur.i>firstA.cur.i)):!!((firstA&&firstB&&firstB.cur.i>firstA.cur.i)||(hl.length>=2&&firstB&&hl.at(-2).cur.i>firstB.cur.i)||(hh.length>=2&&firstA&&hh.at(-2).cur.i>firstA.cur.i));
-    const ev=(a?[firstA&&'lower-high after reversal',firstB&&'lower-low / downside structure',br&&'close below prior reversal structure',bearEma&&'15m price below EMA14/EMA21',bearCloses&&'two-bar bearish follow-through']:[firstA&&'higher-low after reversal',firstB&&'higher-high / upside structure',br&&'close above prior reversal structure',bullEma&&'15m price above EMA14/EMA21',bullCloses&&'two-bar bullish follow-through']).filter(Boolean);
-    const em=a?bearEma:bullEma, bc=a?bearCloses:bullCloses;
-    const confirmed=second&&(br||em||bc), developing=!!(firstA||firstB||br||em);
-    const score=Math.min(100,25+ev.length*10+(second?20:0));
-    return {state:confirmed?'CONFIRMED':developing?'DEVELOPING':'NOT_ACTIVE',direction,confirmed,developing,score,label:confirmed?`${direction} REVERSAL CONTINUATION CONFIRMED`:developing?`${direction} REVERSAL CONTINUATION DEVELOPING`:'NOT ACTIVE',shortLabel:confirmed?'Continuation confirmed':developing?'Continuation developing':'No continuation',reasons:ev,evidence:ev,meta:{second,br,em,bc}};
-  }catch(err){return {state:'ERROR',direction:'NONE',confirmed:false,developing:false,score:0,label:'CONTINUATION UNAVAILABLE',shortLabel:'Continuation engine error',reasons:[String(err?.message||err)],evidence:[]};}
+
+    const c=bars.map(k=>Number(k[4])), h=bars.map(k=>Number(k[2])), l=bars.map(k=>Number(k[3]));
+    const e14=ema(c,14), e21=ema(c,21);
+    const ph=[],pl=[];
+    for(let i=2;i<bars.length-2;i++){
+      if(!Number.isFinite(h[i])||!Number.isFinite(l[i]))continue;
+      let H=true,L=true;
+      for(let j=1;j<=2;j++){H=H&&h[i]>=h[i-j]&&h[i]>=h[i+j];L=L&&l[i]<=l[i-j]&&l[i]<=l[i+j];}
+      if(H)ph.push({i,price:h[i]});
+      if(L)pl.push({i,price:l[i]});
+    }
+
+    const hs=ph.slice(-10), ls=pl.slice(-10), lh=[], ll=[], hl=[], hh=[];
+    for(let i=1;i<hs.length;i++){
+      if(hs[i].price<hs[i-1].price*.999)lh.push({prev:hs[i-1],cur:hs[i]});
+      if(hs[i].price>hs[i-1].price*1.001)hh.push({prev:hs[i-1],cur:hs[i]});
+    }
+    for(let i=1;i<ls.length;i++){
+      if(ls[i].price<ls[i-1].price*.999)ll.push({prev:ls[i-1],cur:ls[i]});
+      if(ls[i].price>ls[i-1].price*1.001)hl.push({prev:ls[i-1],cur:ls[i]});
+    }
+
+    let direction=directionFromUnified;
+    const bullRegime=!!u?.meta?.ema70Above200, bearRegime=!!u?.meta?.ema70Below200;
+    const fastBear=Number.isFinite(e14)&&Number.isFinite(e21)&&e14<e21;
+    const fastBull=Number.isFinite(e14)&&Number.isFinite(e21)&&e14>e21;
+
+    /*
+      If the initial reversal has already moved beyond EMA200, the Unified
+      reversal flag may naturally turn off. Reconstructing continuation is
+      allowed only when the recent completed 15m structure still contains a
+      reversal-shaped anchor and that anchor is close enough to the present.
+      This prevents an old/random LH+LL (or HL+HH) pattern from becoming a
+      false "reversal continuation" months/bars later.
+    */
+    if(direction==='NONE'){
+      const recentCut=Math.max(0,bars.length-18);
+      const recentLH=lh.filter(x=>x.cur.i>=recentCut), recentLL=ll.filter(x=>x.cur.i>=recentCut);
+      const recentHL=hl.filter(x=>x.cur.i>=recentCut), recentHH=hh.filter(x=>x.cur.i>=recentCut);
+      const bearishAnchor=recentLH.at(-1), bearishLow=recentLL.filter(x=>x.cur.i>=(bearishAnchor?.cur.i??-1)).at(-1);
+      const bullishAnchor=recentHL.at(-1), bullishHigh=recentHH.filter(x=>x.cur.i>=(bullishAnchor?.cur.i??-1)).at(-1);
+      if(bullRegime&&fastBear&&bearishAnchor&&bearishLow){ direction='BEARISH'; }
+      else if(bearRegime&&fastBull&&bullishAnchor&&bullishHigh){ direction='BULLISH'; }
+    }
+    if(direction==='NONE'){
+      return {state:'NOT_ACTIVE',direction:'NONE',confirmed:false,developing:false,score:0,label:'NOT ACTIVE',shortLabel:'No confirmed reversal',reasons:[],evidence:[]};
+    }
+
+    const last=c.at(-1),p1=c.at(-2),p2=c.at(-3);
+    const bearCloses=last<p1&&p1<=p2, bullCloses=last>p1&&p1>=p2;
+    const bearEma=last<e14&&last<e21, bullEma=last>e14&&last>e21;
+    const a=direction==='BEARISH';
+
+    /* Anchor the continuation to a completed reversal-shaped structural pair. */
+    const pairA=a?lh:hl, pairB=a?ll:hh;
+    const anchorA=pairA.at(-1), anchorB=pairB.filter(x=>x.cur.i>=(anchorA?.cur.i??-1)).at(-1);
+    const recentWindow=Math.max(0,bars.length-24);
+    const recentAnchor=!!anchorA && anchorA.cur.i>=recentWindow;
+    const orderedPair=!!anchorA&&!!anchorB&&anchorB.cur.i>anchorA.cur.i;
+    const reversalAnchor=recentAnchor&&orderedPair;
+
+    /* A second leg must occur after the first reversal pair, not merely anywhere
+       in the historical pivot list. */
+    const secondA=anchorA?pairA.find(x=>x.cur.i>anchorB.cur.i):null;
+    const secondB=anchorB?pairB.find(x=>x.cur.i>anchorB.cur.i):null;
+    const secondLeg=!!reversalAnchor&&!!(secondA||secondB);
+
+    const priorStructure=a
+      ? Number(anchorB?.cur?.price||0)
+      : Number(anchorB?.cur?.price||0);
+    const structuralBreak=a
+      ? Number.isFinite(priorStructure)&&last<priorStructure
+      : Number.isFinite(priorStructure)&&last>priorStructure;
+
+    const ev=(a?[
+      reversalAnchor&&'reversal-anchored lower-high + lower-low sequence',
+      secondLeg&&'second completed 15m downside structural leg',
+      structuralBreak&&'close below the post-reversal structural low',
+      bearEma&&'15m price below EMA14/EMA21',
+      bearCloses&&'two-bar bearish follow-through'
+    ]:[
+      reversalAnchor&&'reversal-anchored higher-low + higher-high sequence',
+      secondLeg&&'second completed 15m upside structural leg',
+      structuralBreak&&'close above the post-reversal structural high',
+      bullEma&&'15m price above EMA14/EMA21',
+      bullCloses&&'two-bar bullish follow-through'
+    ]).filter(Boolean);
+
+    /* Continuation is confirmed only after the anchored second leg plus one
+       independent follow-through condition. */
+    const followThrough=(structuralBreak|| (a?bearEma:bullEma) || (a?bearCloses:bullCloses));
+    const confirmed=secondLeg&&followThrough;
+    const developing=reversalAnchor || (directionFromUnified!=='NONE' && (a?bearEma:bullEma));
+    const score=Math.min(100,25+(reversalAnchor?15:0)+(secondLeg?30:0)+(structuralBreak?15:0)+((a?bearEma:bullEma)?10:0)+((a?bearCloses:bullCloses)?10:0));
+
+    return {
+      state:confirmed?'CONFIRMED':developing?'DEVELOPING':'NOT_ACTIVE',direction,confirmed,developing,score,
+      label:confirmed?`${direction} REVERSAL CONTINUATION CONFIRMED`:developing?`${direction} REVERSAL CONTINUATION DEVELOPING`:'NOT ACTIVE',
+      shortLabel:confirmed?'Continuation confirmed':developing?'Continuation developing':'No continuation',
+      reasons:ev,evidence:ev,
+      meta:{reversalAnchor,secondLeg,structuralBreak,emaFollowThrough:a?bearEma:bullEma,barFollowThrough:a?bearCloses:bullCloses,anchorA,anchorB,secondA,secondB}
+    };
+  }catch(err){
+    return {state:'ERROR',direction:'NONE',confirmed:false,developing:false,score:0,label:'CONTINUATION UNAVAILABLE',shortLabel:'Continuation engine error',reasons:[String(err?.message||err)],evidence:[]};
+  }
 }
 
 /* ---------- Final AI synthesis layer: Data -> State -> Evidence -> Read -> Bias -> Action ---------- */
@@ -6785,7 +6867,7 @@ function getFinalRecommendation(item){
     state=bear?'🟠 BEARISH REVERSAL CONTINUATION DEVELOPING':'🟠 BULLISH REVERSAL CONTINUATION DEVELOPING';
     confidence=Math.min(90,Math.max(70,Number(reversalContinuation.score||70)));
     sentence=bear?'The bearish reversal is confirmed and the next downside leg is developing.':'The bullish reversal is confirmed and the next upside leg is developing.';
-    rationale='Reversal Continuation Engine: early post-reversal follow-through';
+    rationale='Reversal Continuation Engine: reversal-anchored 15m follow-through';
     tradeBias=bear?'Bearish Reversal Continuation Watch':'Bullish Reversal Continuation Watch';
     action=bear?'Keep the bearish override; wait for a second completed 15m structural leg before calling continuation confirmed.':'Keep the bullish override; wait for a second completed 15m structural leg before calling continuation confirmed.';
     evidence.push(...(reversalContinuation.evidence||[]).map(x=>`Continuation developing: ${x}`));
@@ -9065,7 +9147,7 @@ function renderCards(results){
           Correction Status: <strong>${cg.label||'🟢 NOT CONFIRMED / PRE-CORRECTION'}</strong> (${cg.confidence||0}%)<br>
           15m EMA200 stretch: ${ema200==null?'n/a':Number(ema200).toFixed(2)+'%'}<br>
           Funding: ${Number(r.fundingRate||0).toFixed(6)} • Peak drawdown: ${Number(r.dropPctFromPeak||0).toFixed(1)}%<br>
-          <span class="small" style="color:var(--muted)">Decision state: ${confirmed ? '🔴 SIGNIFICANT CORRECTION CONFIRMED' : '🟢 SIGNIFICANT CORRECTION NOT CONFIRMED'} • ${rec.rationale}</span>
+          <span class="small" style="color:var(--muted)">Decision state: ${rec.state||'NO CLEAR EDGE'} • ${rec.rationale}</span>
         </div>
           </div>
         </details>
