@@ -775,14 +775,14 @@ body.authLocked{overflow:hidden}
         <div class="controlItem">
           <label class="controlLabel">Alert Condition</label>
           <label class="controlToggle">
-            <input type="checkbox" id="condAlert">
-            <span>Blowoff HIGH + Accum ≥</span>
+            <input type="checkbox" id="condAlert" checked disabled>
+            <span>New Blowoff / Exhaustion only</span>
           </label>
-          <input id="accumAlertThreshold" type="number" value="50" min="0" max="100" style="margin-top:7px;width:100%"/>
+          <div class="dashboardHint" style="margin-top:7px">Uses the Blowoff Score threshold above. Accumulation does not trigger sound.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">Alert Output</label>
-          <div class="small" style="line-height:1.4">🔔 Browser notification only when <strong>Correction: HIGH RISK / MANIA</strong>.</div>
+          <div class="small" style="line-height:1.4">🔊 Sound only for a <strong>new Blowoff / Exhaustion signal</strong>. Correction, accumulation, favorites and other detectors are silent.</div>
         </div>
         <div class="controlItem">
           <label class="controlToggle">
@@ -1039,7 +1039,6 @@ const el = {
   sensitivity: document.getElementById('sensitivity'),
   sensVal: document.getElementById('sensVal'),
   condAlert: document.getElementById('condAlert'),
-  accumAlertThreshold: document.getElementById('accumAlertThreshold'),
   showShort: document.getElementById('showShort'),
   tradeInterpret: document.getElementById('tradeInterpret'),
   // sorting elements (populated below)
@@ -1796,6 +1795,12 @@ function calculateOverallMarketVerdict(r){
   const correctionConfirmed = correctionCode==='SIGNIFICANT_CORRECTION_CONFIRMED';
   const postCorrectionRecovery = correctionCode==='POST_CORRECTION_RECOVERY';
 
+  let reversalAuthority={bearish:false,bullish:false,confidence:0};
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(r) : null;
+    reversalAuthority={bearish:!!u?.meta?.bearishReversalConfirmed,bullish:!!u?.meta?.bullishReversalConfirmed,confidence:Number(u?.confidence||0)};
+  }catch(_){}
+
   /*
    * Hierarchy:
    * 1. Structural Bias describes current price structure.
@@ -1818,7 +1823,15 @@ function calculateOverallMarketVerdict(r){
 
   let verdict, tone, reason;
 
-  if (postCorrectionRecovery) {
+  if (reversalAuthority.bearish) {
+    verdict = "BEARISH REVERSAL CONFIRMED";
+    tone = "bear";
+    reason = "The Unified Market-Cycle has confirmed a bearish reversal. Raw structural labels may remain mixed during transition, but the confirmed reversal is the directional authority.";
+  } else if (reversalAuthority.bullish) {
+    verdict = "BULLISH REVERSAL CONFIRMED";
+    tone = "bull";
+    reason = "The Unified Market-Cycle has confirmed a bullish reversal. Raw structural labels may remain mixed during transition, but the confirmed reversal is the directional authority.";
+  } else if (postCorrectionRecovery) {
     verdict = "POST-CORRECTION / RECOVERY";
     tone = "bull";
     reason = "The Correction Guide has moved the market into post-correction recovery. Support/recovery is allowed only from this authoritative recovery state.";
@@ -1874,6 +1887,8 @@ function calculateOverallMarketVerdict(r){
     cyclePhase:cycle.cyclePhase,
     similarity,
     structuralBias,
+    directionalOverride:reversalAuthority.bearish ? 'BEARISH REVERSAL CONFIRMED' : reversalAuthority.bullish ? 'BULLISH REVERSAL CONFIRMED' : null,
+    reversalConfidence:reversalAuthority.confidence,
     accumulation:accum,
     exhaustion,
     blowoff
@@ -1899,8 +1914,9 @@ function renderOverallMarketVerdict(r){
           <div class="unifiedSignalValue">${mspEscape(v.cyclePhase)} • ${mspEscape(v.similarity)}%</div>
         </div>
         <div class="unifiedSignal">
-          <div class="unifiedSignalLabel">Structural Bias</div>
+          <div class="unifiedSignalLabel">Raw Structural Bias</div>
           <div class="unifiedSignalValue">${mspEscape(v.structuralBias)}</div>
+          ${v.directionalOverride ? `<div class="small" style="margin-top:3px;color:${v.directionalOverride.includes('BEARISH')?'#ffb3b3':'#c9fff4'}"><strong>Directional Override:</strong> ${mspEscape(v.directionalOverride)}</div>` : ''}
         </div>
       </div>
     </div>`;
@@ -6543,6 +6559,16 @@ function getFinalRecommendation(item){
   const isDistribution=/distribution|breakdown/.test(phaseLc);
   const isCapitulation=/capitulation/.test(phaseLc);
   const isRecovery=cgCode==='POST_CORRECTION_RECOVERY';
+
+  // FINAL DIRECTIONAL AUTHORITY: confirmed counter-trend reversal outranks
+  // legacy phase/structure labels. Execution remains trigger-gated.
+  let unifiedReversal={bearish:false,bullish:false,confidence:0};
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function')
+      ? (r.unifiedMarketCycle && r.unifiedMarketCycle.code!=='ERROR' ? r.unifiedMarketCycle : calculateUnifiedMarketCycle(r))
+      : null;
+    unifiedReversal={bearish:!!u?.meta?.bearishReversalConfirmed,bullish:!!u?.meta?.bullishReversalConfirmed,confidence:Number(u?.confidence||0)};
+  }catch(_){}
   const blowoffStrong = (Number(r.score||0)>=7 && rsi4h>=80 && vol>=2) || (rsi4h>=88 && vol>=3 && Number(r.topDetection?.score||0)>=75);
   const exhaustion = rsi4h>=75 || vol>=2 || ema70>=20 || wick>=1.5 || warningScore>=6 || blow>=20;
   const strongSupport = accum>=65 && a4h>=55 && a1h>=50;
@@ -6680,6 +6706,26 @@ function getFinalRecommendation(item){
   if(wick) evidence.push(`Wick ${wick.toFixed(2)}`);
   evidence.push(`Structure ${phase}`);
 
+  // FINAL DECISION ENGINE OVERRIDE. Confirmed reversal is directional
+  // confirmation; actual execution remains conditional on the 15m trigger.
+  if(unifiedReversal.bearish){
+    state='🔴 BEARISH REVERSAL CONFIRMED';
+    tradeBias='Bearish Reversal Confirmed';
+    confidence=Math.max(75,Math.min(98,unifiedReversal.confidence||Number(confidence||75)));
+    sentence='Bearish reversal is confirmed. The directional state is bearish, but the actual short entry remains conditional on the defined 15m rejection + lower-high execution trigger.';
+    rationale='Unified Market-Cycle confirmed bearish reversal; execution remains trigger-gated';
+    action='Bearish reversal confirmed. Do not chase the first breakdown; wait for the selling-zone rejection + 15m lower-high trigger before executing the short.';
+    evidence.unshift('FINAL AUTHORITY: BEARISH REVERSAL CONFIRMED');
+  }else if(unifiedReversal.bullish){
+    state='🟢 BULLISH REVERSAL CONFIRMED';
+    tradeBias='Bullish Reversal Confirmed';
+    confidence=Math.max(75,Math.min(98,unifiedReversal.confidence||Number(confidence||75)));
+    sentence='Bullish reversal is confirmed. The directional state is bullish, but the actual long entry remains conditional on the defined 15m reclaim + higher-low execution trigger.';
+    rationale='Unified Market-Cycle confirmed bullish reversal; execution remains trigger-gated';
+    action='Bullish reversal confirmed. Do not chase the first recovery; wait for the buying-zone reclaim + 15m higher-low trigger before executing the long.';
+    evidence.unshift('FINAL AUTHORITY: BULLISH REVERSAL CONFIRMED');
+  }
+
   return {sentence,rationale,state,confidence,action,tradeBias,evidence,confirmed,developing,accum,rsi4h,vol,sim:simPct,blow,phase,warningScore,rsi1d,rsi15,a15,a1h,a4h};
 }
 
@@ -6703,6 +6749,23 @@ function professionalState(item, rec){
   const ema200=r.correctionGuide?.ema200Stretch15;
   const confirmed=ema200!=null && Number(ema200)<0;
   const dist=/distribution|breakdown/i.test(phase);
+  let reversal=null;
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(r) : null;
+    reversal={bearish:!!u?.meta?.bearishReversalConfirmed,bullish:!!u?.meta?.bullishReversalConfirmed,confidence:Number(u?.confidence||0)};
+  }catch(_){ reversal={bearish:false,bullish:false,confidence:0}; }
+  if(reversal.bearish) return {
+    title:'🔴 BEARISH REVERSAL CONFIRMED',
+    confidence:Math.max(75,Math.min(98,reversal.confidence||Number(rec.confidence||75))),
+    sentence:'The Unified Market-Cycle has confirmed a bearish reversal. This is the directional market state; actual short execution still requires the defined 15m rejection + lower-high trigger.',
+    tone:'red'
+  };
+  if(reversal.bullish) return {
+    title:'🟢 BULLISH REVERSAL CONFIRMED',
+    confidence:Math.max(75,Math.min(98,reversal.confidence||Number(rec.confidence||75))),
+    sentence:'The Unified Market-Cycle has confirmed a bullish reversal. This is the directional market state; actual long execution still requires the defined 15m reclaim + higher-low trigger.',
+    tone:'green'
+  };
   if(confirmed) return {
     title:'🔴 SIGNIFICANT CORRECTION CONFIRMED',
     confidence:Number(r.correctionGuide?.confidence||100),
@@ -6810,16 +6873,16 @@ function calculateEntryPathFramework(item, side, statusCode){
     state=confirmed&&inside?'SHORT ZONE CONFIRMED':'WAIT FOR SHORT CONFIRMATION';
     stateIcon=confirmed&&inside?'🔴':'🟠';
     stateText=confirmed&&inside
-      ? 'Selling zone is active; execute only after 1m rejection + lower-high confirmation.'
-      : 'Bearish/short path is the primary scenario, but wait for price into the selling zone and the 1m rejection + lower-high entry trigger.';
+      ? 'Selling zone is active; execute only after 15m rejection + lower-high confirmation.'
+      : 'Bearish/short path is the primary scenario, but wait for price into the selling zone and the 15m rejection + lower-high execution trigger.';
   } else if(primarySide==='long'){
     const confirmed=!!entryZoneObj?.confirmed;
     const inside=!!entryZoneObj?.inside;
     state=confirmed&&inside?'LONG ZONE CONFIRMED':'WAIT FOR LONG CONFIRMATION';
     stateIcon=confirmed&&inside?'🟢':'🟡';
     stateText=confirmed&&inside
-      ? 'Buying zone is active; execute only after 1m reclaim + higher-low confirmation.'
-      : 'Long path is the primary scenario, but wait for price into the buying zone and the 1m reclaim + higher-low entry trigger.';
+      ? 'Buying zone is active; execute only after 15m reclaim + higher-low confirmation.'
+      : 'Long path is the primary scenario, but wait for price into the buying zone and the 15m reclaim + higher-low execution trigger.';
   }
 
   const pct=(a,b)=>Number.isFinite(a)&&Number.isFinite(b)&&b>0?((a/b-1)*100):null;
@@ -7110,29 +7173,11 @@ function getTraderExecutionTimeframe(r, zone){
   // the scanner already has 15m structure/RSI/EMA confirmation data.
   let tf='15m', trigger='', rationale='';
   if(side==='SELL'){
-    if(hasLH || /REJECTION/.test(liqEvent) || rsi15>=70){
-      trigger='1m rejection + lower-high confirmation';
-      rationale='Use 4H/1H for context and 15m for the actual short trigger.';
-    }else if(rsi1h>=70 || rsi4h>=72){
-      tf='1H';
-      trigger='1H rejection; refine entry on 15m';
-      rationale='Higher-timeframe rejection is present; use 15m to refine the entry.';
-    }else{
-      trigger='15m rejection or lower-high confirmation';
-      rationale='Wait for 15m structure confirmation before execution.';
-    }
+    trigger='15m rejection + lower-high confirmation';
+    rationale='Use 4H/1H for context and 15m as the sole execution layer.';
   }else if(side==='BUY'){
-    if(hasHL || /DOWNSIDE.*REJECTION|RECLAIM/.test(liqEvent) || (rsi15>=40 && rsi15<=65)){
-      trigger='1m reclaim + higher-low confirmation';
-      rationale='Use 4H/1H for context and 15m for the actual long trigger.';
-    }else if(rsi1h>=40 && rsi1h<=68 && rsi4h>=40 && rsi4h<=68){
-      tf='1H';
-      trigger='1H reclaim; refine entry on 15m';
-      rationale='Recovery evidence is developing; use 15m for precise execution.';
-    }else{
-      trigger='15m reclaim or higher-low confirmation';
-      rationale='Wait for 15m structure confirmation before execution.';
-    }
+    trigger='15m reclaim + higher-low confirmation';
+    rationale='Use 4H/1H for context and 15m as the sole execution layer.';
   }
   return {tf,trigger,rationale,inside,confirmed};
 }
@@ -7465,17 +7510,17 @@ function renderTraderDecisionBlock(r, compact=false){
   if(confirmedBearishReversal){
     bias='Bearish Reversal Confirmed';
     currentState='🔴 BEARISH REVERSAL CONFIRMED';
-    shortEntry='🔴 Confirmed reversal — execute only on the defined rejection/LH trigger';
+    shortEntry='🔴 Reversal confirmed • WAIT for 15m rejection + lower-high execution trigger';
     longEntry='⏸ Wait — bullish structure has reversed';
     readiness='🔴 Bearish reversal confirmed';
-    bestAction='Bearish reversal is confirmed against the prior bullish trend. Do not chase the first breakdown; use the defined selling-zone rejection + lower-high trigger for execution.';
+    bestAction='Bearish reversal is confirmed against the prior bullish trend. Do not chase the first breakdown; wait for the defined selling-zone rejection + 15m lower-high trigger for execution.';
   }else if(confirmedBullishReversal){
     bias='Bullish Reversal Confirmed';
     currentState='🟢 BULLISH REVERSAL CONFIRMED';
-    longEntry='🟢 Confirmed reversal — execute only on the defined reclaim/HL trigger';
+    longEntry='🟢 Reversal confirmed • WAIT for 15m reclaim + higher-low execution trigger';
     shortEntry='⏸ Wait — bearish structure has reversed';
     readiness='🟢 Bullish reversal confirmed';
-    bestAction='Bullish reversal is confirmed against the prior bearish trend. Do not chase the first recovery; use the defined buying-zone reclaim + higher-low trigger for execution.';
+    bestAction='Bullish reversal is confirmed against the prior bearish trend. Do not chase the first recovery; wait for the defined buying-zone reclaim + 15m higher-low trigger for execution.';
   }else if(masterIsBullish){
     bias=(distribution || overheated || structureBear)
       ? 'Bullish • Bearish Risk Elevated'
@@ -7514,6 +7559,13 @@ function renderTraderDecisionBlock(r, compact=false){
     missing.unshift('zone resolution: 15m reclaim + higher-low OR rejection + lower-high');
     invalid.push('chasing either side while zones remain contested');
     decisionScore=Math.min(decisionScore || 50, confirmedBearishReversal || confirmedBullishReversal ? 75 : 55);
+  } else if(confirmedBearishReversal || confirmedBullishReversal){
+    let reversalConfidence=0;
+    try{
+      const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
+      reversalConfidence=Number(u?.confidence||0);
+    }catch(_){}
+    decisionScore=Math.max(75,Math.min(98,reversalConfidence||Number(rec.confidence||75)));
   } else if(activeTraderZone){
     if(activeTraderZone.side==='BUY'){
       bestAction = activeTraderZone.confirmed
@@ -8582,6 +8634,12 @@ function renderCards(results){
     const ema200=cg.ema200Stretch15;
     const confirmed=ema200!=null && Number(ema200)<0;
     const dist=/distribution|breakdown/i.test(String(phase.phase||''));
+    let reversalConfirmed=false, reversalBullish=false;
+    try{
+      const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(r) : null;
+      reversalConfirmed=!!u?.meta?.bearishReversalConfirmed;
+      reversalBullish=!!u?.meta?.bullishReversalConfirmed;
+    }catch(_){}
     const state=professionalState(r,rec);
     const phasePct=Math.max(0,Math.min(100,Number(phase.confidence)||0));
     const distInfo=distributionRiskLabel(phase.phase,phasePct);
@@ -8610,10 +8668,14 @@ function renderCards(results){
     const lowerHighReasons=(r.phase?.reasons||[]).filter(x=>/lower high/i.test(x));
     const cautionHigh=rsi4h>=80 || ema70>=20 || Number(r.preCrash?.score||0)>=7;
     let bias=rec.tradeBias||'Neutral';
-    if(confirmed) bias='Neutral / Cautious Bearish';
+    if(reversalConfirmed) bias='Bearish Reversal Confirmed';
+    else if(reversalBullish) bias='Bullish Reversal Confirmed';
+    else if(confirmed) bias='Neutral / Cautious Bearish';
     else if(dist || rsi4h>=80) bias='Bearish / Cautious';
     let action;
-    if(confirmed) action='Avoid aggressive longs until support and higher-timeframe structure recover. For shorts, wait for a defined rejection or failed bounce rather than chasing the decline.';
+    if(reversalConfirmed) action='Bearish reversal confirmed. Do not chase the breakdown; wait for the defined 15m rejection + lower-high trigger for short execution.';
+    else if(reversalBullish) action='Bullish reversal confirmed. Do not chase the recovery; wait for the defined 15m reclaim + higher-low trigger for long execution.';
+    else if(confirmed) action='Avoid aggressive longs until support and higher-timeframe structure recover. For shorts, wait for a defined 15m rejection + lower-high trigger rather than chasing the decline.';
     else if(dist && rsi4h>=80) action='Wait for a failed bounce/rejection before considering a short. For a long, wait for a higher-low plus improving 4H accumulation. Do not chase the current move.';
     else if(dist) action='Wait for actual downside confirmation before chasing a short. For a long, require a higher-low and improving multi-timeframe accumulation.';
     else action=rec.action;
