@@ -1913,7 +1913,7 @@ function renderOverallMarketVerdict(r){
   return `
     <div class="unifiedVerdict">
       <div class="unifiedVerdictHead">
-        <div class="unifiedVerdictTitle">Overall Market Verdict</div>
+        <div class="unifiedVerdictTitle">Overall Market Verdict <span class="small" style="font-weight:700;color:var(--muted)">• FINAL DECISION ENGINE</span></div>
         <div class="unifiedVerdictBadge ${mspEscape(v.tone)}">${mspEscape(v.verdict)}</div>
       </div>
       <div class="unifiedVerdictReason">${mspEscape(v.reason)}</div>
@@ -6348,7 +6348,20 @@ if (el.marketStructureFilter) {
   el.marketStructureFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.emaStructureFilter) {
-  el.emaStructureFilter.addEventListener('change', () => renderActiveView(true));
+  // Keep the full scanner visible by default; the user can activate the strict
+  // bullish EMA filter without silently hiding the entire completed scan.
+  try {
+    const savedEmaFilter=localStorage.getItem('scanner_ema_structure_filter');
+    if(savedEmaFilter && Array.from(el.emaStructureFilter.options).some(o=>o.value===savedEmaFilter)){
+      el.emaStructureFilter.value=savedEmaFilter;
+    } else {
+      el.emaStructureFilter.value='ALL';
+    }
+  } catch (_) { el.emaStructureFilter.value='ALL'; }
+  el.emaStructureFilter.addEventListener('change', () => {
+    try { localStorage.setItem('scanner_ema_structure_filter', el.emaStructureFilter.value); } catch (_) {}
+    renderActiveView(true);
+  });
 }
 if (el.unifiedCycleFilter) {
   el.unifiedCycleFilter.addEventListener('change', () => renderActiveView(true));
@@ -7567,6 +7580,16 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('breakdown or deterioration in higher-timeframe support');
   }
 
+  // FINAL DECISION ENGINE AUTHORITY:
+  // The displayed Current state and Bias must always come from the same
+  // authoritative recommendation object. Entry fields below may describe
+  // readiness/trigger details, but they cannot replace the final state.
+  if(rec && rec.state){
+    currentState=String(rec.state);
+    bias=String(rec.tradeBias || bias || 'Neutral');
+    decisionScore=Math.max(1,Math.min(98,Math.round(Number(rec.confidence)||45)));
+  }
+
   // Final directional normalization.
   // CONFIRMED COUNTER-TREND REVERSAL IS THE FIRST DIRECTIONAL AUTHORITY.
   // This intentionally runs BEFORE masterIsBullish/masterIsBearish because
@@ -7598,6 +7621,12 @@ function renderTraderDecisionBlock(r, compact=false){
       : 'Bearish';
   }
 
+  // Re-assert the same authoritative state/bias after legacy structural normalization.
+  // Legacy Market Structure can add context, but it cannot replace Final Decision Engine output.
+  if(rec && rec.state){
+    currentState=String(rec.state);
+    bias=String(rec.tradeBias || bias || 'Neutral');
+  }
   if(confirmedBearishReversal || confirmedBullishReversal){
     decisionScore=Math.max(75, Math.min(98, decisionScore || 75));
   }
@@ -7612,13 +7641,14 @@ function renderTraderDecisionBlock(r, compact=false){
     // A zone contest is an EXECUTION constraint, not a cancellation of an
     // already-confirmed counter-trend reversal. Preserve the directional
     // reversal label while forcing both entries to wait for zone resolution.
-    currentState=confirmedBearishReversal
-      ? '🔴 BEARISH REVERSAL CONFIRMED • ZONE CONTESTED'
-      : confirmedBullishReversal
-        ? '🟢 BULLISH REVERSAL CONFIRMED • ZONE CONTESTED'
-        : '⚠️ OVERLAPPING ZONES / DIRECTION CONTESTED';
-    if(!confirmedBearishReversal && !confirmedBullishReversal){
-      bias='Neutral — Wait for Zone Resolution';
+    // Keep the Final Decision Engine state/bias intact. Zone contention is an
+    // execution constraint and is displayed separately rather than rewriting direction.
+    if(confirmedBearishReversal){
+      readiness='🔴 Bearish reversal confirmed • zone contested';
+    }else if(confirmedBullishReversal){
+      readiness='🟢 Bullish reversal confirmed • zone contested';
+    }else{
+      readiness='🟠 Final decision valid • zone contested — execution blocked';
     }
     longEntry='⏸ Wait — buying/selling zones overlap';
     shortEntry='⏸ Wait — buying/selling zones overlap';
@@ -7671,8 +7701,9 @@ function renderTraderDecisionBlock(r, compact=false){
       : `🟢 Not confirmed`;
 
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION</div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
-    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION <span style="font-size:10px;color:var(--muted);font-weight:700">FINAL DECISION ENGINE</span></div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
+    <div style="margin-top:7px"><strong>Final Decision:</strong> ${currentState}</div>
+    <div><strong>Current state:</strong> ${currentState}</div>
     <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
@@ -7690,7 +7721,7 @@ function renderTraderDecisionBlock(r, compact=false){
     </div>` : ''}
     ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the applicable 15m ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
-    ${renderEntryPathFramework(item, (()=>{ const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); return /bearish|short/.test(tb)?'short':/bullish|controlled|recovery/.test(tb)?'long':'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
+    ${renderEntryPathFramework(item, (()=>{ const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); const rs=String(fr.state||'').toLowerCase(); const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(/bearish reversal|bearish risk|cautious bearish|bearish/.test(tb) || /bearish reversal|correction developing|significant correction|capitulation|structure weakening/.test(rs)) return 'short'; if(/bullish reversal|bullish|controlled|recovery/.test(tb) || /bullish reversal|accumulation|continuation|recovery/.test(rs)) return 'long'; return 'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
     ${renderTraderDecisionAudit(item,compact)}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
