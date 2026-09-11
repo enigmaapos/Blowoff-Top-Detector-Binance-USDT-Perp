@@ -1098,10 +1098,12 @@ async function ensureExchangeInfo() {
   }
 }
 
-  // ==================== ALERT SOUND: BLOWOFF / EXHAUSTION ONLY ====================
-  // A sound is played only when a symbol newly enters a Blowoff/Exhaustion
-  // state. It does not play again on every refresh while the signal remains active.
-  const alertedBlowoffExhaustion = new Set();
+  // ==================== ALERT SOUND: BLOWOFF ONLY ====================
+  // Exactly one alert sound is used by the scanner: the same short beep from
+  // the old v16 version. It fires only when a symbol NEWLY reaches the
+  // configured Blowoff Score threshold. Exhaustion, accumulation, correction,
+  // favorites, timing and other detectors never trigger a sound.
+  const alertedBlowoffSymbols = new Set();
   const alertAudio = document.getElementById('blowoffAlertSound');
   const enableAlertSoundBtn = document.getElementById('enableBlowoffSound');
 
@@ -1118,17 +1120,17 @@ async function ensureExchangeInfo() {
     });
   }
 
-  function playBlowoffExhaustionAlert(symbol) {
+  function playBlowoffAlert(symbol) {
     if (!alertAudio) return;
     try {
       alertAudio.currentTime = 0;
       const p = alertAudio.play();
       if (p && typeof p.catch === 'function') {
-        p.catch(err => console.warn('Blowoff/Exhaustion sound play rejected:', err));
+        p.catch(err => console.warn('Blowoff sound play rejected:', err));
       }
-      console.log('Blowoff/Exhaustion alert sound:', symbol);
+      console.log('Blowoff alert sound:', symbol);
     } catch (err) {
-      console.warn('Blowoff/Exhaustion sound error:', err);
+      console.warn('playBlowoffAlert error:', err);
     }
   }
 
@@ -1143,25 +1145,24 @@ async function ensureExchangeInfo() {
       const symbol = String(item.symbol).toUpperCase();
       seen.add(symbol);
 
-      const blowoffScore = Number(item.score);
-      const exhaustionConfidence = Number(item.preCrash?.confidence ?? item.preCrashConfidence);
-      const blowoffActive = Number.isFinite(blowoffScore) && blowoffScore >= blowoffThreshold;
-      const exhaustionActive = Number.isFinite(exhaustionConfidence) && exhaustionConfidence >= 50;
-      const active = blowoffActive || exhaustionActive;
+      const score = Number(item.score);
+      const isBlowoff = Number.isFinite(score) && score >= blowoffThreshold;
 
-      if (active) {
-        if (!alertedBlowoffExhaustion.has(symbol)) {
-          alertedBlowoffExhaustion.add(symbol);
-          playBlowoffExhaustionAlert(symbol);
+      if (isBlowoff) {
+        if (!alertedBlowoffSymbols.has(symbol)) {
+          alertedBlowoffSymbols.add(symbol);
+          playBlowoffAlert(symbol);
         }
       } else {
-        alertedBlowoffExhaustion.delete(symbol);
+        // Re-arm the symbol. A later return above the threshold is a new
+        // blowoff event and may sound once again.
+        alertedBlowoffSymbols.delete(symbol);
       }
     }
 
     // Remove symbols that are no longer present in the completed scan.
-    for (const symbol of [...alertedBlowoffExhaustion.keys()]) {
-      if (!seen.has(symbol)) alertedBlowoffExhaustion.delete(symbol);
+    for (const symbol of [...alertedBlowoffSymbols]) {
+      if (!seen.has(symbol)) alertedBlowoffSymbols.delete(symbol);
     }
   }
 
@@ -2300,6 +2301,7 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
   async function startScan({session = modeSession} = {}) {
     clearQuickTradingInterpretation();
     if(session !== modeSession || activeViewMode !== 'scan') return;
+    running=true;
     if(!window.scanAllPerpsForBelow50) {
       alert('scanAllPerpsForBelow50() not found. Make sure it is defined before running this button.');
       return;
@@ -2326,6 +2328,13 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
       runBtn.disabled = false;
       runBtn.innerText = origText;
       note.innerText = '';
+      if(session === modeSession && activeViewMode === 'scan'){
+        running=false;
+        const intervalSec=Math.max(10,Math.min(3600,parseInt(el.interval.value,10)||120));
+        marketAutoEnabled=true;
+        scheduleUnifiedScannerAutoRefresh(intervalSec*1000, 'below50');
+        updateLiveModeUI();
+      }
     }
   }
 
@@ -2427,8 +2436,10 @@ async function analyzeSymbolBatch(symbols, opts = {}) {
   return results;
 }
 // top-level orchestrator: fetch tickers, pick top30 gainers or losers, analyze and render matches
-async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
+async function runTop30Scan({ positive = true, mode = 'resistance', session = modeSession } = {}) {
   try{
+    if(session !== modeSession || activeViewMode !== 'scan') return;
+    running=true;
     el.scanStatus.innerText = 'Fetching 24h tickers...';
     const tickers = await fetch24hTickers();
     if(!tickers || !tickers.length){
@@ -2438,7 +2449,6 @@ async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
     const top = getTopNByChange(tickers, 30, positive);
     el.scanStatus.innerText = `Found ${top.length} symbols — starting analysis...`;
     // Build minimal list: we can pass array of objects with symbol property
-    const session = modeSession;
     const matches = await analyzeSymbolBatch(top, {
       mode, session, batchSize: SCAN_BATCH_SIZE,
       onBatch: (_batch, allMatches, done, total) => {
@@ -2467,7 +2477,17 @@ async function runTop30Scan({ positive = true, mode = 'resistance' } = {}) {
     }
   } catch(e){
     console.error('runTop30Scan error', e);
-    el.scanStatus.innerText = `Scan failed: ${e.message}`;
+    if(session === modeSession && activeViewMode === 'scan'){
+      el.scanStatus.innerText = `Scan failed: ${e.message}`;
+    }
+  } finally {
+    if(session === modeSession && activeViewMode === 'scan'){
+      running=false;
+      const intervalSec=Math.max(10,Math.min(3600,parseInt(el.interval.value,10)||120));
+      marketAutoEnabled=true;
+      scheduleUnifiedScannerAutoRefresh(intervalSec*1000, positive ? 'topGreen' : 'topRed');
+      updateLiveModeUI();
+    }
   }
   } 
 
@@ -5493,16 +5513,34 @@ let showOnlyDist = false;
 const distKeywords = ['distribution', 'breakdown'];
 
 function getDisplayTraderBias(r){
-  // Keep filtering identical to the bias actually displayed by the Trader Decision.
-  const rec = getFinalRecommendation(r || {});
-  const rsi4h = Number(r?.rsi4h || 0);
-  const phase = String(r?.phase?.phase || r?.phase || '').toLowerCase();
-  const confirmed = isSignificantCorrectionConfirmed(r || {});
-  const dist = /distribution|breakdown/.test(phase);
-  let bias = rec?.tradeBias || 'Neutral';
-  if(confirmed) bias = 'Neutral / Cautious Bearish';
-  else if(dist || rsi4h >= 80) bias = 'Bearish / Cautious';
-  return String(bias).trim();
+  const item=r||{};
+  const master=String(item.marketStructure?.bias || item.structureBias || '').toUpperCase();
+  const isBull=/\bBULLISH\b/.test(master) && !/\bBEARISH\b/.test(master);
+  const isBear=/\bBEARISH\b/.test(master);
+
+  let reversal=null;
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
+    reversal={
+      bearish:!!u?.meta?.bearishReversalConfirmed,
+      bullish:!!u?.meta?.bullishReversalConfirmed
+    };
+  }catch(_){ reversal={bearish:false,bullish:false}; }
+
+  if(isBull){
+    return reversal.bearish
+      ? 'Bearish Reversal Confirmed'
+      : 'Bullish • Bearish Risk Elevated';
+  }
+  if(isBear){
+    return reversal.bullish
+      ? 'Bullish Reversal Confirmed'
+      : 'Bearish';
+  }
+
+  // Mixed/unknown structure keeps the existing recommendation language.
+  const rec=getFinalRecommendation(item);
+  return String(rec?.tradeBias || 'Neutral').trim();
 }
 
 function traderBiasMatches(r, code){
@@ -5518,16 +5556,16 @@ function traderBiasMatches(r, code){
   // Order matters: qualified bearish states must not fall through to the
   // generic Neutral bucket.
   if(code === 'BEARISH_CAUTIOUS') {
-    return /bearish\s*\/\s*cautious|neutral\s*\/\s*cautious\s+bearish/.test(b);
+    return /bearish\s*\/\s*cautious|neutral\s*\/\s*cautious\s+bearish|bearish\s+reversal/.test(b);
   }
   if(code === 'BEARISH_RISK') {
-    return /bearish\s+risk/.test(b);
+    return /bearish\s+risk|bearish\s+reversal/.test(b);
   }
   if(code === 'RECOVERY') {
     return /recovery\s+watch|recovery/.test(b);
   }
   if(code === 'BULLISH') {
-    return /^bullish(?:\s*\/\s*controlled)?$/.test(b);
+    return /^bullish(?:\s*\/\s*controlled)?$|^bullish\s+reversal\s+confirmed$/.test(b);
   }
   if(code === 'MILD_BULLISH') {
     return /^mild\s+bullish(?:\s*\/.*)?$/.test(b);
@@ -6154,8 +6192,9 @@ if (showDistBtn) {
   });
 }
 
-// Default to the decision-first workflow: Trend Transition Priority, Desc.
-if (el.sortBy) el.sortBy.value = 'trendTransition';
+// Restore the old v16 default sorting: Blowoff Score, Descending.
+if (el.sortBy) el.sortBy.value = 'score';
+if (el.sortDir) el.sortDir.innerText = 'Desc';
 
 // Instant local UI controls: sorting/filtering never require a network request.
 if (el.sortBy) {
@@ -6797,6 +6836,66 @@ function calculateEntryPathFramework(item, side, statusCode){
   return {price,ema50,ema200,state,stateIcon,stateText,sideLabel,entryLabel,primarySide,contested:!!zones?.contested,entryZoneObj,targetZoneObj,referenceEntry,maeBoundary,maePct,expectedTarget,mfePct,fromEntryTo50,fromEntryTo200,fmt,fp};
 }
 
+function calculateTimingFramework(item, side){
+  const r=item||{};
+  const candles=Array.isArray(r.k1mEntry)?r.k1mEntry:[];
+  const price=Number(r.closeNow ?? candles.at(-1)?.[4] ?? 0);
+  const requested=String(side||'').toLowerCase();
+  const zones=(()=>{try{return getTraderDecisionZones(r)||{};}catch(e){return {};}})();
+  const shortZone=zones.sell, longZone=zones.buy;
+  const phase=String(r.phase?.phase||r.phase||'');
+  const cg=r.correctionGuide||getCorrectionGuide(r)||{};
+  const rsi4h=Number(r.rsi4h||0), accum=Number(r.accumCombined?.confidence??r.accum??0);
+  const ema70=Number(r.ema70DistPct||0), blow=Number(r.score||0);
+  const dist=/distribution|breakdown/i.test(phase);
+  const setupShort = dist || rsi4h>=78 || ema70>=12 || blow>=10 || !!r.lowerHigh || String(cg.code||'').includes('RISK') || String(cg.code||'').includes('DEVELOPING');
+  const setupLong = !setupShort && (accum>=55 || /accumulation|re-accumulation|recovery/i.test(phase));
+
+  // Confirmed 1m entry structure from completed candles only. The latest candle is
+  // treated as the current bar and is not used as a confirmed pivot.
+  const bars=candles.slice(-80);
+  const pivH=[], pivL=[];
+  for(let i=2;i<bars.length-2;i++){
+    const h=Number(bars[i]?.[2]), l=Number(bars[i]?.[3]);
+    if(!Number.isFinite(h)||!Number.isFinite(l)) continue;
+    let sh=h>Number(bars[i-1]?.[2])&&h>=Number(bars[i+1]?.[2]);
+    let sl=l<Number(bars[i-1]?.[3])&&l<=Number(bars[i+1]?.[3]);
+    for(let j=2;j<=2;j++){
+      sh=sh&&h>Number(bars[i-j]?.[2])&&h>=Number(bars[i+j]?.[2]);
+      sl=sl&&l<Number(bars[i-j]?.[3])&&l<=Number(bars[i+j]?.[3]);
+    }
+    if(sh)pivH.push({i,price:h});
+    if(sl)pivL.push({i,price:l});
+  }
+  const lastH=pivH.at(-1), prevH=pivH.at(-2), lastL=pivL.at(-1), prevL=pivL.at(-2);
+  const lh=!!(lastH&&prevH&&lastH.price<prevH.price);
+  const ll=!!(lastL&&prevL&&lastL.price<prevL.price);
+  const hl=!!(lastL&&prevL&&lastL.price>prevL.price);
+  const hh=!!(lastH&&prevH&&lastH.price>prevH.price);
+  const latest=bars.at(-1), prev=bars.at(-2);
+  const latestClose=Number(latest?.[4]), latestHigh=Number(latest?.[2]), latestLow=Number(latest?.[3]);
+  const prevLow=Number(prev?.[3]), prevHigh=Number(prev?.[2]);
+  const bearishBreak=ll || (Number.isFinite(latestClose)&&Number.isFinite(prevLow)&&latestClose<prevLow);
+  const bullishBreak=hh || (Number.isFinite(latestClose)&&Number.isFinite(prevHigh)&&latestClose>prevHigh);
+
+  const rejectionShort=!!(shortZone && Number.isFinite(price) && Number(price)>=Number(shortZone.low) && Number(price)<=Number(shortZone.high) && Number.isFinite(latestHigh) && Number.isFinite(latestClose) && latestHigh>latestClose && ((latestHigh-latestClose)/(Math.max(1e-12,latestHigh-Number(latestLow))))>=0.35);
+  const rejectionLong=!!(longZone && Number.isFinite(price) && Number(price)>=Number(longZone.low) && Number(price)<=Number(longZone.high) && Number.isFinite(latestLow) && Number.isFinite(latestClose) && latestClose>latestLow && ((latestClose-latestLow)/(Math.max(1e-12,Number(latestHigh)-latestLow)))>=0.35);
+  const shortLocation=!!(shortZone?.inside||shortZone?.near);
+  const longLocation=!!(longZone?.inside||longZone?.near);
+  const shortEarly=rejectionShort&&lh;
+  const shortStrong=shortEarly&&bearishBreak;
+  const shortBest=shortStrong && ll;
+  const longEarly=rejectionLong&&hl;
+  const longStrong=longEarly&&bullishBreak;
+  const longBest=longStrong && hh;
+  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'EARLY':'NOT YET';
+  const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'EARLY':'NOT YET';
+  const correctionConfirmed=Number(cg.ema200Stretch15)<0;
+  const primary=requested==='long'?'long':requested==='short'?'short':shortLocation&&!longLocation?'short':longLocation&&!shortLocation?'long':setupShort?'short':'long';
+  return {short:{setup:setupShort,location:shortLocation,rejection:rejectionShort,lh,ll:bearishBreak,entry:shortEntry,best:shortBest},long:{setup:setupLong,location:longLocation,reclaim:rejectionLong,hl,hh:bullishBreak,entry:longEntry,best:longBest},correctionConfirmed,primary};
+}
+
+
 function renderEntryPathFramework(item, side, statusCode){
   const x=calculateEntryPathFramework(item,side,statusCode);
   const entry=x.entryZoneObj;
@@ -7122,6 +7221,23 @@ function renderTraderDecisionBlock(r, compact=false){
   const drop=Math.abs(Number(item.dropPctFromPeak||0));
   const rtnScore=Number(returnObj.score||0);
   const correctionConfirmed=!!(rec.confirmed || ema200Lost || /significant correction|correction confirmed/i.test(String(cg.label||'')));
+
+  // Master directional source: Market Structure. Phase/distribution/risk may
+  // qualify the bias, but must not silently flip a bullish structure to bearish
+  // or a bearish structure to bullish. Reversal can override direction only
+  // when the counter-trend EMA200/location rules are actually confirmed.
+  const masterStructuralBias=String(item.marketStructure?.bias || item.structureBias || '').toUpperCase();
+  const masterIsBullish=/\bBULLISH\b/.test(masterStructuralBias) && !/\bBEARISH\b/.test(masterStructuralBias);
+  const masterIsBearish=/\bBEARISH\b/.test(masterStructuralBias);
+  let counterTrendReversal={bearish:false,bullish:false};
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
+    counterTrendReversal={
+      bearish:!!u?.meta?.bearishReversalConfirmed,
+      bullish:!!u?.meta?.bullishReversalConfirmed
+    };
+  }catch(_){}
+
   const liq=item.liquidity || (typeof detectLiquidityIntelligence==='function' ? detectLiquidityIntelligence(item) : {});
   const liqScore=Number(liq?.score||0);
   const liqEvent=String(liq?.event||'NONE');
@@ -7309,19 +7425,7 @@ function renderTraderDecisionBlock(r, compact=false){
     invalid.push('new lower-low / renewed distribution');
   } else if(distribution || structureBear) {
     currentState='🟠 STRUCTURE WEAKENING';
-    // MASTER BIAS RULE: use the same structural-bias source as the
-    // Overall Market Verdict. Distribution/exhaustion is a risk state,
-    // not permission to overwrite a bullish structural bias.
-    const masterStructuralBias=String(
-      item.marketStructure?.bias || item.structureBias || ''
-    ).toUpperCase();
-    const masterIsBullish=/\bBULLISH\b/.test(masterStructuralBias);
-    const masterIsBearish=/\bBEARISH\b/.test(masterStructuralBias);
-    bias=masterIsBullish
-      ? 'Bullish • Bearish Risk Elevated'
-      : masterIsBearish
-        ? 'Bearish'
-        : 'Bearish Risk / Neutral';
+    bias='Bearish Risk / Neutral';
     longEntry='❌ Wait — structure weak';
     shortEntry='⚠️ Conditional — rejection first';
     bestAction='Structure is weakening, but do not chase the first breakdown. Wait for a failed bounce/lower-high for shorts or a higher-low plus accumulation recovery for longs.';
@@ -7341,6 +7445,39 @@ function renderTraderDecisionBlock(r, compact=false){
     if(a4h<50) missing.push('4H accumulation ≥50%');
     if(a1d<50) missing.push('1D accumulation ≥50%');
     invalid.push('breakdown or deterioration in higher-timeframe support');
+  }
+
+  // Final directional normalization.
+  // Risk language remains a qualifier; it cannot replace the authoritative
+  // structural direction. A direction flip requires the confirmed
+  // counter-trend reversal state above.
+  if(masterIsBullish){
+    if(counterTrendReversal.bearish){
+      bias='Bearish Reversal Confirmed';
+      currentState='🔴 BEARISH REVERSAL CONFIRMED';
+      shortEntry='🔴 Bearish reversal — confirmed';
+      longEntry='⏸ Wait — bullish structure has reversed';
+      readiness='🔴 Bearish reversal confirmed';
+    }else{
+      bias=(distribution || overheated || structureBear)
+        ? 'Bullish • Bearish Risk Elevated'
+        : (bias || 'Bullish');
+      if(/bearish|neutral/i.test(String(bias)) && !/Bullish/.test(String(bias))){
+        bias='Bullish • Bearish Risk Elevated';
+      }
+    }
+  }else if(masterIsBearish){
+    if(counterTrendReversal.bullish){
+      bias='Bullish Reversal Confirmed';
+      currentState='🟢 BULLISH REVERSAL CONFIRMED';
+      longEntry='🟢 Bullish reversal — confirmed';
+      shortEntry='⏸ Wait — bearish structure has reversed';
+      readiness='🟢 Bullish reversal confirmed';
+    }else{
+      bias=(recovery || postCorrection)
+        ? 'Bearish • Bullish Recovery Risk'
+        : 'Bearish';
+    }
   }
 
   // Zone-aware action overlay.
@@ -8074,22 +8211,20 @@ function calculateUnifiedMarketCycle(item){
     const returnToNormalActive=!!returnToNormal?.isReturn;
 
     // ===== COUNTER-TREND REVERSAL =====
-    // "Reversal" means a reversal AGAINST the current trend:
-    //   Bullish trend -> Bearish reversal, but ONLY while price is ABOVE 15m EMA200.
-    //   Bearish trend -> Bullish reversal, but ONLY while price is BELOW 15m EMA200.
-    // EMA200 is the location filter used by the Correction Guide; it is not
-    // itself a reversal trigger.
+    // "Reversal" means a reversal AGAINST the current trend.
+    // Bullish trend  -> bearish reversal, ONLY while price is above 15m EMA200.
+    // Bearish trend  -> bullish reversal, ONLY while price is below 15m EMA200.
+    // EMA200 is the location filter from the Correction Guide; it is not
+    // sufficient by itself to confirm a reversal.
     const ema14Reclaim=price>e14;
     const ema21Reclaim=price>e21;
     const ema14Loss=price<e14;
     const ema21Loss=price<e21;
     const bullishTrend=(bullishStack && aboveAll) || (fastBull && !belowAll);
     const bearishTrend=(bearishStack && belowAll) || (fastBear && !aboveAll);
-    const aboveEma200=ema200_15>0 && price>ema200_15;
-    const belowEma200=ema200_15>0 && price<ema200_15;
+    const aboveEma200=Number.isFinite(e200) && e200>0 && price>e200;
+    const belowEma200=Number.isFinite(e200) && e200>0 && price<e200;
 
-    // Bearish reversal of a bullish trend: require bearish structural evidence
-    // and keep the reversal location above EMA200.
     const bearishReversalConfirmed=(
       bullishTrend &&
       aboveEma200 &&
@@ -8099,8 +8234,6 @@ function calculateUnifiedMarketCycle(item){
       ema21Loss
     );
 
-    // Bullish reversal of a bearish trend: require bullish structural evidence
-    // and keep the reversal location below EMA200.
     const bullishReversalConfirmed=(
       bearishTrend &&
       belowEma200 &&
@@ -8112,9 +8245,8 @@ function calculateUnifiedMarketCycle(item){
 
     const reversalConfirmed=bearishReversalConfirmed || bullishReversalConfirmed;
 
-    // Keep the old recovery detector separate. A recovery is not the same thing
-    // as a counter-trend reversal; this prevents the new reversal definition
-    // from breaking the Correction Guide's recovery/cycle logic.
+    // Recovery is separate from counter-trend reversal. Only a bullish
+    // recovery can graduate a confirmed correction back into markup.
     const bullishRecoveryConfirmed=(
       hl>=1 &&
       ema14Reclaim &&
@@ -8123,8 +8255,9 @@ function calculateUnifiedMarketCycle(item){
       !supportFailed
     );
 
-    // IMPORTANT: the Trader Decision's generic "return-to-normal" label is
-    // contextual and must NOT move the cycle into Support / Recovery.
+    // IMPORTANT: return-to-normal is context only. Recovery is authoritative
+    // after POST_CORRECTION_RECOVERY, or after a confirmed correction has a
+    // genuine bullish recovery. Oversold/bounce conditions alone never qualify.
     const recoveryConfirmed=!supportFailed && (
       correctionRecoveryCode ||
       (correctionConfirmed && bullishRecoveryConfirmed)
@@ -8154,7 +8287,7 @@ function calculateUnifiedMarketCycle(item){
     // Market-Cycle graduates into MARKUP / EXPANSION while Correction Guide
     // remains ⚫ RECOVERY. This cleanly separates "what happened" (correction)
     // from "where price is now" (cycle phase).
-    const recoveryGraduatedToMarkup=!!(correctionConfirmed && recoveryConfirmed && reversalConfirmed && markupCore);
+    const recoveryGraduatedToMarkup=!!(correctionConfirmed && recoveryConfirmed && bullishRecoveryConfirmed && markupCore);
 
     /*
       PRIORITY ORDER:
@@ -8228,15 +8361,22 @@ function calculateUnifiedMarketCycle(item){
     if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
     if(rsiOversold){ momentum='OVERSOLD / STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — oversold condition`); }
     else if(rsiStretched){ momentum='STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — stretched`); }
-    if(reversalConfirmed){ reasons.push('Higher-low + EMA14/EMA21 reclaim + bullish structure'); }
-    else if(bounceOnly){ reasons.push('Oversold/support bounce risk exists, but reversal confirmation is absent'); }
+    if(bearishReversalConfirmed){
+      reasons.push('Bullish trend reversal confirmed bearish: price above 15m EMA200 + lower-high/lower-low + EMA14/EMA21 loss');
+    }else if(bullishReversalConfirmed){
+      reasons.push('Bearish trend reversal confirmed bullish: price below 15m EMA200 + higher-low/higher-high + EMA14/EMA21 reclaim');
+    }else if(bullishRecoveryConfirmed){
+      reasons.push('Bullish recovery structure: higher-low + EMA14/EMA21 reclaim + bullish structure');
+    }else if(bounceOnly){
+      reasons.push('Oversold/support bounce risk exists, but counter-trend reversal confirmation is absent');
+    }
 
     if(phase==='MARKDOWN / POST-TOP' && supportTest && !recoveryConfirmed) state='🔴 MARKDOWN / POST-TOP → 🟡 SUPPORT TEST';
     if(phase==='CORRECTION DEVELOPING' && nearResistance) state='🟠 CORRECTION DEVELOPING → 🟠 RESISTANCE TEST';
     if(phase==='POST-CORRECTION / RECOVERY') state='🟣 POST-CORRECTION / RECOVERY';
 
     let confidence=35;
-    if(phase==='POST-CORRECTION / RECOVERY') confidence=70+(reversalConfirmed?12:0)+(correctionRecoveryCode?8:0);
+    if(phase==='POST-CORRECTION / RECOVERY') confidence=70+(bullishRecoveryConfirmed?12:0)+(correctionRecoveryCode?8:0);
     else if(phase==='MARKDOWN / POST-TOP') confidence=55+(belowAll?12:0)+(bearishStack?10:0)+(bearishStructure?10:0)+(correctionConfirmed?10:0);
     else if(phase==='CORRECTION DEVELOPING') confidence=Math.max(60,Math.min(95,Number(cg.confidence||70)));
     else if(phase==='MARKUP') confidence=55+(aboveAll?15:0)+(bullishStack?12:0)+(bullishStructure?10:0);
@@ -8271,7 +8411,8 @@ function calculateUnifiedMarketCycle(item){
       ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull},
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
-      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,bounceOnly,recoveryConfirmed}
+      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,
+          bullishRecoveryConfirmed,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed}
     };
   }catch(err){
     return {code:'ERROR',phase:'UNKNOWN',state:'⚪ MARKET-CYCLE UNAVAILABLE',confidence:0,authoritative:false,tone:'neutral',trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',action:'Use the existing independent detectors until the unified engine recovers.',reasons:[`Unified market-cycle error: ${err.message}`],ema:{},structure:{},support:null,resistance:null,meta:{}};
