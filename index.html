@@ -922,7 +922,7 @@ body.authLocked{overflow:hidden}
           <label class="controlLabel">📈 EMA Structure Filter</label>
           <select id="emaStructureFilter">
             <option value="ALL">All EMA Structures</option>
-            <option value="BULLISH_ABOVE_ALL">🟢 Bullish aligned • Price above all major EMAs</option>
+            <option value="BULLISH_ABOVE_ALL" selected>🟢 Bullish aligned • Price above all major EMAs</option>
             <option value="BULLISH">🟢 Bullish aligned</option>
             <option value="BEARISH_BELOW_ALL">🔴 Bearish aligned • Price below all major EMAs</option>
             <option value="BEARISH">🔴 Bearish aligned</option>
@@ -1760,8 +1760,8 @@ function renderPhaseComparison(r){
   const market = authoritative.name;
   const confidence = `${Math.round(authoritative.confidence||0)}% correction/phase confidence`;
   return `<div class="phaseCompare">
-    <div class="phaseBox"><div class="phaseBoxLabel">Market Phase</div><div class="phaseBoxValue">${market}</div><div class="phaseBoxSub">${confidence}</div></div>
-    <div class="phaseBox cycle"><div class="phaseBoxLabel">Cycle Phase</div><div class="phaseBoxValue">${cycle.cyclePhase}</div><div class="phaseBoxSub">Similarity ${cycle.similarityPct}%</div></div>
+    <div class="phaseBox"><div class="phaseBoxLabel">Authoritative Market Phase</div><div class="phaseBoxValue">${market}</div><div class="phaseBoxSub">${confidence}</div></div>
+    <div class="phaseBox cycle"><div class="phaseBoxLabel">Cycle Context (Similarity)</div><div class="phaseBoxValue">${cycle.cyclePhase}</div><div class="phaseBoxSub">Similarity ${cycle.similarityPct}% • context only</div></div>
   </div>`;
 }
 
@@ -6854,20 +6854,28 @@ function calculateEntryPathFramework(item, side, statusCode){
   const rec=(()=>{try{return typeof getFinalRecommendation==='function'?getFinalRecommendation(r):null;}catch(e){return null;}})();
   const requested=String(side||'').toLowerCase();
 
-  // Primary execution path follows the scanner's existing Trader Decision logic.
-  // Active zone wins; otherwise entry-status asymmetry and final recommendation
-  // determine which planned path is relevant. A mapped zone is NOT an entry.
+  // Final Decision Engine is authoritative for directional scenario selection.
+  // Zones/status refine execution readiness; they must not override the final
+  // directional bias merely because a mapped zone exists.
   let primarySide='wait';
-  if(zones?.contested){ primarySide='wait'; }
-  else if(zones?.active?.side==='SELL'){ primarySide='short'; }
-  else if(zones?.active?.side==='BUY'){ primarySide='long'; }
-  else if(snapshot?.short && snapshot?.short!=='WAIT' && snapshot?.long==='WAIT'){ primarySide='short'; }
-  else if(snapshot?.long && snapshot?.long!=='WAIT' && snapshot?.short==='WAIT'){ primarySide='long'; }
-  else {
-    const tb=String(rec?.tradeBias||'').toLowerCase();
-    if(/bearish|short/.test(tb)) primarySide='short';
-    else if(/bullish|controlled|recovery/.test(tb)) primarySide='long';
-    else if(requested==='short'||requested==='long') primarySide=requested;
+  const tb=String(rec?.tradeBias||'').toLowerCase();
+  const recState=String(rec?.state||'').toLowerCase();
+  if(zones?.contested){
+    primarySide='wait';
+  } else if(/bearish reversal|bearish risk|cautious bearish|bearish/.test(tb) || /bearish reversal|correction developing|significant correction|capitulation/.test(recState)){
+    primarySide='short';
+  } else if(/bullish reversal|bullish|controlled|recovery/.test(tb) || /bullish reversal|accumulation|continuation|recovery/.test(recState)){
+    primarySide='long';
+  } else if(snapshot?.short && snapshot?.short!=='WAIT' && snapshot?.long==='WAIT'){
+    primarySide='short';
+  } else if(snapshot?.long && snapshot?.long!=='WAIT' && snapshot?.short==='WAIT'){
+    primarySide='long';
+  } else if(zones?.active?.side==='SELL'){
+    primarySide='short';
+  } else if(zones?.active?.side==='BUY'){
+    primarySide='long';
+  } else if(requested==='short'||requested==='long'){
+    primarySide=requested;
   }
 
   const entryZoneObj=primarySide==='long'?zones.buy:primarySide==='short'?zones.sell:null;
@@ -7521,6 +7529,19 @@ function renderTraderDecisionBlock(r, compact=false){
     if(a4h<55) missing.push('4H accumulation improvement');
     if(a1d<50) missing.push('1D accumulation improvement');
     invalid.push('new lower-low / renewed distribution');
+  } else if(cgCode==='CORRECTION_DEVELOPING' || /correction developing|deepening correction/i.test(String(cg.label||''))) {
+    currentState='🟠 CORRECTION DEVELOPING — NOT CONFIRMED';
+    bias='Bearish';
+    longEntry='⚠️ Conditional — only after 15m reclaim + higher-low';
+    shortEntry='⏸ Wait — 15m rejection + lower-high';
+    bestAction='Correction is developing but is not confirmed. Do not chase either direction. The short scenario requires 15m rejection + lower-high; the long recovery scenario requires 15m reclaim + higher-low.';
+    readiness='🟠 Developing correction / wait';
+    if(!hasLowerHigh) missing.push('15m rejection + lower-high for short');
+    if(!hasHigherLow) missing.push('15m reclaim + higher-low for long');
+    if(a4h<50) missing.push('4H accumulation ≥50%');
+    if(a1d<50) missing.push('1D accumulation ≥50%');
+    invalid.push('breakdown or deterioration in higher-timeframe support');
+    decisionScore=Math.max(35,Math.min(90,Math.round(Number(cg.confidence||70))));
   } else if(distribution || structureBear) {
     currentState='🟠 STRUCTURE WEAKENING';
     bias='Bearish Risk / Neutral';
@@ -7532,6 +7553,7 @@ function renderTraderDecisionBlock(r, compact=false){
     if(a4h<50) missing.push('4H accumulation recovery');
     if(a1d<50) missing.push('1D accumulation recovery');
     invalid.push('breakdown confirmation / support failure');
+    decisionScore=55;
   } else {
     currentState=rec.state||'⚪ NO CLEAR EDGE';
     bias=rec.tradeBias||'Neutral';
@@ -7578,6 +7600,10 @@ function renderTraderDecisionBlock(r, compact=false){
 
   if(confirmedBearishReversal || confirmedBullishReversal){
     decisionScore=Math.max(75, Math.min(98, decisionScore || 75));
+  }
+  if(!Number.isFinite(decisionScore) || decisionScore<=0){
+    const fallbackScore=Number(rec?.confidence);
+    decisionScore=Math.max(1,Math.min(98,Number.isFinite(fallbackScore)&&fallbackScore>0?Math.round(fallbackScore):45));
   }
 
   // Zone-aware action overlay.
@@ -7682,8 +7708,9 @@ function renderTraderDecisionBlock(r, compact=false){
 }
 
 function renderProfessionalAnalysis(r, rec, srec, longTargets){
-  const phase=String(r.phase?.phase||r.phase||'Unknown');
-  const phasePct=Number(r.phase?.confidence||0);
+  const authoritativePhase=getAuthoritativeMarketPhase(r||{});
+  const phase=String(authoritativePhase.name||'Unknown');
+  const phasePct=Number(authoritativePhase.confidence||0);
   const dist=distributionRiskLabel(phase, phasePct);
   const accum=Number(r.accumCombined?.confidence||0);
   const rsi15Session = r?.rsi15Session || {};
