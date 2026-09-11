@@ -4387,9 +4387,9 @@ function renderSMCBreakerBlock(r){
   const accent=bull?'#2dd4bf':'#ff5c5c';
   const money=v=>Number.isFinite(Number(v))?Number(v).toLocaleString(undefined,{maximumFractionDigits:8}):'—';
   const state=mspEscape(b.state||'BREAKER SETUP');
-  const status=b.continuation ? '✅ ENTRY CONDITION MET' : b.retest ? '🟠 RETEST ACTIVE — CONFIRMATION NEEDED' : '⏳ NO ENTRY YET';
+  const status=b.continuation ? '✅ 4H SMC CONTINUATION CONFIRMED' : b.retest ? '🟠 RETEST ACTIVE — 15m CONFIRMATION NEEDED' : '⏳ NO 4H ENTRY SETUP YET';
   const action=b.continuation
-    ? 'Continuation confirmed — do not chase outside the zone. Prefer confirmation on the 15m structure before acting.'
+    ? `${bull?'4H SMC bullish continuation':'4H SMC bearish continuation'} confirmed — this is a setup confirmation, not a trade-entry confirmation. Do not chase outside the zone; require the applicable 15m execution trigger before acting.`
     : b.retest
       ? 'Price is interacting with the breaker zone. Wait for a clean rejection/continuation on 15m before treating it as an entry.'
       : 'Wait for price to return to the breaker zone. This is a watch/retest zone, not an entry until the retest is confirmed.';
@@ -4416,10 +4416,10 @@ function renderSMCBreakerBlock(r){
     ['▣','Breaker',b.bos?'DEFINED':'PENDING'],
     ['↩','Retest',b.continuation?'CONFIRMED':b.retest?'ACTIVE':'WAIT']
   ];
-  const zoneTitle=b.continuation ? (bull?'ENTRY ZONE':'ENTRY / RETEST ZONE') : 'WATCH / RETEST ZONE';
+  const zoneTitle=b.continuation ? (bull?'4H SMC ZONE — 15m ENTRY REQUIRED':'4H SMC ZONE — 15m ENTRY REQUIRED') : 'WATCH / RETEST ZONE';
   return `<div class="smcBreakerPanel" style="border-left:4px solid ${accent}">
     <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
-    <div class="smcBreakerReason">${mspEscape(b.reason||'')}</div>
+    <div class="smcBreakerReason">${mspEscape(b.reason||'')} <span style="opacity:.8">(4H setup confirmation; not a 15m entry signal)</span></div>
     <div style="margin-top:8px;padding:8px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)">
       <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">STATUS</div>
       <div style="margin-top:3px;font-size:13px;font-weight:950;color:${b.continuation?'#2dd4bf':b.retest?'#ff9f43':'#ffd966'}">${status}</div>
@@ -4428,7 +4428,7 @@ function renderSMCBreakerBlock(r){
     ${conflict ? `<div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,159,67,.25);background:rgba(255,159,67,.055);color:#ffd7a3;font-size:11px;line-height:1.45"><strong>${mspEscape(conflictText)}</strong><br>4H SMC is a setup layer; 15m structure is the lower-timeframe confirmation layer.</div>` : ''}
     <div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(126,220,255,.14);background:rgba(126,220,255,.035)">
       <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">SIGNAL HIERARCHY</div>
-      <div style="margin-top:5px;font-size:11px;line-height:1.5"><strong>Primary state:</strong> ${mspEscape(primaryState)}<br><strong>4H SMC:</strong> ${mspEscape(b.state||'—')}<br><strong>Top risk:</strong> ${topDeveloping?`🟠 ${topLabel||'Developing'} (${topScore}/100)`:'🟢 No major top warning'}<br><strong>Correction:</strong> ${correctionConfirmed?'🔴 CONFIRMED':'⚪ NOT CONFIRMED'}<br><strong>Action:</strong> ${correctionConfirmed?'Respect the authoritative correction state; do not use the 4H breaker alone to override it.':bearishDeveloping?'WAIT — require 15m confirmation before acting on the 4H breaker.':b.continuation?'Conditional setup; manage risk and avoid chasing.':'WAIT — no entry until the required retest/confirmation occurs.'}</div>
+      <div style="margin-top:5px;font-size:11px;line-height:1.5"><strong>Primary state:</strong> ${mspEscape(primaryState)}<br><strong>4H SMC:</strong> ${mspEscape(b.state||'—')}<br><strong>Top risk:</strong> ${topDeveloping?`🟠 ${topLabel||'Developing'} (${topScore}/100)`:'🟢 No major top warning'}<br><strong>Correction:</strong> ${correctionConfirmed?'🔴 CONFIRMED':'⚪ NOT CONFIRMED'}<br><strong>Action:</strong> ${correctionConfirmed?'Respect the authoritative correction state; do not use the 4H breaker alone to override it.':bearishDeveloping?'WAIT — require the 15m execution trigger before acting on the 4H breaker.':b.continuation?(bull?'4H SMC continuation confirmed; wait for 15m reclaim + higher-low before LONG entry.':'4H SMC continuation confirmed; wait for 15m rejection + lower-high before SHORT entry.'):'WAIT — no entry until the required retest and 15m confirmation occur.'}</div>
       <div class="small" style="margin-top:4px;color:#8195ad">${mspEscape(primaryReason)}</div>
     </div>
     <div class="smcBreakerZone ${bull?'':'smcBreakerZoneBear'}" style="border-color:${accent}33">
@@ -4442,7 +4442,7 @@ function renderSMCBreakerBlock(r){
       <div class="smcBreakerMeta">Sweep ${money(b.sweepLevel)} • Extreme ${money(b.sweepExtreme)} • Structure break ${money(b.shiftLevel)} • R:R ≈ ${b.rr1==null?'—':b.rr1.toFixed(1)} / ${b.rr2==null?'—':b.rr2.toFixed(1)} • ${Number(b.confidence||0)}% confidence</div>
       <div class="smcBreakerMeta"><strong>Now:</strong> ${mspEscape(action)}</div>
     </div>
-    <div class="smcBreakerAuthority">SMC setup detector only. 4H SMC does not confirm a significant correction. The separate 15m EMA200 correction layer remains authoritative. A 15m structure confirmation is preferred before acting on a 4H breaker.</div>
+    <div class="smcBreakerAuthority">SMC setup detector only. 4H SMC confirmation does <strong>not</strong> equal trade-entry confirmation. The separate 15m execution layer remains authoritative for timing: bearish = 15m rejection + lower-high (ideally LL/bearish break); bullish = 15m reclaim + higher-low (ideally HH/bullish break). The separate 15m EMA200 correction layer remains authoritative for significant-correction confirmation.</div>
   </div>`;
 }
 function renderBearishStructureDetector(r){
@@ -6776,12 +6776,17 @@ function calculateReversalContinuation(item){
       bullCloses&&'two-bar bullish follow-through'
     ]).filter(Boolean);
 
-    /* Continuation is confirmed only after the anchored second leg plus one
-       independent follow-through condition. */
-    const followThrough=(structuralBreak|| (a?bearEma:bullEma) || (a?bearCloses:bullCloses));
-    const confirmed=secondLeg&&followThrough;
-    const developing=reversalAnchor || (directionFromUnified!=='NONE' && (a?bearEma:bullEma));
-    const score=Math.min(100,25+(reversalAnchor?15:0)+(secondLeg?30:0)+(structuralBreak?15:0)+((a?bearEma:bullEma)?10:0)+((a?bearCloses:bullCloses)?10:0));
+    /* CONTINUATION CHECKLIST — 100% means every required continuation
+       component is actually visible in completed 15m data.  Supporting
+       evidence can raise the developing score, but it cannot be labelled
+       CONFIRMED until the complete checklist is present. */
+    const fastFollowThrough=(a?bearEma:bullEma);
+    const candleFollowThrough=(a?bearCloses:bullCloses);
+    const requiredComplete=reversalAnchor&&secondLeg&&structuralBreak&&fastFollowThrough&&candleFollowThrough;
+    const developing=reversalAnchor || (directionFromUnified!=='NONE' && (fastFollowThrough||candleFollowThrough));
+    const rawScore=25+(reversalAnchor?15:0)+(secondLeg?30:0)+(structuralBreak?15:0)+(fastFollowThrough?10:0)+(candleFollowThrough?10:0);
+    const score=requiredComplete?100:Math.min(99,rawScore);
+    const confirmed=requiredComplete;
 
     return {
       state:confirmed?'CONFIRMED':developing?'DEVELOPING':'NOT_ACTIVE',direction,confirmed,developing,score,
@@ -6869,7 +6874,7 @@ function getFinalRecommendation(item){
     sentence=bear?'The bearish reversal is confirmed and the next downside leg is developing.':'The bullish reversal is confirmed and the next upside leg is developing.';
     rationale='Reversal Continuation Engine: reversal-anchored 15m follow-through';
     tradeBias=bear?'Bearish Reversal Continuation Watch':'Bullish Reversal Continuation Watch';
-    action=bear?'Keep the bearish override; wait for a second completed 15m structural leg before calling continuation confirmed.':'Keep the bullish override; wait for a second completed 15m structural leg before calling continuation confirmed.';
+    action=bear?'Keep the bearish override; wait for the complete 15m continuation checklist before calling continuation confirmed.':'Keep the bullish override; wait for the complete 15m continuation checklist before calling continuation confirmed.';
     evidence.push(...(reversalContinuation.evidence||[]).map(x=>`Continuation developing: ${x}`));
   } else if(ema70CrossBullish || ema70CrossBearish){
     if(ema70CrossBullish){
@@ -7672,9 +7677,12 @@ function renderTraderDecisionBlock(r, compact=false){
   const buyZone=traderZones.buy;
   const sellZone=traderZones.sell;
   const activeTraderZone=traderZones.active;
+  const decisionBias=String(rec?.tradeBias||'').toLowerCase();
+  const decisionSide=/bearish|short/.test(decisionBias) ? 'short' : /bullish|controlled|recovery/.test(decisionBias) ? 'long' : 'wait';
+  const displayActiveZone=decisionSide==='short' ? (sellZone||activeTraderZone) : decisionSide==='long' ? (buyZone||activeTraderZone) : activeTraderZone;
   const sellExecution=getTraderExecutionTimeframe(item, sellZone);
   const buyExecution=getTraderExecutionTimeframe(item, buyZone);
-  const activeExecution=getTraderExecutionTimeframe(item, activeTraderZone);
+  const activeExecution=getTraderExecutionTimeframe(item, displayActiveZone);
 
   // Event-aware contribution: sweeps affect the *next action* differently from raw pool strength.
   // A sweep is deliberately kept conditional until rejection/acceptance is confirmed.
@@ -7936,7 +7944,7 @@ function renderTraderDecisionBlock(r, compact=false){
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION <span style="font-size:9px;color:#7edcff;letter-spacing:.08em">• FINAL DECISION ENGINE</span></div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
     <div class="finalDecisionAuthority"><div class="fdaTitle">FINAL DECISION ENGINE • AUTHORITATIVE</div><div class="fdaState">${currentState}</div><div class="fdaSub">All calculated scanner evidence is synthesized here. Trader Decision, entry status and primary execution path follow this result. 4H/1H = context; 15m = execution.</div></div>\n    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
-    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Reversal Continuation:</strong> ${String(rec.reversalContinuation?.label||'NOT ACTIVE')}${Number.isFinite(Number(rec.reversalContinuation?.score))?` • ${Number(rec.reversalContinuation.score)}%`:''}</div>\n    <div class="small"><strong>Continuation evidence:</strong> ${(rec.reversalContinuation?.reasons||[]).join(' • ')||'Waiting for post-reversal follow-through'}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
+    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Reversal Continuation:</strong> ${String(rec.reversalContinuation?.label||'NOT ACTIVE')}${Number.isFinite(Number(rec.reversalContinuation?.score))?` • ${Number(rec.reversalContinuation.score)}%`:''}</div>\n    <div class="small"><strong>Continuation evidence:</strong> ${(rec.reversalContinuation?.reasons||[]).join(' • ')||'Waiting for post-reversal follow-through'}${rec.reversalContinuation?.state==='CONFIRMED'?' • 100% = complete required 15m continuation checklist':''}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
@@ -7951,9 +7959,9 @@ function renderTraderDecisionBlock(r, compact=false){
         ${buyZone ? `<div style="padding:9px 10px;border-radius:8px;background:rgba(45,212,191,.055);border:1px solid rgba(45,212,191,.14)"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><strong style="font-size:11px">🟢 BUYING ZONE</strong><span style="font-size:10px;font-weight:800;color:${buyZone.confirmed?'#2dd4bf':'#ffb454'}">${/CONTESTED|OVERRIDDEN/i.test(String(buyZone.status||''))?'CONTESTED':buyZone.confirmed?'CONFIRMED':buyZone.near?'APPROACHING':'WATCH'}</span></div><div style="font-size:13px;font-weight:800;margin-top:5px">${formatTraderZonePrice(buyZone.low)} – ${formatTraderZonePrice(buyZone.high)}</div><div class="small" style="margin-top:4px">Quality ${buyZone.quality}/100${liqDownsideSweep?' • Swept / reclaim':''}</div><div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(45,212,191,.10);font-size:10px;line-height:1.45"><strong>Execution TF:</strong> ${buyExecution.tf} <span style="color:var(--muted)">• ${buyExecution.trigger}</span></div></div>` : ''}
       </div>
     </div>` : ''}
-    ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (activeTraderZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (activeTraderZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the applicable 15m ${activeTraderZone?.side==='SELL'?'short':'long'} trigger is confirmed.`}</div></div>` : ''}
+    ${(activeTraderZone || sellZone || buyZone) ? `<div style="margin-top:8px;padding:10px 11px;border-radius:10px;background:rgba(192,132,252,.045);border:1px solid rgba(192,132,252,.14)"><div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span>🎯</span><strong style="font-size:12px;letter-spacing:.03em">EXECUTION TIMEFRAME</strong><span style="font-size:10px;color:var(--muted);margin-left:auto">Context ≠ execution</span></div><div style="display:flex;align-items:center;gap:9px"><span style="font-size:18px;font-weight:900">${traderZones.contested ? 'WAIT' : (displayActiveZone ? activeExecution.tf : (sellZone?.confirmed ? sellExecution.tf : buyExecution.tf))}</span><span style="font-size:11px;line-height:1.45">${traderZones.contested ? 'Wait for zone resolution' : (displayActiveZone ? activeExecution.trigger : sellZone?.confirmed ? sellExecution.trigger : buyExecution.trigger)}</span></div><div class="small" style="margin-top:6px">${traderZones.contested ? 'Both zones overlap. 4H / 1H provide context; execute only after a directional 15m reclaim + higher-low or rejection + lower-high resolves the contest.' : `4H / 1H provide directional context and setup validation. Execute only after the applicable 15m ${displayActiveZone?.side==='SELL'?'short':displayActiveZone?.side==='BUY'?'long':'execution'} trigger is confirmed.`}</div></div>` : ''}
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
-    ${renderEntryPathFramework(item, (()=>{ const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); return /bearish|short/.test(tb)?'short':/bullish|controlled|recovery/.test(tb)?'long':'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
+    ${renderEntryPathFramework(item, (()=>{ const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); if(/bearish|short/.test(tb)) return 'short'; if(/bullish|controlled|recovery/.test(tb)) return 'long'; const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; return 'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
     ${renderTraderDecisionAudit(item,compact)}
     <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
