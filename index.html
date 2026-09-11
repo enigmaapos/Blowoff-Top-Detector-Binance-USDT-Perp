@@ -5631,7 +5631,11 @@ function getEntryStatusSnapshot(r){
   const structureBear=hasLowerHigh || distribution;
   const overheated=rsi4h>=80;
   const ema200=item.correctionGuide?.ema200Stretch15;
-  const correctionConfirmed=!!(rec.confirmed || (ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
+  // Do not call getFinalRecommendation() here: the Final Decision Engine
+  // uses this entry-status helper as an execution gate, so doing so would
+  // create a circular dependency. Correction confirmation comes directly
+  // from the authoritative Correction Guide.
+  const correctionConfirmed=!!((ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
   const drop=Math.abs(Number(item.dropPctFromPeak||0));
   const rtnScore=Number(item.returnToNormal?.score||0);
   const postCorrection=correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
@@ -5645,8 +5649,14 @@ function getEntryStatusSnapshot(r){
   // the execution gate. Execution confirmation is evaluated on 15m candles.
   let timing=null;
   try{ timing=typeof calculateTimingFramework==='function' ? calculateTimingFramework(item,'') : null; }catch(_){}
-  const reversalBear=/BEARISH REVERSAL CONFIRMED/i.test(String(rec?.state||'')) || /Bearish Reversal Confirmed/i.test(String(rec?.tradeBias||''));
-  const reversalBull=/BULLISH REVERSAL CONFIRMED/i.test(String(rec?.state||'')) || /Bullish Reversal Confirmed/i.test(String(rec?.tradeBias||''));
+  // Reversal direction is read directly from the Unified Market-Cycle
+  // authority. Never reference an out-of-scope `rec` here.
+  let reversalBear=false, reversalBull=false;
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
+    reversalBear=!!u?.meta?.bearishReversalConfirmed;
+    reversalBull=!!u?.meta?.bullishReversalConfirmed;
+  }catch(_){ }
 
   if(reversalBear){
     const t=timing?.short||{};
@@ -6826,8 +6836,8 @@ function professionalState(item, rec){
   const confirmed=ema200!=null && Number(ema200)<0;
   const dist=/distribution|breakdown/i.test(phase);
   const unified = (()=>{try{return typeof calculateUnifiedMarketCycle==='function'?calculateUnifiedMarketCycle(r):null;}catch(e){return null;}})();
-  const reversalBear = !!(unified?.reversal?.confirmed && String(unified.reversal.direction||'').toUpperCase()==='BEARISH');
-  const reversalBull = !!(unified?.reversal?.confirmed && String(unified.reversal.direction||'').toUpperCase()==='BULLISH');
+  const reversalBear = !!unified?.meta?.bearishReversalConfirmed;
+  const reversalBull = !!unified?.meta?.bullishReversalConfirmed;
   if(reversalBear) return {title:'🔴 BEARISH REVERSAL CONFIRMED', confidence:Math.max(75,Math.min(98,Number(unified.reversal.confidence||rec.confidence||75))), sentence:'Directional reversal is confirmed. The short side is favored, but execution still requires 15m rejection + lower-high confirmation.', tone:'red'};
   if(reversalBull) return {title:'🟢 BULLISH REVERSAL CONFIRMED', confidence:Math.max(75,Math.min(98,Number(unified.reversal.confidence||rec.confidence||75))), sentence:'Directional reversal is confirmed. The long side is favored, but execution still requires 15m reclaim + higher-low confirmation.', tone:'green'};
   if(confirmed) return {
