@@ -5481,6 +5481,11 @@ function getValueForKey(r, key) {
     }
     case 'longEntryStatus': return getEntryStatusRank(r, 'long');
     case 'shortEntryStatus': return getEntryStatusRank(r, 'short');
+    // Final Decision / transition priority uses the same authoritative result
+    // pipeline as the displayed Trader Decision. The helper is declared later
+    // in the page, but is available when sorting is actually invoked.
+    case 'trendTransition':
+      try { return Number(calculateTrendTransitionPriority(r)?.score || 0); } catch (_) { return 0; }
     default: return 0;
   }
 }
@@ -5548,29 +5553,12 @@ const distKeywords = ['distribution', 'breakdown'];
 
 function getDisplayTraderBias(r){
   const item=r||{};
-  const master=String(item.marketStructure?.bias || item.structureBias || '').toUpperCase();
-  const isBull=/\bBULLISH\b/.test(master) && !/\bBEARISH\b/.test(master);
-  const isBear=/\bBEARISH\b/.test(master);
-
-  let reversal=null;
+  // FINAL DECISION ENGINE is the single source of truth for the displayed bias.
+  // Raw Market Structure is context only and must never override the final result.
   try{
-    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
-    reversal={
-      bearish:!!u?.meta?.bearishReversalConfirmed,
-      bullish:!!u?.meta?.bullishReversalConfirmed
-    };
-  }catch(_){ reversal={bearish:false,bullish:false}; }
-
-  // Reversal-first: do not wait for the legacy Market Structure label to
-  // change from MIXED to BULLISH/BEARISH after the reversal is confirmed.
-  if(reversal.bearish) return 'Bearish Reversal Confirmed';
-  if(reversal.bullish) return 'Bullish Reversal Confirmed';
-
-  if(isBull) return 'Bullish • Bearish Risk Elevated';
-  if(isBear) return 'Bearish';
-
-  const rec=getFinalRecommendation(item);
-  return String(rec?.tradeBias || 'Neutral').trim();
+    const rec=(typeof getFinalRecommendation==='function') ? getFinalRecommendation(item) : null;
+    return String(rec?.tradeBias || 'Neutral').trim();
+  }catch(_){ return 'Neutral'; }
 }
 
 function traderBiasMatches(r, code){
@@ -5673,8 +5661,30 @@ function getEntryStatusSnapshot(r){
       shortLabel:'⏸ Wait — final decision is bullish reversal'};
   }
 
-  // EMA70/EMA200 is the major directional regime. It determines the preferred
-  // side; the 15m timing engine remains the sole execution gate.
+  // FINAL DECISION ENGINE owns direction. EMA70/EMA200 defines the underlying
+  // trend, while a confirmed counter-trend reversal is the directional override.
+  // Entry status is only the 15m execution gate for that final direction.
+  let finalDirection='NEUTRAL';
+  try{
+    const rec=(typeof getFinalRecommendation==='function') ? getFinalRecommendation(item) : null;
+    finalDirection=String(rec?.direction||'').toUpperCase();
+    if(finalDirection==='BEARISH') finalDirection='BEARISH';
+    else if(finalDirection==='BULLISH') finalDirection='BULLISH';
+    else finalDirection='NEUTRAL';
+  }catch(_){ }
+  if(finalDirection==='BEARISH'){
+    const t=timing?.short||{};
+    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.rejection&&t.lh?'LOWER_HIGH':t.rejection?'REJECTION':'WAIT';
+    return {long:'WAIT',short:code,longLabel:'⏸ Wait — final decision is bearish',shortLabel:code==='CONFIRMED'?'🟢 15m rejection + lower-high confirmed':code==='LOWER_HIGH'?'🟠 15m lower-high present — execution confirmation pending':'⏸ Wait for 15m rejection + lower-high'};
+  }
+  if(finalDirection==='BULLISH'){
+    const t=timing?.long||{};
+    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.reclaim&&t.hl?'ACCEPTANCE':t.reclaim?'CONDITIONAL':'WAIT';
+    return {long:code,short:'WAIT',longLabel:code==='CONFIRMED'?'🟢 15m reclaim + higher-low confirmed':code==='ACCEPTANCE'?'🟠 15m higher-low present — execution confirmation pending':'⏸ Wait for 15m reclaim + higher-low',shortLabel:'⏸ Wait — final decision is bullish'};
+  }
+
+  // If the final synthesis is neutral, EMA70/EMA200 still exposes the underlying
+  // regime without turning a neutral decision into an automatic trade signal.
   let ema70Bull=false, ema70Bear=false;
   try{
     const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
@@ -5682,14 +5692,10 @@ function getEntryStatusSnapshot(r){
     ema70Bear=!!u?.meta?.ema70Below200;
   }catch(_){ }
   if(ema70Bull && !ema70Bear){
-    const t=timing?.long||{};
-    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.reclaim&&t.hl?'ACCEPTANCE':t.reclaim?'CONDITIONAL':'WAIT';
-    return {long:code,short:'WAIT',longLabel:code==='CONFIRMED'?'🟢 15m reclaim + higher-low confirmed':'🟡 Bullish EMA70 > EMA200 — wait for 15m reclaim + higher-low',shortLabel:'⏸ Wait — EMA70 > EMA200 favors LONG'};
+    return {long:'WAIT',short:'WAIT',longLabel:'🟡 Bullish trend — final decision is neutral; wait for confirmation',shortLabel:'⏸ No short signal — EMA70 > EMA200'};
   }
   if(ema70Bear && !ema70Bull){
-    const t=timing?.short||{};
-    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.rejection&&t.lh?'LOWER_HIGH':t.rejection?'REJECTION':'WAIT';
-    return {long:'WAIT',short:code,shortLabel:code==='CONFIRMED'?'🟢 15m rejection + lower-high confirmed':'🟠 Bearish EMA70 < EMA200 — wait for 15m rejection + lower-high',longLabel:'⏸ Wait — EMA70 < EMA200 favors SHORT'};
+    return {long:'WAIT',short:'WAIT',longLabel:'⏸ No long signal — EMA70 < EMA200',shortLabel:'🟠 Bearish trend — final decision is neutral; wait for confirmation'};
   }
 
   // Priority mirrors Trader Decision's branch order closely enough that the
@@ -6086,6 +6092,23 @@ function filterResultsForDist(results) {
   const smcDirection = el.smcDirectionFilter ? el.smcDirectionFilter.value : 'ALL';
   if (smcDirection !== 'ALL') {
     filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
+  }
+
+  // Trend-transition filter must live inside the real filter pipeline. A later
+  // window.* wrapper cannot replace the lexical function binding used by the
+  // scanner itself, so apply it here where renderActiveView actually reads it.
+  const trendTransitionFilter = el.trendTransitionFilter ? el.trendTransitionFilter.value : 'ALL';
+  if (trendTransitionFilter !== 'ALL') {
+    filtered = filtered.filter(r => {
+      try {
+        const t = calculateTrendTransitionPriority(r || {});
+        if (trendTransitionFilter === 'WATCH') return Number(t?.score || 0) >= 45;
+        if (trendTransitionFilter === 'PRE_BREAKDOWN') return Number(t?.score || 0) >= 60;
+        if (trendTransitionFilter === 'HIGH') return Number(t?.score || 0) >= 75;
+        if (trendTransitionFilter === 'CONFIRMED') return String(t?.code || '') === 'CONFIRMED';
+      } catch (_) {}
+      return false;
+    });
   }
 
   if (!showOnlyDist) return filtered;
@@ -6853,7 +6876,12 @@ function getFinalRecommendation(item){
   evidence.push(`Structure ${phase}`);
 
   confidence=Math.max(1,Math.min(98,Number(confidence)||1));
-  return {sentence,rationale,state,confidence,action,tradeBias,evidence,confirmed,developing,accum,rsi4h,vol,sim:simPct,blow,phase,warningScore,rsi1d,rsi15,a15,a1h,a4h};
+  const unifiedTrend = String(unifiedForFinal?.trend || unifiedForFinal?.meta?.ema70200Direction || 'UNKNOWN');
+  const directionalOverride = finalBearishReversal ? 'BEARISH REVERSAL CONFIRMED'
+    : finalBullishReversal ? 'BULLISH REVERSAL CONFIRMED' : 'NONE';
+  const direction = finalBearishReversal || /bearish/i.test(tradeBias) ? 'BEARISH'
+    : finalBullishReversal || /bullish|controlled|recovery/i.test(tradeBias) ? 'BULLISH' : 'NEUTRAL';
+  return {sentence,rationale,state,confidence,action,tradeBias,direction,trend:unifiedTrend,directionalOverride,evidence,confirmed,developing,accum,rsi4h,vol,sim:simPct,blow,phase,warningScore,rsi1d,rsi15,a15,a1h,a4h};
 }
 
 /* ---------- PROFESSIONAL INTERPRETATION UI ---------- */
@@ -6879,7 +6907,14 @@ function professionalState(item, rec){
   const unified = (()=>{try{return typeof calculateUnifiedMarketCycle==='function'?calculateUnifiedMarketCycle(r):null;}catch(e){return null;}})();
   const reversalBear = !!unified?.meta?.bearishReversalConfirmed;
   const reversalBull = !!unified?.meta?.bullishReversalConfirmed;
-  if(reversalBear) return {title:'🔴 BEARISH REVERSAL CONFIRMED', confidence:Math.max(75,Math.min(98,Number(unified.reversal.confidence||rec.confidence||75))), sentence:'Directional reversal is confirmed. The short side is favored, but execution still requires 15m rejection + lower-high confirmation.', tone:'red'};
+  // The Market Read is a presentation of the same final authority used by Trader Decision.
+  // Do not let legacy phase labels create a second, conflicting verdict.
+  if(rec && rec.state){
+    const st=String(rec.state);
+    const tone=/BEARISH|CORRECTION|BREAKDOWN/i.test(st)?'red':/BULLISH|RECOVERY|ACCUMULATION/i.test(st)?'green':/WATCH|EXTENDED|DEVELOPING/i.test(st)?'orange':'neutral';
+    return {title:st, confidence:Number(rec.confidence||0), sentence:String(rec.sentence||rec.action||''), tone};
+  }
+  if(reversalBear) return {title:'🔴 BEARISH REVERSAL CONFIRMED', confidence:Math.max(75,Math.min(98,Number(unified.reversal?.confidence||rec.confidence||75))), sentence:'Directional reversal is confirmed. The short side is favored, but execution still requires 15m rejection + lower-high confirmation.', tone:'red'};
   if(reversalBull) return {title:'🟢 BULLISH REVERSAL CONFIRMED', confidence:Math.max(75,Math.min(98,Number(unified.reversal.confidence||rec.confidence||75))), sentence:'Directional reversal is confirmed. The long side is favored, but execution still requires 15m reclaim + higher-low confirmation.', tone:'green'};
   if(confirmed) return {
     title:'🔴 SIGNIFICANT CORRECTION CONFIRMED',
@@ -7046,7 +7081,9 @@ function calculateTimingFramework(item, side){
   const ll=!!(lastL&&prevL&&lastL.price<prevL.price);
   const hl=!!(lastL&&prevL&&lastL.price>prevL.price);
   const hh=!!(lastH&&prevH&&lastH.price>prevH.price);
-  const latest=bars.at(-1), prev=bars.at(-2);
+  // Execution triggers must be based on a completed 15m candle, never the live/forming bar.
+  const completedBars=bars.filter(k=>{ const ct=Number(k?.[6]); return Number.isFinite(ct) ? ct<=Date.now() : true; });
+  const latest=completedBars.at(-1), prev=completedBars.at(-2);
   const latestClose=Number(latest?.[4]), latestHigh=Number(latest?.[2]), latestLow=Number(latest?.[3]);
   const prevLow=Number(prev?.[3]), prevHigh=Number(prev?.[2]);
   const bearishBreak=ll || (Number.isFinite(latestClose)&&Number.isFinite(prevLow)&&latestClose<prevLow);
@@ -7757,7 +7794,7 @@ function renderTraderDecisionBlock(r, compact=false){
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION <span style="font-size:9px;color:#7edcff;letter-spacing:.08em">• FINAL DECISION ENGINE</span></div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
     <div class="finalDecisionAuthority"><div class="fdaTitle">FINAL DECISION ENGINE • AUTHORITATIVE</div><div class="fdaState">${currentState}</div><div class="fdaSub">All calculated scanner evidence is synthesized here. Trader Decision, entry status and primary execution path follow this result. 4H/1H = context; 15m = execution.</div></div>\n    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
-    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
+    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
@@ -7836,20 +7873,9 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
       bullish:!!u?.meta?.bullishReversalConfirmed
     };
   }catch(_){}
-  const action = marketReadReversal.bearish
-    ? 'Bearish reversal is confirmed against the prior bullish trend. Do not chase the first breakdown; wait for the defined rejection + lower-high execution trigger.'
-    : marketReadReversal.bullish
-      ? 'Bullish reversal is confirmed against the prior bearish trend. Do not chase the first recovery; wait for the defined reclaim + higher-low execution trigger.'
-      : confirmed
-        ? 'Avoid aggressive longs until support and higher-timeframe structure recover. For shorts, wait for a defined rejection or failed bounce rather than chasing the decline.'
-        : dist && rsi4h>=80
-          ? 'Do not chase the upside. For a short, wait for a failed bounce/rejection and actual downside structure. For a long, wait for a higher-low plus improving 4H accumulation.'
-          : rec.action;
-  const bias = marketReadReversal.bearish
-    ? 'Bearish Reversal Confirmed'
-    : marketReadReversal.bullish
-      ? 'Bullish Reversal Confirmed'
-      : confirmed ? 'Neutral / Cautious Bearish' : (dist || rsi4h>=80 ? 'Bearish / Cautious' : rec.tradeBias);
+  // Interpretation is explanatory only; its action/bias must mirror the same Final Decision Engine.
+  const action = String(rec?.action || 'Wait for confirmation.');
+  const bias = String(rec?.tradeBias || 'Neutral');
   const readWhy = dist && rsi4h>=80
     ? `Why: ${Number((r.phase?.reasons||[]).length)} structural reason(s) + 4H accumulation ${a4h}% + extreme RSI ${rsi4h.toFixed(1)}.`
     : `Why: ${rec.rationale}.`;
@@ -10251,24 +10277,8 @@ el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensiti
     return `<div class="ttQueue"><div class="ttQueueTitle">⭐ PRIORITY QUEUE • CHECK TOP TO BOTTOM</div>${top.map((x,i)=>{const c=priorityColor(x.t.score);return `<div class="ttQueueRow"><div class="ttQueueRank">${i+1}</div><div><div class="ttQueueSym">${esc(x.r.symbol||'—')}</div><div class="ttQueueHint">${esc(x.t.reasons.slice(0,2).join(' • ')||'Transition watch')}</div></div><div class="ttQueueState" style="color:${c}">${esc(x.t.state.replace(/^\S+\s*/,''))}</div><div class="ttQueueScore" style="color:${c}">${x.t.score}/100</div></div>`}).join('')}<div class="ttLegend">Workflow: <strong>Scan → Rank → Investigate → Confirm → Trade Setup.</strong> Ignore low-priority names unless you have a specific reason to inspect them.</div></div>`;
   }
 
-  // Add the new sort key without disturbing legacy sort keys.
-  if(typeof window.getValueForKey==='function'){
-    const oldGetValueForKey=window.getValueForKey;
-    window.getValueForKey=function(r,key){if(key==='trendTransition')return calculateTrendTransitionPriority(r).score;return oldGetValueForKey(r,key);};
-  }
-
-  // The functions are global declarations in the original page, so replace the global
-  // binding used by renderActiveView while retaining the original behavior.
-  if(typeof window.filterResultsForDist==='function'){
-    const oldFilter=window.filterResultsForDist;
-    window.filterResultsForDist=function(results){
-      let out=oldFilter(results);
-      const f=document.getElementById('trendTransitionFilter');
-      const v=f?f.value:'ALL';
-      if(v!=='ALL') out=out.filter(r=>{const t=calculateTrendTransitionPriority(r);if(v==='WATCH')return t.score>=45;if(v==='PRE_BREAKDOWN')return t.score>=60;if(v==='HIGH')return t.score>=75;if(v==='CONFIRMED')return t.code==='CONFIRMED';return true;});
-      return out;
-    };
-  }
+  // Trend-transition sorting/filtering are implemented directly in the primary
+  // sorter/filter pipeline above; no global function wrapping is required.
 
   function decorateQueue(){
     // No-op: priority/decision UI is rendered once by the primary card renderer.
