@@ -8073,20 +8073,61 @@ function calculateUnifiedMarketCycle(item){
     // Return-to-normal is context only. It never authorizes Support / Recovery.
     const returnToNormalActive=!!returnToNormal?.isReturn;
 
-    // A unified reversal confirmation requires a real structural recovery,
-    // not RSI alone: HL + EMA14/21 reclaim + bullish structure/stack.
+    // ===== COUNTER-TREND REVERSAL =====
+    // "Reversal" means a reversal AGAINST the current trend:
+    //   Bullish trend -> Bearish reversal, but ONLY while price is ABOVE 15m EMA200.
+    //   Bearish trend -> Bullish reversal, but ONLY while price is BELOW 15m EMA200.
+    // EMA200 is the location filter used by the Correction Guide; it is not
+    // itself a reversal trigger.
     const ema14Reclaim=price>e14;
     const ema21Reclaim=price>e21;
-    const reversalConfirmed=(hl>=1 && ema14Reclaim && ema21Reclaim && (hh>=1||bullishStack) && !supportFailed);
+    const ema14Loss=price<e14;
+    const ema21Loss=price<e21;
+    const bullishTrend=(bullishStack && aboveAll) || (fastBull && !belowAll);
+    const bearishTrend=(bearishStack && belowAll) || (fastBear && !aboveAll);
+    const aboveEma200=ema200_15>0 && price>ema200_15;
+    const belowEma200=ema200_15>0 && price<ema200_15;
+
+    // Bearish reversal of a bullish trend: require bearish structural evidence
+    // and keep the reversal location above EMA200.
+    const bearishReversalConfirmed=(
+      bullishTrend &&
+      aboveEma200 &&
+      lh>=1 &&
+      ll>=1 &&
+      ema14Loss &&
+      ema21Loss
+    );
+
+    // Bullish reversal of a bearish trend: require bullish structural evidence
+    // and keep the reversal location below EMA200.
+    const bullishReversalConfirmed=(
+      bearishTrend &&
+      belowEma200 &&
+      hl>=1 &&
+      hh>=1 &&
+      ema14Reclaim &&
+      ema21Reclaim
+    );
+
+    const reversalConfirmed=bearishReversalConfirmed || bullishReversalConfirmed;
+
+    // Keep the old recovery detector separate. A recovery is not the same thing
+    // as a counter-trend reversal; this prevents the new reversal definition
+    // from breaking the Correction Guide's recovery/cycle logic.
+    const bullishRecoveryConfirmed=(
+      hl>=1 &&
+      ema14Reclaim &&
+      ema21Reclaim &&
+      (hh>=1||bullishStack) &&
+      !supportFailed
+    );
 
     // IMPORTANT: the Trader Decision's generic "return-to-normal" label is
     // contextual and must NOT move the cycle into Support / Recovery.
-    // Recovery is authoritative only after the Correction Guide itself says
-    // POST_CORRECTION_RECOVERY, or after a confirmed correction has a real
-    // structural reversal. Oversold/bounce conditions alone never qualify.
     const recoveryConfirmed=!supportFailed && (
       correctionRecoveryCode ||
-      (correctionConfirmed && reversalConfirmed)
+      (correctionConfirmed && bullishRecoveryConfirmed)
     );
     const bounceOnly=(rsiOversold||rsiStretched) && (supportTest||price>e14) && !reversalConfirmed;
 
@@ -8218,13 +8259,19 @@ function calculateUnifiedMarketCycle(item){
                 : 'Wait for structural resolution before committing heavily.';
 
     return {
-      code,phase,state,confidence,tone,trend,momentum,location,reversal:reversalConfirmed?'BULLISH REVERSAL / RECOVERY — CONFIRMED':bounceOnly?'BOUNCE RISK — NOT REVERSAL':'NOT CONFIRMED',action,
+      code,phase,state,confidence,tone,trend,momentum,location,reversal:bearishReversalConfirmed
+        ?'BEARISH REVERSAL — CONFIRMED'
+        :bullishReversalConfirmed
+          ?'BULLISH REVERSAL — CONFIRMED'
+          :bounceOnly
+            ?'BOUNCE RISK — NOT REVERSAL'
+            :'NOT CONFIRMED',action,
       correctionStage:cg.label||'🟢 CONTINUATION',correctionCode:correctionCode||'NO_SIGNIFICANT_CORRECTION_SIGNAL',correctionConfirmed,recoveryConfirmed,
       reasons:reasons.slice(0,10),authoritative:true,
       ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull},
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
-      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bounceOnly,recoveryConfirmed}
+      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,bounceOnly,recoveryConfirmed}
     };
   }catch(err){
     return {code:'ERROR',phase:'UNKNOWN',state:'⚪ MARKET-CYCLE UNAVAILABLE',confidence:0,authoritative:false,tone:'neutral',trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',action:'Use the existing independent detectors until the unified engine recovers.',reasons:[`Unified market-cycle error: ${err.message}`],ema:{},structure:{},support:null,resistance:null,meta:{}};
