@@ -5527,18 +5527,14 @@ function getDisplayTraderBias(r){
     };
   }catch(_){ reversal={bearish:false,bullish:false}; }
 
-  if(isBull){
-    return reversal.bearish
-      ? 'Bearish Reversal Confirmed'
-      : 'Bullish • Bearish Risk Elevated';
-  }
-  if(isBear){
-    return reversal.bullish
-      ? 'Bullish Reversal Confirmed'
-      : 'Bearish';
-  }
+  // Reversal-first: do not wait for the legacy Market Structure label to
+  // change from MIXED to BULLISH/BEARISH after the reversal is confirmed.
+  if(reversal.bearish) return 'Bearish Reversal Confirmed';
+  if(reversal.bullish) return 'Bullish Reversal Confirmed';
 
-  // Mixed/unknown structure keeps the existing recommendation language.
+  if(isBull) return 'Bullish • Bearish Risk Elevated';
+  if(isBear) return 'Bearish';
+
   const rec=getFinalRecommendation(item);
   return String(rec?.tradeBias || 'Neutral').trim();
 }
@@ -6891,7 +6887,13 @@ function calculateTimingFramework(item, side){
   const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'EARLY':'NOT YET';
   const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'EARLY':'NOT YET';
   const correctionConfirmed=Number(cg.ema200Stretch15)<0;
-  const primary=requested==='long'?'long':requested==='short'?'short':shortLocation&&!longLocation?'short':longLocation&&!shortLocation?'long':setupShort?'short':'long';
+  let reversalSide='';
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(r) : null;
+    if(u?.meta?.bearishReversalConfirmed) reversalSide='short';
+    else if(u?.meta?.bullishReversalConfirmed) reversalSide='long';
+  }catch(_){}
+  const primary=requested==='long'?'long':requested==='short'?'short':reversalSide || (shortLocation&&!longLocation?'short':longLocation&&!shortLocation?'long':setupShort?'short':'long');
   return {short:{setup:setupShort,location:shortLocation,rejection:rejectionShort,lh,ll:bearishBreak,entry:shortEntry,best:shortBest},long:{setup:setupLong,location:longLocation,reclaim:rejectionLong,hl,hh:bullishBreak,entry:longEntry,best:longBest},correctionConfirmed,primary};
 }
 
@@ -7230,13 +7232,22 @@ function renderTraderDecisionBlock(r, compact=false){
   const masterIsBullish=/\bBULLISH\b/.test(masterStructuralBias) && !/\bBEARISH\b/.test(masterStructuralBias);
   const masterIsBearish=/\bBEARISH\b/.test(masterStructuralBias);
   let counterTrendReversal={bearish:false,bullish:false};
+  let unifiedCycleForDecision=null;
   try{
-    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
+    unifiedCycleForDecision=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(item) : null;
     counterTrendReversal={
-      bearish:!!u?.meta?.bearishReversalConfirmed,
-      bullish:!!u?.meta?.bullishReversalConfirmed
+      bearish:!!unifiedCycleForDecision?.meta?.bearishReversalConfirmed,
+      bullish:!!unifiedCycleForDecision?.meta?.bullishReversalConfirmed
     };
   }catch(_){}
+
+  // REVERSAL HAS PRIORITY OVER THE RAW/LEGACY STRUCTURAL-BIAS LABEL.
+  // The unified reversal detector can legitimately report a counter-trend
+  // reversal while the older Market Structure label is still MIXED. Never
+  // downgrade a confirmed reversal to "Risk / Neutral" just because that
+  // legacy label has not flipped yet.
+  const confirmedBearishReversal=counterTrendReversal.bearish;
+  const confirmedBullishReversal=counterTrendReversal.bullish;
 
   const liq=item.liquidity || (typeof detectLiquidityIntelligence==='function' ? detectLiquidityIntelligence(item) : {});
   const liqScore=Number(liq?.score||0);
@@ -7448,50 +7459,61 @@ function renderTraderDecisionBlock(r, compact=false){
   }
 
   // Final directional normalization.
-  // Risk language remains a qualifier; it cannot replace the authoritative
-  // structural direction. A direction flip requires the confirmed
-  // counter-trend reversal state above.
-  if(masterIsBullish){
-    if(counterTrendReversal.bearish){
-      bias='Bearish Reversal Confirmed';
-      currentState='🔴 BEARISH REVERSAL CONFIRMED';
-      shortEntry='🔴 Bearish reversal — confirmed';
-      longEntry='⏸ Wait — bullish structure has reversed';
-      readiness='🔴 Bearish reversal confirmed';
-    }else{
-      bias=(distribution || overheated || structureBear)
-        ? 'Bullish • Bearish Risk Elevated'
-        : (bias || 'Bullish');
-      if(/bearish|neutral/i.test(String(bias)) && !/Bullish/.test(String(bias))){
-        bias='Bullish • Bearish Risk Elevated';
-      }
+  // CONFIRMED COUNTER-TREND REVERSAL IS THE FIRST DIRECTIONAL AUTHORITY.
+  // This intentionally runs BEFORE masterIsBullish/masterIsBearish because
+  // the independent structural label can remain MIXED during the transition.
+  if(confirmedBearishReversal){
+    bias='Bearish Reversal Confirmed';
+    currentState='🔴 BEARISH REVERSAL CONFIRMED';
+    shortEntry='🔴 Confirmed reversal — execute only on the defined rejection/LH trigger';
+    longEntry='⏸ Wait — bullish structure has reversed';
+    readiness='🔴 Bearish reversal confirmed';
+    bestAction='Bearish reversal is confirmed against the prior bullish trend. Do not chase the first breakdown; use the defined selling-zone rejection + lower-high trigger for execution.';
+  }else if(confirmedBullishReversal){
+    bias='Bullish Reversal Confirmed';
+    currentState='🟢 BULLISH REVERSAL CONFIRMED';
+    longEntry='🟢 Confirmed reversal — execute only on the defined reclaim/HL trigger';
+    shortEntry='⏸ Wait — bearish structure has reversed';
+    readiness='🟢 Bullish reversal confirmed';
+    bestAction='Bullish reversal is confirmed against the prior bearish trend. Do not chase the first recovery; use the defined buying-zone reclaim + higher-low trigger for execution.';
+  }else if(masterIsBullish){
+    bias=(distribution || overheated || structureBear)
+      ? 'Bullish • Bearish Risk Elevated'
+      : (bias || 'Bullish');
+    if(/bearish|neutral/i.test(String(bias)) && !/Bullish/.test(String(bias))){
+      bias='Bullish • Bearish Risk Elevated';
     }
   }else if(masterIsBearish){
-    if(counterTrendReversal.bullish){
-      bias='Bullish Reversal Confirmed';
-      currentState='🟢 BULLISH REVERSAL CONFIRMED';
-      longEntry='🟢 Bullish reversal — confirmed';
-      shortEntry='⏸ Wait — bearish structure has reversed';
-      readiness='🟢 Bullish reversal confirmed';
-    }else{
-      bias=(recovery || postCorrection)
-        ? 'Bearish • Bullish Recovery Risk'
-        : 'Bearish';
-    }
+    bias=(recovery || postCorrection)
+      ? 'Bearish • Bullish Recovery Risk'
+      : 'Bearish';
   }
 
   // Zone-aware action overlay.
   // IMPORTANT: unresolved overlap is a hard no-confirmed-direction state.
   if(traderZones.contested){
-    currentState='⚠️ OVERLAPPING ZONES / DIRECTION CONTESTED';
-    bias='Neutral — Wait for Zone Resolution';
+    // A zone contest is an EXECUTION constraint, not a cancellation of an
+    // already-confirmed counter-trend reversal. Preserve the directional
+    // reversal label while forcing both entries to wait for zone resolution.
+    currentState=confirmedBearishReversal
+      ? '🔴 BEARISH REVERSAL CONFIRMED • ZONE CONTESTED'
+      : confirmedBullishReversal
+        ? '🟢 BULLISH REVERSAL CONFIRMED • ZONE CONTESTED'
+        : '⚠️ OVERLAPPING ZONES / DIRECTION CONTESTED';
+    if(!confirmedBearishReversal && !confirmedBullishReversal){
+      bias='Neutral — Wait for Zone Resolution';
+    }
     longEntry='⏸ Wait — buying/selling zones overlap';
     shortEntry='⏸ Wait — buying/selling zones overlap';
-    readiness='⚠️ Contested / unresolved';
-    bestAction=`⚠️ OVERLAPPING PRICE ZONES — NO CONFIRMED DIRECTION. Price is simultaneously inside the buying zone (${formatTraderZonePrice(buyZone?.low)}–${formatTraderZonePrice(buyZone?.high)}) and selling zone (${formatTraderZonePrice(sellZone?.low)}–${formatTraderZonePrice(sellZone?.high)}). Do not treat either zone as confirmed. Wait for directional resolution: 15m reclaim + higher-low favors BUY; 15m rejection + lower-high favors SELL.`;
+    readiness=confirmedBearishReversal
+      ? '🔴 Reversal confirmed • zone resolution required'
+      : confirmedBullishReversal
+        ? '🟢 Reversal confirmed • zone resolution required'
+        : '⚠️ Contested / unresolved';
+    bestAction=`${confirmedBearishReversal?'🔴 BEARISH REVERSAL CONFIRMED. ':confirmedBullishReversal?'🟢 BULLISH REVERSAL CONFIRMED. ':''}⚠️ OVERLAPPING PRICE ZONES — execution is blocked until directional resolution. Price is simultaneously inside the buying zone (${formatTraderZonePrice(buyZone?.low)}–${formatTraderZonePrice(buyZone?.high)}) and selling zone (${formatTraderZonePrice(sellZone?.low)}–${formatTraderZonePrice(sellZone?.high)}). Wait for 15m reclaim + higher-low or rejection + lower-high to resolve the zone contest.`;
     missing.unshift('zone resolution: 15m reclaim + higher-low OR rejection + lower-high');
     invalid.push('chasing either side while zones remain contested');
-    decisionScore=Math.min(decisionScore || 50, 55);
+    decisionScore=Math.min(decisionScore || 50, confirmedBearishReversal || confirmedBullishReversal ? 75 : 55);
   } else if(activeTraderZone){
     if(activeTraderZone.side==='BUY'){
       bestAction = activeTraderZone.confirmed
@@ -7605,12 +7627,28 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
   const shortTargets=(srec.targets||[]).filter(x=>x!=null && Number.isFinite(Number(x)));
   const resistance=(longTargets?[longTargets.t1,longTargets.t2,longTargets.t3]:[]).filter(x=>x!=null && Number.isFinite(Number(x)));
   const support=(longTargets?[longTargets.s1,longTargets.s2,longTargets.s3]:[]).filter(x=>x!=null && Number.isFinite(Number(x)));
-  const action = confirmed
-    ? 'Avoid aggressive longs until support and higher-timeframe structure recover. For shorts, wait for a defined rejection or failed bounce rather than chasing the decline.'
-    : dist && rsi4h>=80
-      ? 'Do not chase the upside. For a short, wait for a failed bounce/rejection and actual downside structure. For a long, wait for a higher-low plus improving 4H accumulation.'
-      : rec.action;
-  const bias = confirmed ? 'Neutral / Cautious Bearish' : (dist || rsi4h>=80 ? 'Bearish / Cautious' : rec.tradeBias);
+  let marketReadReversal={bearish:false,bullish:false};
+  try{
+    const u=(typeof calculateUnifiedMarketCycle==='function') ? calculateUnifiedMarketCycle(r) : null;
+    marketReadReversal={
+      bearish:!!u?.meta?.bearishReversalConfirmed,
+      bullish:!!u?.meta?.bullishReversalConfirmed
+    };
+  }catch(_){}
+  const action = marketReadReversal.bearish
+    ? 'Bearish reversal is confirmed against the prior bullish trend. Do not chase the first breakdown; wait for the defined rejection + lower-high execution trigger.'
+    : marketReadReversal.bullish
+      ? 'Bullish reversal is confirmed against the prior bearish trend. Do not chase the first recovery; wait for the defined reclaim + higher-low execution trigger.'
+      : confirmed
+        ? 'Avoid aggressive longs until support and higher-timeframe structure recover. For shorts, wait for a defined rejection or failed bounce rather than chasing the decline.'
+        : dist && rsi4h>=80
+          ? 'Do not chase the upside. For a short, wait for a failed bounce/rejection and actual downside structure. For a long, wait for a higher-low plus improving 4H accumulation.'
+          : rec.action;
+  const bias = marketReadReversal.bearish
+    ? 'Bearish Reversal Confirmed'
+    : marketReadReversal.bullish
+      ? 'Bullish Reversal Confirmed'
+      : confirmed ? 'Neutral / Cautious Bearish' : (dist || rsi4h>=80 ? 'Bearish / Cautious' : rec.tradeBias);
   const readWhy = dist && rsi4h>=80
     ? `Why: ${Number((r.phase?.reasons||[]).length)} structural reason(s) + 4H accumulation ${a4h}% + extreme RSI ${rsi4h.toFixed(1)}.`
     : `Why: ${rec.rationale}.`;
@@ -8375,6 +8413,17 @@ function calculateUnifiedMarketCycle(item){
     if(phase==='CORRECTION DEVELOPING' && nearResistance) state='🟠 CORRECTION DEVELOPING → 🟠 RESISTANCE TEST';
     if(phase==='POST-CORRECTION / RECOVERY') state='🟣 POST-CORRECTION / RECOVERY';
 
+    // A confirmed counter-trend reversal is more specific than the generic
+    // correction/distribution phase. Keep the correction phase internally for
+    // filtering, but surface the confirmed reversal as the current state.
+    if(bearishReversalConfirmed){
+      state='🔴 BEARISH REVERSAL CONFIRMED';
+      tone='red';
+    }else if(bullishReversalConfirmed){
+      state='🟢 BULLISH REVERSAL CONFIRMED';
+      tone='green';
+    }
+
     let confidence=35;
     if(phase==='POST-CORRECTION / RECOVERY') confidence=70+(bullishRecoveryConfirmed?12:0)+(correctionRecoveryCode?8:0);
     else if(phase==='MARKDOWN / POST-TOP') confidence=55+(belowAll?12:0)+(bearishStack?10:0)+(bearishStructure?10:0)+(correctionConfirmed?10:0);
@@ -8384,12 +8433,16 @@ function calculateUnifiedMarketCycle(item){
     else if(phase.includes('ACCUMULATION')) confidence=50+Math.min(25,Number(item.accumCombined?.confidence||0)*0.25)+(hl?10:0);
     confidence=clamp(Math.round(confidence),0,98);
 
-    const action=(phase==='POST-CORRECTION / RECOVERY')
-      ? 'Correction is complete enough to enter recovery-watch mode. Do not chase; require sustained higher-lows, liquidity acceptance and stronger 4H/1D support before scaling.'
-      : phase==='MARKDOWN / POST-TOP'
-        ? 'Correction is confirmed. Stay defensive; wait for support defense + higher-low + EMA reclaim for recovery, or failed bounce/lower-high for continuation.'
-        : phase==='CORRECTION DEVELOPING'
-          ? 'Correction is developing but not confirmed. Avoid chasing; wait for support/rejection structure or 15m EMA200 confirmation.'
+    const action=(bearishReversalConfirmed)
+      ? 'Bearish reversal is confirmed against the prior bullish trend. Avoid chasing; wait for rejection + lower-high / bearish-break execution confirmation.'
+      : bullishReversalConfirmed
+        ? 'Bullish reversal is confirmed against the prior bearish trend. Avoid chasing; wait for reclaim + higher-low / bullish-break execution confirmation.'
+        : phase==='POST-CORRECTION / RECOVERY'
+          ? 'Correction is complete enough to enter recovery-watch mode. Do not chase; require sustained higher-lows, liquidity acceptance and stronger 4H/1D support before scaling.'
+          : phase==='MARKDOWN / POST-TOP'
+            ? 'Correction is confirmed. Stay defensive; wait for support defense + higher-low + EMA reclaim for recovery, or failed bounce/lower-high for continuation.'
+            : phase==='CORRECTION DEVELOPING'
+              ? 'Correction is developing but not confirmed. Avoid chasing; wait for support/rejection structure or 15m EMA200 confirmation.'
           : phase==='MARKUP'
             ? 'Favor pullbacks that hold the EMA structure and form higher-lows; avoid chasing extreme expansion.'
             : phase==='DISTRIBUTION'
