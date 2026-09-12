@@ -5685,6 +5685,12 @@ function getEntryStatusSnapshot(r){
   // the execution gate. Execution confirmation is evaluated on 15m candles.
   let timing=null;
   try{ timing=typeof calculateTimingFramework==='function' ? calculateTimingFramework(item,'') : null; }catch(_){}
+  const strictShort=timing?.short||{};
+  const strictLong=timing?.long||{};
+  // Never infer failed-bounce status from a raw lower-high, phase score or
+  // liquidity score. The filter must use the same strict 15m execution gate.
+  const strictShortCode = strictShort.best ? 'CONFIRMED' : strictShort.entry==='CONDITIONAL' ? 'CONDITIONAL' : strictShort.lh ? 'LOWER_HIGH' : strictShort.rejection ? 'REJECTION' : 'WAIT';
+  const strictLongCode = strictLong.best ? 'CONFIRMED' : strictLong.entry==='CONDITIONAL' ? 'CONDITIONAL' : strictLong.hl ? 'HIGHER_LOW' : strictLong.reclaim ? 'RECLAIM' : 'WAIT';
   // Reversal direction is read directly from the Unified Market-Cycle
   // authority. Never reference an out-of-scope `rec` here.
   let reversalBear=false, reversalBull=false;
@@ -5724,12 +5730,12 @@ function getEntryStatusSnapshot(r){
   }catch(_){ }
   if(finalDirection==='BEARISH'){
     const t=timing?.short||{};
-    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.rejection&&t.lh?'LOWER_HIGH':t.rejection?'REJECTION':'WAIT';
+    const code=t.best?'CONFIRMED':t.entry==='CONDITIONAL'?'CONDITIONAL':t.lh?'LOWER_HIGH':t.rejection?'REJECTION':'WAIT';
     return {long:'WAIT',short:code,longLabel:'⏸ Wait — final decision is bearish',shortLabel:code==='CONFIRMED'?'🟢 15m rejection + lower-high confirmed':code==='LOWER_HIGH'?'🟠 15m lower-high present — execution confirmation pending':'⏸ Wait for 15m rejection + lower-high'};
   }
   if(finalDirection==='BULLISH'){
     const t=timing?.long||{};
-    const code=t.entry==='CONFIRMED'?'CONFIRMED':t.reclaim&&t.hl?'ACCEPTANCE':t.reclaim?'CONDITIONAL':'WAIT';
+    const code=t.best?'CONFIRMED':t.entry==='CONDITIONAL'?'CONDITIONAL':t.hl?'HIGHER_LOW':t.reclaim?'RECLAIM':'WAIT';
     return {long:code,short:'WAIT',longLabel:code==='CONFIRMED'?'🟢 15m reclaim + higher-low confirmed':code==='ACCEPTANCE'?'🟠 15m higher-low present — execution confirmation pending':'⏸ Wait for 15m reclaim + higher-low',shortLabel:'⏸ Wait — final decision is bullish'};
   }
 
@@ -5755,9 +5761,9 @@ function getEntryStatusSnapshot(r){
     if(liqUpsideSweep){
       return {
         long: hasHigherLow ? 'CONDITIONAL' : 'NOT_READY',
-        short: (hasLowerHigh || lr>=60) ? 'LOWER_HIGH' : 'WAIT',
+        short: strictShortCode,
         longLabel: hasHigherLow ? '🟡 Conditional — higher-low + liquidity reclaim' : '❌ Not yet',
-        shortLabel: (hasLowerHigh || lr>=60) ? '🟠 Conditional — failed reclaim / lower-high' : '⏸ Wait'
+        shortLabel: strictShortCode==='CONFIRMED'?'🟢 15m failed bounce + lower-high + bearish break':strictShortCode==='CONDITIONAL'?'🟠 15m failed bounce + lower-high — execution developing':strictShortCode==='LOWER_HIGH'?'🟠 15m lower-high detected — bounce failure not confirmed':strictShortCode==='REJECTION'?'🟠 15m rejection detected — lower-high still required':'⏸ Wait for failed bounce + lower-high'
       };
     }
     if(liqDownsideSweep){
@@ -5770,21 +5776,38 @@ function getEntryStatusSnapshot(r){
     }
     return {
       long: recoveryConfirmed ? 'CONFIRMED' : 'NOT_READY',
-      short: (Number(item.lowerHighCount||0)>0 || hasLowerHigh || Number(item.downsideStructureScore||0)>=35) ? 'LOWER_HIGH' : 'WAIT',
+      short: strictShortCode,
       longLabel: recoveryConfirmed ? '🟢 Staged recovery entry' : '❌ Not yet',
-      shortLabel: (hasLowerHigh || shortConditional) ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait'
+      shortLabel: strictShortCode==='CONFIRMED'?'🟢 15m failed bounce + lower-high + bearish break':strictShortCode==='CONDITIONAL'?'🟠 15m failed bounce + lower-high — execution developing':strictShortCode==='LOWER_HIGH'?'🟠 15m lower-high detected — bounce failure not confirmed':strictShortCode==='REJECTION'?'🟠 15m rejection detected — lower-high still required':'⏸ Wait'
     };
   }
   if(correctionConfirmed){
     return {
-      long:(strongHTF && hasHigherLow)?'STAGED':'WAIT',
-      short:structureBear?'REJECTION':'WAIT',
-      longLabel:(strongHTF&&hasHigherLow)?'🟡 Recovery long — staged only':'❌ Wait — correction active',
-      shortLabel:structureBear?'🟠 Conditional — rejection / failed bounce':'⏸ Wait'
+      long:strictLongCode,
+      short:strictShortCode,
+      longLabel:strictLongCode==='CONFIRMED'?'🟢 15m reclaim + higher-low + bullish break confirmed':
+               strictLongCode==='CONDITIONAL'?'🟠 15m reclaim + higher-low — execution developing':
+               strictLongCode==='HIGHER_LOW'?'🟠 15m higher-low detected — reclaim confirmation pending':
+               strictLongCode==='RECLAIM'?'🟠 15m reclaim detected — higher-low still required':
+               '❌ Wait — correction active',
+      shortLabel:strictShortCode==='CONFIRMED'?'🟢 15m failed bounce + lower-high + bearish break':
+                strictShortCode==='CONDITIONAL'?'🟠 15m failed bounce + lower-high — execution developing':
+                strictShortCode==='LOWER_HIGH'?'🟠 15m lower-high detected — bounce failure not confirmed':
+                strictShortCode==='REJECTION'?'🟠 15m rejection detected — lower-high still required':
+                '⏸ Wait for failed bounce + lower-high'
     };
   }
   if(overheated && (distribution || Number(item.preCrash?.score||0)>=6)){
-    return {long:'DONT_CHASE', short:'REJECTION', longLabel:'❌ Don’t chase', shortLabel:'🟠 Wait for rejection / failed bounce'};
+    return {
+      long:'DONT_CHASE',
+      short:strictShortCode,
+      longLabel:'❌ Don’t chase',
+      shortLabel:strictShortCode==='CONFIRMED'?'🟢 15m failed bounce + lower-high + bearish break':
+                strictShortCode==='CONDITIONAL'?'🟠 15m failed bounce + lower-high — execution developing':
+                strictShortCode==='LOWER_HIGH'?'🟠 15m lower-high detected — bounce failure not confirmed':
+                strictShortCode==='REJECTION'?'🟠 15m rejection detected — lower-high still required':
+                '⏸ Wait for failed bounce + lower-high'
+    };
   }
   if(strongHTF && hasHigherLow && !distribution && !overheated){
     return {long:'CONFIRMED', short:'WAIT', longLabel:'🟢 Confirmed structure — staged', shortLabel:'⏸ Wait / low priority'};
@@ -7288,14 +7311,45 @@ function calculateTimingFramework(item, side){
   const rejectionLong=!!(longZone && Number.isFinite(price) && Number(price)>=Number(longZone.low) && Number(price)<=Number(longZone.high) && Number.isFinite(latestLow) && Number.isFinite(latestClose) && latestClose>latestLow && ((latestClose-latestLow)/(Math.max(1e-12,Number(latestHigh)-latestLow)))>=0.35);
   const shortLocation=!!(shortZone?.inside||shortZone?.near);
   const longLocation=!!(longZone?.inside||longZone?.near);
-  const shortEarly=rejectionShort&&lh;
+  // STRICT 15m failed-bounce sequence:
+  // 1) price first bounces back toward the execution zone,
+  // 2) the bounce is rejected on a completed candle,
+  // 3) a lower-high forms AFTER that bounce.
+  // A lower-high by itself is evidence, not a failed-bounce confirmation.
+  const shortBounceStart = (()=>{
+    if(!shortZone) return -1;
+    for(let i=bars.length-2;i>=0;i--){
+      const c=Number(bars[i]?.[4]);
+      if(Number.isFinite(c) && c < Number(shortZone.low)) return i;
+    }
+    return -1;
+  })();
+  const bounceDetectedShort = !!(shortZone && shortBounceStart>=0 && Number.isFinite(latestHigh) && latestHigh>=Number(shortZone.low));
+  const bounceFailureShort = bounceDetectedShort && rejectionShort;
+  const lhAfterBounce = !!(lastH&&prevH&&lastH.price<prevH.price && shortBounceStart>=0 && lastH.i>shortBounceStart);
+  const shortEarly=bounceFailureShort&&lhAfterBounce;
   const shortStrong=shortEarly&&bearishBreak;
   const shortBest=shortStrong && ll;
-  const longEarly=rejectionLong&&hl;
+
+  // STRICT 15m reclaim/recovery sequence for longs:
+  // price must first recover from below the buying zone, then defend/reclaim it,
+  // followed by a higher-low formed after that recovery.
+  const longBounceStart = (()=>{
+    if(!longZone) return -1;
+    for(let i=bars.length-2;i>=0;i--){
+      const c=Number(bars[i]?.[4]);
+      if(Number.isFinite(c) && c > Number(longZone.high)) return i;
+    }
+    return -1;
+  })();
+  const reclaimDetectedLong = !!(longZone && longBounceStart>=0 && Number.isFinite(latestLow) && latestLow<=Number(longZone.high));
+  const reclaimDefenseLong = reclaimDetectedLong && rejectionLong;
+  const hlAfterReclaim = !!(lastL&&prevL&&lastL.price>prevL.price && longBounceStart>=0 && lastL.i>longBounceStart);
+  const longEarly=reclaimDefenseLong&&hlAfterReclaim;
   const longStrong=longEarly&&bullishBreak;
   const longBest=longStrong && hh;
-  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'EARLY':'NOT YET';
-  const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'EARLY':'NOT YET';
+  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'CONDITIONAL':lh?'LOWER_HIGH':rejectionShort?'REJECTION':'NOT YET';
+  const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'CONDITIONAL':hl?'HIGHER_LOW':rejectionLong?'RECLAIM':'NOT YET';
   const correctionConfirmed=Number(cg.ema200Stretch15)<0;
   let reversalSide='';
   try{
@@ -7304,7 +7358,7 @@ function calculateTimingFramework(item, side){
     else if(u?.meta?.bullishReversalConfirmed) reversalSide='long';
   }catch(_){}
   const primary=requested==='long'?'long':requested==='short'?'short':reversalSide || (shortLocation&&!longLocation?'short':longLocation&&!shortLocation?'long':setupShort?'short':'long');
-  return {short:{setup:setupShort,location:shortLocation,rejection:rejectionShort,lh,ll:bearishBreak,entry:shortEntry,best:shortBest},long:{setup:setupLong,location:longLocation,reclaim:rejectionLong,hl,hh:bullishBreak,entry:longEntry,best:longBest},correctionConfirmed,primary};
+  return {short:{setup:setupShort,location:shortLocation,rejection:rejectionShort,bounceDetected:bounceDetectedShort,bounceFailure:bounceFailureShort,lh,lhAfterBounce,ll,bearishBreak,entry:shortEntry,best:shortBest},long:{setup:setupLong,location:longLocation,reclaim:rejectionLong,reclaimDetected:reclaimDetectedLong,reclaimDefense:reclaimDefenseLong,hl,hlAfterReclaim,hh,bullishBreak,entry:longEntry,best:longBest},correctionConfirmed,primary};
 }
 
 
@@ -7958,12 +8012,56 @@ function renderTraderDecisionBlock(r, compact=false){
 
   }
 
+  // FINAL EXECUTION GATE: synchronize the displayed entry statuses with the
+  // same strict 15m timing engine used by the Entry Filters. A raw lower-high,
+  // rejection, liquidity score or trend score can never authorize a short.
+  // Likewise, a raw higher-low/reclaim cannot authorize a long without the
+  // required 15m sequence.
+  try{
+    const timingFinal=calculateTimingFramework(item,'');
+    const ts=timingFinal?.short||{}, tl=timingFinal?.long||{};
+    const shortStrictLabel=ts.best?'🟢 15m failed bounce + lower-high + bearish break':
+      ts.entry==='CONDITIONAL'?'🟠 15m failed bounce + lower-high — execution developing':
+      ts.lh?'🟠 15m lower-high detected — bounce failure not confirmed':
+      ts.rejection?'🟠 15m rejection detected — lower-high still required':
+      '⏸ Wait for failed bounce + lower-high';
+    const longStrictLabel=tl.best?'🟢 15m reclaim + higher-low + bullish break confirmed':
+      tl.entry==='CONDITIONAL'?'🟠 15m reclaim + higher-low — execution developing':
+      tl.hl?'🟠 15m higher-low detected — reclaim confirmation pending':
+      tl.reclaim?'🟠 15m reclaim detected — higher-low still required':
+      '⏸ Wait for 15m reclaim + higher-low';
+
+    const contestedNow=!!traderZones?.contested;
+    const dir=String(rec?.direction||'').toUpperCase();
+    if(contestedNow){
+      longEntry='⏸ Wait — buying/selling zones overlap';
+      shortEntry='⏸ Wait — buying/selling zones overlap';
+    }else if(dir==='BEARISH'){
+      longEntry='⏸ Wait — final decision is bearish';
+      shortEntry=ts.entry==='CONFIRMED' ? shortStrictLabel :
+                 ts.entry==='CONDITIONAL' ? shortStrictLabel :
+                 ts.lh ? shortStrictLabel :
+                 ts.rejection ? shortStrictLabel :
+                 '⏸ Wait for failed bounce + lower-high';
+    }else if(dir==='BULLISH'){
+      shortEntry='⏸ Wait — final decision is bullish';
+      longEntry=tl.entry==='CONFIRMED' ? longStrictLabel :
+                tl.entry==='CONDITIONAL' ? longStrictLabel :
+                tl.hl ? longStrictLabel :
+                tl.reclaim ? longStrictLabel :
+                '⏸ Wait for 15m reclaim + higher-low';
+    }else{
+      longEntry=tl.entry==='CONFIRMED'||tl.entry==='CONDITIONAL'||tl.hl||tl.reclaim ? longStrictLabel : longEntry;
+      shortEntry=ts.entry==='CONFIRMED'||ts.entry==='CONDITIONAL'||ts.lh||ts.rejection ? shortStrictLabel : shortEntry;
+    }
+  }catch(_){ }
+
   const readinessTone=readiness.includes('🔴')?'#ff5c5c':readiness.includes('🟠')?'#ff9f43':readiness.includes('🟢')?'#2dd4bf':readiness.includes('🟣')?'#c084fc':'#ffd966';
   const compactStyle=compact?'font-size:12px;':'';
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
   const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
   const correctionText = postCorrection
-    ? `🟣 Confirmed — correction already occurred`
+    ? `🟣 Confirmed — correction completed / recovery phase`
     : correctionConfirmed
       ? `🔴 Confirmed — correction still active`
       : `🟢 Not confirmed`;
@@ -8020,7 +8118,7 @@ function renderTraderDecisionBlock(r, compact=false){
       <div class="recBox" style="margin:0"><strong>🚫 Invalidation / risk</strong><ul class="tradeList" style="margin:5px 0 0 18px">${invalidHtml}</ul></div>
     </div>
     <div class="small" style="margin-top:7px;color:var(--muted)">
-      Decision confidence ${decisionScore}% • Correction completion ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
+      Decision confidence ${decisionScore}% • Correction maturity ${correctionCompletion}% • Recovery ${liquidityRecoveryScore}% • Downside continuation ${liquidityDownsideScore}%<br>
       Structure: ${hasHigherLow?'higher-low evidence present':hasLowerHigh?'lower-high evidence present':'not confirmed'} • 15m ${a15}% / 1H ${a1h}% / 4H ${a4h}% / 1D ${a1d}%${rsi15?` • 15m RSI ${rsi15.toFixed(1)}`:''}${rsi15SessionText}${rsi4h1wText}${rsi8h1mText}
     </div>
   </div>`;
@@ -8127,7 +8225,7 @@ function renderProfessionalAnalysis(r, rec, srec, longTargets){
     <details style="margin-top:10px">
       <summary><strong>＋ Long-term positioning plan</strong></summary>
       <div class="recBox" style="margin-top:8px">
-        Starter: ~10% of planned allocation.<br>
+        ${(()=>{ const es=getEntryStatusSnapshot(r); const longActionable=/^(CONFIRMED|CONDITIONAL|STAGED)$/.test(String(es?.long||'')); return longActionable ? 'Starter allocation: only after Long Entry is explicitly actionable; size conservatively and define invalidation first.' : 'Status: WATCH / RESERVED — no allocation yet.'; })()}<br>
         Stop/invalidation: use the relevant 4H structural low, not an arbitrary percentage.<br>
         Add only after 2 of: 4H higher-low; green-volume ≥1.5× volMA; accumulation ≥70% on 4H/combined TFs.<br>
         <em style="color:var(--muted)">Rationale: cycle ${sim}%, phase "${phase}", accumulation ${accum}%.</em>
@@ -8746,9 +8844,9 @@ function calculateUnifiedMarketCycle(item){
     let location='BETWEEN STRUCTURAL LEVELS';
     const reasons=[];
 
-    if(ema70Below200 && bearishStack && belowAll) trend='STRONG BEARISH';
+    if(ema70Below200 && bearishStack && belowAll) trend='15m STRONG BEARISH / CORRECTION';
     else if(ema70Below200) trend='BEARISH';
-    else if(ema70Above200 && bullishStack && aboveAll) trend='STRONG BULLISH';
+    else if(ema70Above200 && bullishStack && aboveAll) trend='15m STRONG BULLISH';
     else if(ema70Above200) trend='BULLISH';
     else if(recoveryConfirmed && (fastBull || ema14Reclaim || ema21Reclaim)) trend='RECOVERING';
 
@@ -9190,7 +9288,7 @@ function renderCards(results){
         <details style="margin-top:10px">
           <summary><strong>＋ Long-term positioning plan</strong></summary>
           <div class="recBox" style="margin-top:8px">
-            Starter: ~10% of planned allocation.<br>
+            ${(()=>{ const es=getEntryStatusSnapshot(r); const longActionable=/^(CONFIRMED|CONDITIONAL|STAGED)$/.test(String(es?.long||'')); return longActionable ? 'Starter allocation: only after Long Entry is explicitly actionable; size conservatively and define invalidation first.' : 'Status: WATCH / RESERVED — no allocation yet.'; })()}<br>
             Stop/invalidation: use the relevant 4H structural low, not an arbitrary percentage.<br>
             Add only after 2 of: 4H higher-low; green-volume ≥1.5× volMA; accumulation ≥70% on 4H/combined TFs.<br>
             <em style="color:var(--muted)">Rationale: cycle ${simPct}%, phase "${phase.phase}", accumulation ${accum.confidence}%.</em>
