@@ -5744,7 +5744,15 @@ function getEntryStatusSnapshot(r){
   const correctionConfirmed=!!((ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
   const drop=Math.abs(Number(item.dropPctFromPeak||0));
   const rtnScore=Number(item.returnToNormal?.score||0);
-  const postCorrection=correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const ema14_15=Number(item.ema14_15 ?? item.ema14_15m ?? 0);
+  const ema21_15=Number(item.ema21_15 ?? item.ema21_15m ?? 0);
+  const livePrice=Number(item.closeNow||0);
+  const strictRecovery=!!(
+    correctionConfirmed && !overheated && hasHigherLow && livePrice>0 &&
+    ema14_15>0 && ema21_15>0 && livePrice>ema14_15 && livePrice>ema21_15 &&
+    a1d>=50 && vol>=1.20
+  );
+  const postCorrection=strictRecovery;
   const lr=Number(item.liquidity?.score||0);
   const liqEvent=String(item.liquidity?.event||'').toUpperCase();
   const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
@@ -7814,7 +7822,15 @@ function renderTraderDecisionBlock(r, compact=false){
    * the correction may already be mature or completed; it should not keep
    * printing "Correction active" merely because the correctionGuide remains red.
    */
-  const postCorrection = correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const ema14_15=Number(item.ema14_15 ?? item.ema14_15m ?? 0);
+  const ema21_15=Number(item.ema21_15 ?? item.ema21_15m ?? 0);
+  const livePrice=Number(item.closeNow||0);
+  const strictRecovery=!!(
+    correctionConfirmed && !overheated && hasHigherLow && livePrice>0 &&
+    ema14_15>0 && ema21_15>0 && livePrice>ema14_15 && livePrice>ema21_15 &&
+    a1d>=50 && vol>=1.20
+  );
+  const postCorrection = strictRecovery;
   const recoveryScore=Math.max(0,Math.min(100,Math.round(
     (hasHigherLow?28:0) +
     (a4h>=55?18:a4h>=50?10:0) +
@@ -8130,8 +8146,8 @@ function renderTraderDecisionBlock(r, compact=false){
   const compactStyle=compact?'font-size:12px;':'';
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
   const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
-  const correctionText = postCorrection
-    ? `🟣 Confirmed — recovery conditions satisfied`
+  const correctionText = strictRecovery
+    ? `🟣 Confirmed — strict recovery conditions satisfied`
     : correctionConfirmed
       ? `🔴 Confirmed — correction still active`
       : `🟢 Not confirmed`;
@@ -8922,10 +8938,19 @@ function calculateUnifiedMarketCycle(item){
     // IMPORTANT: return-to-normal is context only. Recovery is authoritative
     // after POST_CORRECTION_RECOVERY, or after a confirmed correction has a
     // genuine bullish recovery. Oversold/bounce conditions alone never qualify.
-    const recoveryConfirmed=!supportFailed && (
-      correctionRecoveryCode ||
-      (correctionConfirmed && bullishRecoveryConfirmed)
+    // STRICT RECOVERY — every gate must pass. A raw POST_CORRECTION_RECOVERY
+    // code, return-to-normal state, oversold RSI, or bounce alone cannot
+    // activate recovery. Required: 15m HL + EMA14/EMA21 reclaim + 1D accum >=50%
+    // + sustained 4H volume >=1.20x.
+    const accumChecksForRecovery=Array.isArray(item.accumChecks)?item.accumChecks:[];
+    const accum1dForRecovery=Number(accumChecksForRecovery.find(x=>String(x?.tf||'').toLowerCase()==='1d')?.result?.confidence ?? 0);
+    const volume4hForRecovery=Number(item.volSpike4||0);
+    const strictRecoveryChecklist=!!(
+      correctionConfirmed && !supportFailed &&
+      hl>=1 && ema14Reclaim && ema21Reclaim &&
+      accum1dForRecovery>=50 && volume4hForRecovery>=1.20
     );
+    const recoveryConfirmed=strictRecoveryChecklist;
     const bounceOnly=(rsiOversold||rsiStretched) && (supportTest||price>e14) && !reversalConfirmed;
 
     let phase='NORMAL / TRENDING', code='TRENDING', state='⚪ NEUTRAL TREND', tone='neutral';
