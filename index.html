@@ -8128,7 +8128,7 @@ function renderTraderDecisionBlock(r, compact=false){
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
   const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
   const correctionText = postCorrection
-    ? `🟣 Confirmed — correction completed / recovery phase`
+    ? `🟣 Confirmed — recovery conditions satisfied`
     : correctionConfirmed
       ? `🔴 Confirmed — correction still active`
       : `🟢 Not confirmed`;
@@ -8917,7 +8917,7 @@ function calculateUnifiedMarketCycle(item){
     // itself authorize a short entry; 15m execution still requires rejection → LH → LL.
     const strongBearishContinuation = !!(
       correctionConfirmed && belowAll && bearishStack &&
-      lowerHighs >= 1 && lowerLows >= 1
+      lh >= 1 && ll >= 1
     );
 
     if(strongBearishContinuation) trend='15m STRONG BEARISH CONTINUATION';
