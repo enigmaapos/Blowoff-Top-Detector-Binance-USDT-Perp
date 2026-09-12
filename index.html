@@ -4374,45 +4374,65 @@ function detectSMCBreakerBlock({k4h=[], closeNow=0} = {}){
 function renderSMCBreakerBlock(r){
   r=r||{};
   const b=r.smcBreakerBlock||detectSMCBreakerBlock({k4h:r.k4h||[],closeNow:r.closeNow});
-  const bear=r.bearishStructure||{};
   const cg=r.correctionGuide||{};
-  const correctionConfirmed=Number.isFinite(Number(cg.ema200Stretch15)) && Number(cg.ema200Stretch15)<0;
-  const bearState=String(bear.state||'');
-  const bearishDeveloping=/MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED|RETEST CONFIRMED|BEARISH BREAKDOWN|BEARISH/i.test(bearState);
-  const bullishState=String(r.bullishStructure?.state||'');
-  const bullishDeveloping=/MSS CONFIRMED|CHoCH CONFIRMED|BOS CONFIRMED|RETEST CONFIRMED|BULLISH BREAKOUT|BULLISH/i.test(bullishState);
-  const topScore=Number(r.topDetection?.score||0);
-  const topLabel=String(r.topDetection?.label||'');
-  const topDeveloping=/TOPPING|DISTRIBUTION|RISK/i.test(topLabel) || topScore>=40;
-  if(!b || b.direction==='NONE' || b.stage==='NONE') return `<div class="smcBreakerPanel"><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="small" style="margin-top:6px;padding:7px;border:1px solid var(--border);border-radius:8px">4H SMC = structural setup/context • 15m = execution timing • Correction Status = authoritative correction layer. A 15m decline may move price toward a 4H zone, but is not a forecast. A 4H zone is not an automatic entry.</div><div class="smcBreakerEmpty" style="margin-top:5px">${mspEscape(b?.reason||'No breaker setup detected.')}</div></div>`;
+  const correctionConfirmed=typeof isSignificantCorrectionConfirmed==='function'
+    ? !!isSignificantCorrectionConfirmed(r)
+    : (Number.isFinite(Number(cg.ema200Stretch15)) && Number(cg.ema200Stretch15)<0);
+  if(!b || b.direction==='NONE' || b.stage==='NONE') return `<div class="smcBreakerPanel"><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerEmpty" style="margin-top:5px">${mspEscape(b?.reason||'No breaker setup detected.')}</div></div>`;
+
   const bull=b.direction==='BULLISH';
   const accent=bull?'#2dd4bf':'#ff5c5c';
   const money=v=>Number.isFinite(Number(v))?Number(v).toLocaleString(undefined,{maximumFractionDigits:8}):'—';
+  const price=Number(r.closeNow);
+  const zoneLow=Number(b.entryLow), zoneHigh=Number(b.entryHigh);
+  const zoneMid=(zoneLow+zoneHigh)/2;
+  const hasZone=Number.isFinite(zoneLow)&&Number.isFinite(zoneHigh)&&zoneHigh>zoneLow;
+  const inside=hasZone&&Number.isFinite(price)&&price>=zoneLow&&price<=zoneHigh;
+  const above=hasZone&&Number.isFinite(price)&&price>zoneHigh;
+  const below=hasZone&&Number.isFinite(price)&&price<zoneLow;
+  const location=inside?'🟡 PRICE INSIDE POTENTIAL ZONE':above?'🔵 PRICE ABOVE POTENTIAL ZONE':'🔵 PRICE BELOW POTENTIAL ZONE';
+  const locationDetail=inside
+    ? `Current price ${money(price)} is inside the 4H SMC potential zone. Location alone does NOT trigger a trade.`
+    : above
+      ? `Current price ${money(price)} is above the 4H SMC potential zone. Wait for price to return/retest the zone; do not chase.`
+      : below
+        ? `Current price ${money(price)} is below the 4H SMC potential zone. The original 4H setup is not an automatic trade signal here.`
+        : 'Current price/location is unavailable; treat the zone as reference only.';
+
+  // Trader Decision is the final execution authority. 4H SMC supplies setup
+  // context; 15m supplies the actual entry trigger.
+  let rec=null, timing=null, side=bull?'long':'short';
+  try{ rec=typeof getFinalRecommendation==='function'?getFinalRecommendation(r):null; }catch(_){ }
+  const tb=String(rec?.tradeBias||'').toLowerCase();
+  const rd=String(rec?.direction||'').toLowerCase();
+  if(/bearish|short/.test(tb)||rd==='bearish') side='short';
+  else if(/bullish|controlled|recovery/.test(tb)||rd==='bullish') side='long';
+  try{ timing=typeof calculateTimingFramework==='function'?calculateTimingFramework(r,side):null; }catch(_){ }
+  const t=timing?.[side]||{};
+  const executionConfirmed=String(t.entry||'').toUpperCase()==='CONFIRMED';
+  const early=side==='short' ? !!(t.rejection&&t.lh) : !!(t.reclaim&&t.hl);
+  const executionStatus=executionConfirmed
+    ? `🟢 15m EXECUTION CONFIRMED — ${side==='short'?'rejection + lower-high + bearish break':'reclaim + higher-low + bullish break'}`
+    : early
+      ? `🟠 15m EARLY TRIGGER — ${side==='short'?'rejection + lower-high present; stronger confirmation still needed':'reclaim + higher-low present; stronger confirmation still needed'}`
+      : `⏳ 15m EXECUTION PENDING — ${side==='short'?'rejection + lower-high required':'reclaim + higher-low required'}`;
+  const sideAligned=(side==='long')===bull;
+  const executionRule=side==='short'
+    ? '15m rejection → lower-high → LL / bearish break → SHORT'
+    : '15m reclaim → higher-low → HH / bullish break → LONG';
+  const finalAction=String(rec?.action||'').trim();
+
   const state=mspEscape(b.state||'BREAKER SETUP');
-  const status=b.continuation ? '✅ 4H SMC CONTINUATION CONFIRMED' : b.retest ? '🟠 RETEST ACTIVE — 15m CONFIRMATION NEEDED' : '⏳ NO 4H ENTRY SETUP YET';
-  const action=b.continuation
-    ? `${bull?'4H SMC bullish continuation':'4H SMC bearish continuation'} confirmed — this is a setup confirmation, not a trade-entry confirmation. Do not chase outside the zone; require the applicable 15m execution trigger before acting.`
+  const sequenceStatus=b.continuation
+    ? `✅ 4H ${bull?'BULLISH':'BEARISH'} SMC CONTINUATION CONFIRMED`
     : b.retest
-      ? 'Price is interacting with the breaker zone. Wait for a clean rejection/continuation on 15m before treating it as an entry.'
-      : 'Wait for price to return to the breaker zone. This is a watch/retest zone, not an entry until the retest is confirmed.';
-  /* A breaker only conflicts with lower-timeframe structure when the 15m
-     structure is explicitly developing in the opposite direction. */
-  const conflict=(bull && bearishDeveloping) || (!bull && bullishDeveloping);
-  const conflictText=conflict
-    ? `⚠️ SMC/STRUCTURE CONFLICT — 4H ${bull?'bullish breaker':'bearish breaker'} vs 15m ${bearState.replace(/^.*?—\s*/,'')||'structure'} `
-    : '';
-  const primaryState=correctionConfirmed
-    ? '🔴 CORRECTION CONFIRMED (authoritative)'
-    : bearishDeveloping
-      ? `🟠 ${bearState.replace(/^.*?\s/,'')}`
-      : b.continuation
-        ? `${bull?'🟢':'🔴'} 4H SMC CONTINUATION CONFIRMED`
-        : `${bull?'🟡':'🟠'} 4H SMC SETUP DEVELOPING`;
-  const primaryReason=correctionConfirmed
-    ? 'The separate 15m EMA200 correction layer has priority over setup signals.'
-    : bearishDeveloping
-      ? '15m price structure is weakening/developing; the 4H breaker remains a setup layer, not a standalone trade signal.'
-      : 'No higher-priority conflict is currently detected; the 4H SMC state remains conditional on its required stage.';
+      ? `🟠 4H ${bull?'BULLISH':'BEARISH'} SMC RETEST ACTIVE`
+      : `⏳ 4H ${bull?'BULLISH':'BEARISH'} SMC SETUP DEVELOPING`;
+  const sequenceMeaning=b.continuation
+    ? 'The 4H SMC sequence is confirmed. This confirms the setup/structure sequence — NOT a trade entry.'
+    : b.retest
+      ? 'Price has interacted with the 4H breaker zone. This still requires 15m execution confirmation.'
+      : 'The 4H breaker sequence is developing. Treat the mapped zone as a watch/retest area only.';
   const steps=[
     ['💧','Liquidity',b.liquiditySweep?(bull?'SSL SWEPT':'BSL SWEPT'):'PENDING'],
     ['↗','Shift',b.mss?'MSS / BOS':'PENDING'],
@@ -4420,39 +4440,57 @@ function renderSMCBreakerBlock(r){
     ['▣','Breaker',b.bos?'DEFINED':'PENDING'],
     ['↩','Retest',b.continuation?'CONFIRMED':b.retest?'ACTIVE':'WAIT']
   ];
-  const zoneTitle=b.continuation
-    ? '4H SMC SETUP ZONE'
-    : '4H SMC WATCH / RETEST ZONE';
-  const zoneStatus=b.continuation
-    ? 'Zone timeframe: 4H • Execution timeframe: 15m'
-    : 'Zone timeframe: 4H • Retest / execution confirmation: 15m';
+
+  const smcConfidence=Number(b.confidence||0);
+  const rrText=(b.rr1==null||b.rr2==null)?'—':`${b.rr1.toFixed(1)} / ${b.rr2.toFixed(1)}`;
+  const invalidationSide=bull?'below the swept extreme':'above the swept extreme';
+  const correctionLine=correctionConfirmed
+    ? '🔴 SIGNIFICANT CORRECTION CONFIRMED — authoritative 15m EMA200 layer remains in force.'
+    : '🟢 SIGNIFICANT CORRECTION NOT CONFIRMED — 15m EMA200 confirmation is not active.';
+
   return `<div class="smcBreakerPanel" style="border-left:4px solid ${accent}">
-    <div class="smcBreakerHeader"><div><div class="smcBreakerTitle">🧩 SMC BREAKER BLOCK • 4H</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div><div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div></div>
-    <div class="smcBreakerReason">${mspEscape(b.reason||'')} <span style="opacity:.8">(4H setup confirmation; not a 15m entry signal)</span></div>
-    <div style="margin-top:8px;padding:8px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)">
-      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">STATUS</div>
-      <div style="margin-top:3px;font-size:13px;font-weight:950;color:${b.continuation?'#2dd4bf':b.retest?'#ff9f43':'#ffd966'}">${status}</div>
+    <div class="smcBreakerHeader">
+      <div><div class="smcBreakerTitle">🧩 4H SMC BREAKER / POTENTIAL ${bull?'LONG':'SHORT'} ZONE</div><div class="smcBreakerState" style="color:${accent}">${state}</div></div>
+      <div class="smcBreakerScore" style="color:${accent}">${Math.round(Number(b.score||0))}/100</div>
     </div>
+
+    <div class="smcBreakerReason"><strong>${sequenceStatus}</strong><br>${mspEscape(sequenceMeaning)}</div>
+
+    <div style="margin-top:8px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)">
+      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">WHAT THIS MEANS</div>
+      <div style="margin-top:4px;font-size:11px;line-height:1.5"><strong>SMC sequence confidence:</strong> ${smcConfidence}% — confidence in the detected 4H SMC sequence, NOT probability of a profitable trade.<br><strong>4H role:</strong> setup/context. <strong>15m role:</strong> execution timing.</div>
+    </div>
+
     <div class="smcBreakerFlow">${steps.map(x=>`<div class="smcBreakerStep"><div class="sbsIcon">${x[0]}</div><div class="sbsLabel">${x[1]}</div><div class="sbsValue" style="color:${accent}">${x[2]}</div></div>`).join('')}</div>
-    ${conflict ? `<div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,159,67,.25);background:rgba(255,159,67,.055);color:#ffd7a3;font-size:11px;line-height:1.45"><strong>${mspEscape(conflictText)}</strong><br>4H SMC is a setup layer; 15m structure is the lower-timeframe confirmation layer.</div>` : ''}
+
     <div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(126,220,255,.14);background:rgba(126,220,255,.035)">
-      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">SIGNAL HIERARCHY</div>
-      <div style="margin-top:5px;font-size:11px;line-height:1.5"><strong>Primary state:</strong> ${mspEscape(primaryState)}<br><strong>4H SMC:</strong> ${mspEscape(b.state||'—')}<br><strong>Top risk:</strong> ${topDeveloping?`🟠 ${topLabel||'Developing'} (${topScore}/100)`:'🟢 No major top warning'}<br><strong>Correction:</strong> ${correctionConfirmed?'🔴 CONFIRMED':'⚪ NOT CONFIRMED'}<br><strong>Action:</strong> ${correctionConfirmed?'Respect the authoritative correction state; do not use the 4H breaker alone to override it.':bearishDeveloping?'WAIT — require the 15m execution trigger before acting on the 4H breaker.':b.continuation?(bull?'4H SMC continuation confirmed; wait for 15m reclaim + higher-low before LONG entry.':'4H SMC continuation confirmed; wait for 15m rejection + lower-high before SHORT entry.'):'WAIT — no entry until the required retest and 15m confirmation occur.'}</div>
-      <div class="small" style="margin-top:4px;color:#8195ad">${mspEscape(primaryReason)}</div>
+      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">📍 SMC POTENTIAL ZONE — NOT AN AUTOMATIC ENTRY</div>
+      <div style="margin-top:5px;font-size:11px;line-height:1.5"><strong>Zone:</strong> ${money(zoneLow)} — ${money(zoneHigh)}<br><strong>Current location:</strong> ${location}<br>${mspEscape(locationDetail)}</div>
     </div>
-    <div class="smcBreakerZone ${bull?'':'smcBreakerZoneBear'}" style="border-color:${accent}33">
-      <div class="smcBreakerZoneTitle" style="color:${accent}">${bull?'🟢 BULLISH':'🔴 BEARISH'} ${zoneTitle}</div>
-      <div class="smcBreakerMeta" style="margin-top:4px"><strong>${zoneStatus}</strong></div>
-      <div class="smcBreakerZoneGrid">
-        <div class="smcBreakerMetric"><span>${b.continuation?'Entry zone':'Watch / retest zone'}</span><strong>${money(b.entryLow)} — ${money(b.entryHigh)}</strong></div>
+
+    <div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid ${sideAligned?'rgba(126,220,255,.14)':'rgba(255,159,67,.25)'};background:${sideAligned?'rgba(126,220,255,.035)':'rgba(255,159,67,.055)'}">
+      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">🎯 EXECUTION STATUS — FINAL DECISION AUTHORITY</div>
+      <div style="margin-top:5px;font-size:12px;font-weight:950">Final direction: ${side.toUpperCase()} ${sideAligned?'• aligned with 4H SMC':'• different from 4H SMC; follow Trader Decision'}</div>
+      <div style="margin-top:4px;font-size:11px;line-height:1.45"><strong>${executionStatus}</strong><br><strong>Required sequence:</strong> ${executionRule}</div>
+      ${finalAction?`<div style="margin-top:5px;font-size:11px;color:#cfe8ff"><strong>Trader Decision action:</strong> ${mspEscape(finalAction)}</div>`:''}
+    </div>
+
+    <div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)">
+      <div style="font-size:10px;font-weight:950;color:#cfe8ff;text-transform:uppercase;letter-spacing:.06em">SMC LEVELS / SCENARIO MAP</div>
+      <div class="smcBreakerZoneGrid" style="margin-top:7px">
+        <div class="smcBreakerMetric"><span>Potential ${bull?'long':'short'} zone</span><strong>${money(b.entryLow)} — ${money(b.entryHigh)}</strong></div>
         <div class="smcBreakerMetric"><span>Invalidation</span><strong>${money(b.invalidation)}</strong></div>
-        <div class="smcBreakerMetric"><span>TP1</span><strong>${money(b.tp1)}</strong></div>
-        <div class="smcBreakerMetric"><span>TP2</span><strong>${money(b.tp2)}</strong></div>
+        <div class="smcBreakerMetric"><span>TP1 scenario</span><strong>${money(b.tp1)}</strong></div>
+        <div class="smcBreakerMetric"><span>TP2 scenario</span><strong>${money(b.tp2)}</strong></div>
       </div>
-      <div class="smcBreakerMeta">Sweep ${money(b.sweepLevel)} • Extreme ${money(b.sweepExtreme)} • Structure break ${money(b.shiftLevel)} • R:R ≈ ${b.rr1==null?'—':b.rr1.toFixed(1)} / ${b.rr2==null?'—':b.rr2.toFixed(1)} • ${Number(b.confidence||0)}% confidence</div>
-      <div class="smcBreakerMeta"><strong>Now:</strong> ${mspEscape(action)}</div>
+      <div class="smcBreakerMeta">Sweep ${money(b.sweepLevel)} • Extreme ${money(b.sweepExtreme)} • Structure break ${money(b.shiftLevel)} • Scenario R:R ${rrText}</div>
+      <div class="smcBreakerMeta">Invalidation is ${invalidationSide} the swept extreme. These TP/R:R values describe the SMC scenario from the zone midpoint; they are not an instruction to enter.</div>
     </div>
-    <div class="smcBreakerAuthority">SMC setup detector only. 4H SMC confirmation does <strong>not</strong> equal trade-entry confirmation. The separate 15m execution layer remains authoritative for timing: bearish = 15m rejection + lower-high (ideally LL/bearish break); bullish = 15m reclaim + higher-low (ideally HH/bullish break). The separate 15m EMA200 correction layer remains authoritative for significant-correction confirmation.</div>
+
+    <div style="margin-top:9px;padding:9px 10px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.018);font-size:11px;line-height:1.45">
+      <strong>${correctionLine}</strong><br>
+      <strong>Hierarchy:</strong> Correction Status → Trader Decision / final direction → 15m execution → 4H SMC setup context. A 4H SMC confirmation can support the trade thesis, but it cannot by itself authorize LONG/SHORT entry.
+    </div>
   </div>`;
 }
 function renderBearishStructureDetector(r){
@@ -5734,7 +5772,7 @@ function getEntryStatusSnapshot(r){
       long: recoveryConfirmed ? 'CONFIRMED' : 'NOT_READY',
       short: (Number(item.lowerHighCount||0)>0 || hasLowerHigh || Number(item.downsideStructureScore||0)>=35) ? 'LOWER_HIGH' : 'WAIT',
       longLabel: recoveryConfirmed ? '🟢 Staged recovery entry' : '❌ Not yet',
-      shortLabel: (hasLowerHigh || shortConditional) ? '🟠 Conditional — failed bounce + lower-high' : '⏸ Wait'
+      shortLabel: (hasLowerHigh || shortConditional) ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait'
     };
   }
   if(correctionConfirmed){
@@ -5752,7 +5790,7 @@ function getEntryStatusSnapshot(r){
     return {long:'CONFIRMED', short:'WAIT', longLabel:'🟢 Confirmed structure — staged', shortLabel:'⏸ Wait / low priority'};
   }
   if(recovery){
-    return {long:'STAGED', short:hasLowerHigh?'LOWER_HIGH':'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:hasLowerHigh?'🟠 Conditional — failed bounce + lower-high':'⏸ Wait'};
+    return {long:'STAGED', short:hasLowerHigh?'LOWER_HIGH':'WAIT', longLabel:'⚠️ Staged / conditional', shortLabel:hasLowerHigh?'🟠 Conditional — failed bounce / lower-high':'⏸ Wait'};
   }
   if(distribution || structureBear){
     return {long:'WAIT', short:'REJECTION', longLabel:'❌ Wait — structure weak', shortLabel:'⚠️ Conditional — rejection first'};
@@ -7250,15 +7288,7 @@ function calculateTimingFramework(item, side){
   const rejectionLong=!!(longZone && Number.isFinite(price) && Number(price)>=Number(longZone.low) && Number(price)<=Number(longZone.high) && Number.isFinite(latestLow) && Number.isFinite(latestClose) && latestClose>latestLow && ((latestClose-latestLow)/(Math.max(1e-12,Number(latestHigh)-latestLow)))>=0.35);
   const shortLocation=!!(shortZone?.inside||shortZone?.near);
   const longLocation=!!(longZone?.inside||longZone?.near);
-  // Strict 15m short sequence: bounce -> rejection -> lower-high -> bearish break.
-  // A lower-high by itself is NOT labeled as a failed bounce.
-  const lastPivotH=lastH, prevPivotH=prevH, lastPivotL=lastL, prevPivotL=prevL;
-  const bounceDetected=!!(lastPivotL && lastPivotH && lastPivotH.i>lastPivotL.i &&
-    price <= Number(lastPivotH.price) * 1.002);
-  const bounceFailure=!!(rejectionShort && bounceDetected);
-  const lhAfterBounce=!!(bounceFailure && lastPivotH && lastPivotH.i>lastPivotL.i &&
-    (!prevPivotH || lastPivotH.price<prevPivotH.price));
-  const shortEarly=bounceFailure&&lhAfterBounce;
+  const shortEarly=rejectionShort&&lh;
   const shortStrong=shortEarly&&bearishBreak;
   const shortBest=shortStrong && ll;
   const longEarly=rejectionLong&&hl;
@@ -7740,7 +7770,7 @@ function renderTraderDecisionBlock(r, compact=false){
     currentState = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 RECOVERY DEVELOPING' : '🟣 POST-CORRECTION / RETURN-TO-NORMAL';
     bias = recoveryScore>=70 && strongHTF ? 'Neutral / Recovery Improving' : 'Neutral / Cautious Bearish';
     longEntry = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
-    shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce + lower-high rejection' : '⏸ Wait for downside structure';
+    shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high rejection' : '⏸ Wait for downside structure';
     readiness = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
     bestAction = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow
       ? 'The major correction has already occurred and recovery structure is developing. Favor staged entries on higher-lows; add only while 4H/1D accumulation and volume continue to improve.'
@@ -7808,7 +7838,7 @@ function renderTraderDecisionBlock(r, compact=false){
     currentState='🟣 RETURN-TO-NORMAL / RECOVERY WATCH';
     bias=accum>=60 ? 'Neutral / Recovery Watch' : 'Neutral';
     longEntry='⚠️ Staged / conditional';
-    shortEntry=hasLowerHigh ? '🟠 Conditional — failed bounce + lower-high' : '⏸ Wait for structure';
+    shortEntry=hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high' : '⏸ Wait for structure';
     bestAction='The market is normalizing after a move. Treat this as a recovery process, not an automatic bottom. Wait for a higher-low and improving 4H/1D accumulation before scaling into recovery.';
     readiness='🟡 Recovery watch';
     if(!hasHigherLow) missing.push('stable higher-low');
@@ -7962,7 +7992,7 @@ function renderTraderDecisionBlock(r, compact=false){
   return `<div class="proDecision traderDecisionV2" style="${compactStyle}margin-top:${compact?'6px':'10px'};padding:12px;border-radius:10px;background:rgba(45,212,191,.06);border:1px solid rgba(126,220,255,.12)">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><div style="font-weight:900;font-size:${compact?'17px':'16px'}">🎯 TRADER DECISION <span style="font-size:9px;color:#7edcff;letter-spacing:.08em">• FINAL DECISION ENGINE</span></div><span style="font-weight:800;color:${readinessTone}">${readiness}</span></div>
     <div class="finalDecisionAuthority"><div class="fdaTitle">FINAL DECISION ENGINE • AUTHORITATIVE</div><div class="fdaState">${currentState}</div><div class="fdaSub">All calculated scanner evidence is synthesized here. Trader Decision, entry status and primary execution path follow this result. 4H/1H = context; 15m = execution.</div></div>\n    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
-    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>15m Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Reversal Continuation:</strong> ${String(rec.reversalContinuation?.label||'NOT ACTIVE')}${Number.isFinite(Number(rec.reversalContinuation?.score))?` • ${Number(rec.reversalContinuation.score)}%`:''}</div>\n    <div class="small"><strong>Continuation evidence:</strong> ${(rec.reversalContinuation?.reasons||[]).join(' • ')||'Waiting for post-reversal follow-through'}${rec.reversalContinuation?.state==='CONFIRMED'?' • 100% = complete required 15m continuation checklist':''}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
+    <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Reversal Continuation:</strong> ${String(rec.reversalContinuation?.label||'NOT ACTIVE')}${Number.isFinite(Number(rec.reversalContinuation?.score))?` • ${Number(rec.reversalContinuation.score)}%`:''}</div>\n    <div class="small"><strong>Continuation evidence:</strong> ${(rec.reversalContinuation?.reasons||[]).join(' • ')||'Waiting for post-reversal follow-through'}${rec.reversalContinuation?.state==='CONFIRMED'?' • 100% = complete required 15m continuation checklist':''}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
     <div><strong>Long entry:</strong> ${longEntry}</div>
     <div><strong>Short entry:</strong> ${shortEntry}</div>
@@ -8716,9 +8746,9 @@ function calculateUnifiedMarketCycle(item){
     let location='BETWEEN STRUCTURAL LEVELS';
     const reasons=[];
 
-    if(ema70Below200 && bearishStack && belowAll) trend='15m STRONG BEARISH / CORRECTION';
+    if(ema70Below200 && bearishStack && belowAll) trend='STRONG BEARISH';
     else if(ema70Below200) trend='BEARISH';
-    else if(ema70Above200 && bullishStack && aboveAll) trend='15m STRONG BULLISH';
+    else if(ema70Above200 && bullishStack && aboveAll) trend='STRONG BULLISH';
     else if(ema70Above200) trend='BULLISH';
     else if(recoveryConfirmed && (fastBull || ema14Reclaim || ema21Reclaim)) trend='RECOVERING';
 
@@ -8956,7 +8986,7 @@ function renderUnifiedMarketCycle(item){
     <div style="font-size:16px;font-weight:950">🧭 UNIFIED MARKET-CYCLE — ${u.confidence||0}%</div>
     <div style="font-size:19px;font-weight:950;color:${tone};margin-top:3px">${u.state||'⚪ UNKNOWN'}</div>
     ${renderUnifiedCycleMap(u)}
-    <div style="margin-top:9px"><strong>15m Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
+    <div style="margin-top:9px"><strong>Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
     <div style="margin-top:4px"><strong>Correction authority:</strong> ${u.correctionStage||'—'}${u.recoveryConfirmed?' • 🟣 Recovery state active':''}</div>
     <div style="margin-top:4px"><strong>Reversal:</strong> ${u.reversal||'—'}</div>
     <div style="margin-top:6px"><strong>EMA structure:</strong> ${e.bearishStack?'🔴 Bearish aligned':e.bullishStack?'🟢 Bullish aligned':'🟡 Mixed / transitional'} • Price ${e.belowAll?'below all major EMAs':e.aboveAll?'above all major EMAs':'between EMA layers'}</div>
