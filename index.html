@@ -7396,8 +7396,6 @@ function calculateTimingFramework(item, side){
   const lhAfterBounce = !!(lastH&&prevH&&lastH.price<prevH.price && shortBounceStart>=0 && lastH.i>shortBounceStart);
   const shortEarly=bounceFailureShort&&lhAfterBounce;
   const shortStrong=shortEarly&&bearishBreak;
-  // Final failed-bounce confirmation requires an actual completed-candle LL.
-  // A generic bearish break is only an intermediate trigger.
   const shortBest=shortEarly && ll;
 
   // STRICT 15m reclaim/recovery sequence for longs:
@@ -8913,7 +8911,17 @@ function calculateUnifiedMarketCycle(item){
     let location='BETWEEN STRUCTURAL LEVELS';
     const reasons=[];
 
-    if(ema70Below200 && bearishStack && belowAll) trend='15m STRONG BEARISH / CORRECTION';
+    // Bearish continuation is a stronger state than a generic resistance-location
+    // label. It requires the authoritative correction plus a confirmed bearish
+    // EMA stack and completed swing continuation (LH + LL). This does NOT by
+    // itself authorize a short entry; 15m execution still requires rejection → LH → LL.
+    const strongBearishContinuation = !!(
+      correctionConfirmed && belowAll && bearishStack &&
+      lowerHighs >= 1 && lowerLows >= 1
+    );
+
+    if(strongBearishContinuation) trend='15m STRONG BEARISH CONTINUATION';
+    else if(ema70Below200 && bearishStack && belowAll) trend='15m STRONG BEARISH / CORRECTION';
     else if(ema70Below200) trend='BEARISH';
     else if(ema70Above200 && bullishStack && aboveAll) trend='15m STRONG BULLISH';
     else if(ema70Above200) trend='BULLISH';
@@ -8994,10 +9002,12 @@ function calculateUnifiedMarketCycle(item){
       if(hl) reasons.push(`Higher-low evidence ${hl}`);
     }
 
-    // Location uses the closest actionable level, but recovery has priority
-    // over a nearby resistance label so the cycle does not regress to topping.
+    // Location must not downgrade an already-confirmed bearish continuation to
+    // the generic RESISTANCE TEST label. Keep resistance as a reason/context
+    // only when the stronger continuation state is active.
     if(recoveryConfirmed && (supportTest || correctionConfirmed)) location='SUPPORT / RECOVERY';
     else if(supportFailed) location='SUPPORT FAILED';
+    else if(strongBearishContinuation) location='STRONG BEARISH CONTINUATION';
     else if(nearResistance) location='RESISTANCE TEST';
     else if(supportTest) location='SUPPORT TEST';
 
