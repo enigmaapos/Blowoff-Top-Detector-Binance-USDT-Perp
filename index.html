@@ -2365,9 +2365,7 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
       note.innerText = '';
       if(session === modeSession && activeViewMode === 'scan'){
         running=false;
-        const intervalSec=Math.max(10,Math.min(3600,parseInt(el.interval.value,10)||120));
-        marketAutoEnabled=true;
-        scheduleUnifiedScannerAutoRefresh(intervalSec*1000, 'below50');
+        // Unified scanner controller owns the single auto-refresh timer.
         updateLiveModeUI();
       }
     }
@@ -2381,7 +2379,13 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
     showFavoritesOnly = false;
     updateFavoritesButton();
     persistActiveMode();
-    startScan({session});
+    startScan({session}).then(()=>{
+      if(session===modeSession && activeViewMode==='scan' && !running){
+        const intervalSec=Math.max(10,Math.min(3600,parseInt(el.interval.value,10)||120));
+        marketAutoEnabled=true;
+        scheduleUnifiedScannerAutoRefresh(intervalSec*1000,'below50');
+      }
+    }).catch(()=>{});
   });
 
   // optional: expose to window for console invocation
@@ -2518,9 +2522,8 @@ async function runTop30Scan({ positive = true, mode = 'resistance', session = mo
   } finally {
     if(session === modeSession && activeViewMode === 'scan'){
       running=false;
-      const intervalSec=Math.max(10,Math.min(3600,parseInt(el.interval.value,10)||120));
-      marketAutoEnabled=true;
-      scheduleUnifiedScannerAutoRefresh(intervalSec*1000, positive ? 'topGreen' : 'topRed');
+      // Auto-refresh is scheduled by the single unified scanner controller.
+      // This prevents duplicate timers and makes Top30 behave exactly like Market Scan.
       updateLiveModeUI();
     }
   }
@@ -8822,6 +8825,25 @@ function calculateUnifiedMarketCycle(item){
     const supportFailed=Number.isFinite(supportDist)&&support!==null&&price<support*0.997;
     const nearResistance=Number.isFinite(resistanceDist)&&resistance>=price*0.997&&resistance<=price*1.03;
 
+    // Resistance failure is a completed-15m-candle event, not a price-location guess.
+    // A resistance test is considered failed only when price trades into/through the
+    // structural resistance area and a completed candle closes back below it.
+    // This prevents LH/LL alone from falsely upgrading the state to STRONG BEARISH CONTINUATION.
+    const resistanceTol=Math.max(price*0.0015, 1e-12);
+    const recentResistanceFailure=(()=>{
+      if(!Number.isFinite(resistance)||resistance<=0 || bars.length<2) return false;
+      for(let i=Math.max(0,bars.length-4); i<bars.length; i++){
+        const b=bars[i];
+        const hi=Number(b?.[2]), cl=Number(b?.[4]);
+        if(!Number.isFinite(hi)||!Number.isFinite(cl)) continue;
+        const tested=hi>=resistance-resistanceTol;
+        const closedBackBelow=cl<resistance-resistanceTol;
+        if(tested && closedBackBelow) return true;
+      }
+      return false;
+    })();
+    const resistanceFailureConfirmed=!!(nearResistance && recentResistanceFailure);
+
     const rsi15=Number(item.rsi15||0);
     const rsiOversold=rsi15>0&&rsi15<=30;
     const rsiStretched=rsi15>0&&rsi15<=35;
@@ -8917,7 +8939,8 @@ function calculateUnifiedMarketCycle(item){
     // itself authorize a short entry; 15m execution still requires rejection → LH → LL.
     const strongBearishContinuation = !!(
       correctionConfirmed && belowAll && bearishStack &&
-      lh >= 1 && ll >= 1
+      lh >= 1 && ll >= 1 &&
+      (!nearResistance || resistanceFailureConfirmed)
     );
 
     if(strongBearishContinuation) trend='15m STRONG BEARISH CONTINUATION';
@@ -9002,11 +9025,8 @@ function calculateUnifiedMarketCycle(item){
       if(hl) reasons.push(`Higher-low evidence ${hl}`);
     }
 
-    // Location and trend/state answer different questions.
-    // Location MUST describe where price is now, so a genuine resistance test
-    // is never hidden merely because bearish continuation is confirmed.
-    // The stronger bearish condition remains exposed through the TREND/STATE
-    // fields above; it does not replace the physical price-location label.
+    // Location answers WHERE price is; trend/state answers WHAT price is doing.
+    // Never hide a genuine resistance test behind the continuation label.
     if(recoveryConfirmed && (supportTest || correctionConfirmed)) location='SUPPORT / RECOVERY';
     else if(nearResistance) location='RESISTANCE TEST';
     else if(supportFailed) location='SUPPORT FAILED';
@@ -9014,7 +9034,9 @@ function calculateUnifiedMarketCycle(item){
     else if(strongBearishContinuation) location='STRONG BEARISH CONTINUATION';
 
     if(supportTest) reasons.push(`Support ${Number(support).toPrecision(8)} • ${supportDist.toFixed(2)}% from price`);
-    if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
+    if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away${resistanceFailureConfirmed?' • FAILED TEST':''}`);
+    if(nearResistance && !resistanceFailureConfirmed && correctionConfirmed && lh>=1 && ll>=1) reasons.push('Resistance test is not failed yet; STRONG BEARISH CONTINUATION remains unconfirmed');
+    if(resistanceFailureConfirmed) reasons.push('Completed 15m candle tested resistance and closed back below it — resistance failure confirmed');
     if(rsiOversold){ momentum='OVERSOLD / STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — oversold condition`); }
     else if(rsiStretched){ momentum='STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — stretched`); }
     if(bearishReversalConfirmed){
@@ -9082,7 +9104,7 @@ function calculateUnifiedMarketCycle(item){
       ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction},
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
-      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,
+      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,resistanceFailureConfirmed,recentResistanceFailure,
           bullishRecoveryConfirmed,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction}
     };
   }catch(err){
@@ -9093,7 +9115,7 @@ function calculateUnifiedMarketCycle(item){
 function getUnifiedCycleMapStage(u){
   const phase=String(u?.phase||'').toUpperCase();
   const correction=String(u?.correctionCode||u?.correctionStage||'').toUpperCase();
-  const recovery=!!u?.recoveryConfirmed || correction.includes('POST_CORRECTION_RECOVERY') || phase.includes('POST-CORRECTION / RECOVERY');
+  const recovery=!!u?.recoveryConfirmed; // only the strict recovery checklist may activate recovery
   const location=String(u?.location||'').toUpperCase();
 
   // Correction Guide is authoritative for the correction state, but a
@@ -10208,7 +10230,7 @@ async function runScan(once=false, suppliedSession=null){
 
       // ATOMIC REFRESH: keep the previous completed scan visible while the
       // next scan is still running. Only progress/status changes here.
-      // The new result dataset is committed after every batch has completed.
+      // The new result dataset is committed only after the entire scan has completed.
       await delay(Math.max(0,Math.min(delayMs,150)));
     }
 
