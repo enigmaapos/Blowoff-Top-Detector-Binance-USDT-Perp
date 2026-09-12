@@ -955,6 +955,19 @@ body.authLocked{overflow:hidden}
           <div class="dashboardHint">Filters by the exact active stage highlighted in the 🧭 UNIFIED MARKET-CYCLE MAP.</div>
         </div>
       </div>
+      <div class="controlGrid two" style="margin-top:10px">
+        <div class="controlItem">
+          <label class="controlLabel">🔄 Reversal State Filter</label>
+          <select id="reversalStateFilter">
+            <option value="ALL">All Reversal States</option>
+            <option value="BOUNCE_RISK">🟠 BOUNCE RISK — NOT REVERSAL</option>
+            <option value="BULLISH_REVERSAL">🟢 BULLISH REVERSAL — CONFIRMED</option>
+            <option value="BEARISH_REVERSAL">🔴 BEARISH REVERSAL — CONFIRMED</option>
+            <option value="NOT_CONFIRMED">⚪ Reversal Not Confirmed</option>
+          </select>
+          <div class="dashboardHint">Uses the same authoritative Unified Market-Cycle reversal state shown in each result. Bounce risk never counts as reversal confirmation.</div>
+        </div>
+      </div>
 
       <div class="controlSectionTitle" style="margin-top:14px">
         <span>🎯</span> 6 · Trader Decision & Entry Filters
@@ -1086,6 +1099,7 @@ const el = {
   marketStructureFilter: document.getElementById('marketStructureFilter'),
   emaStructureFilter: document.getElementById('emaStructureFilter'),
   unifiedCycleFilter: document.getElementById('unifiedCycleFilter'),
+  reversalStateFilter: document.getElementById('reversalStateFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
   smcDirectionFilter: document.getElementById('smcDirectionFilter')
 };
@@ -5964,6 +5978,26 @@ function unifiedCycleFilterMatches(r, filter){
   return getUnifiedCycleMapStage(u || {}) === filter;
 }
 
+function reversalStateFilterMatches(r, filter){
+  if(filter==='ALL') return true;
+  const item=r||{};
+  let u=item.unifiedMarketCycle;
+  if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE'){
+    try{
+      if(typeof calculateUnifiedMarketCycle==='function') u=calculateUnifiedMarketCycle(item);
+    }catch(_){}
+  }
+  const meta=u?.meta||{};
+  const bear=!!meta.bearishReversalConfirmed;
+  const bull=!!meta.bullishReversalConfirmed;
+  const bounce=!!meta.bounceOnly && !bear && !bull;
+  if(filter==='BOUNCE_RISK') return bounce;
+  if(filter==='BULLISH_REVERSAL') return bull;
+  if(filter==='BEARISH_REVERSAL') return bear;
+  if(filter==='NOT_CONFIRMED') return !bear && !bull;
+  return true;
+}
+
 function emaStructureFilterMatches(r, filter){
   if(filter==='ALL') return true;
   const item=r||{};
@@ -6025,6 +6059,13 @@ function filterResultsForDist(results) {
   const unifiedCycleFilter = el.unifiedCycleFilter ? el.unifiedCycleFilter.value : 'ALL';
   if (unifiedCycleFilter !== 'ALL') {
     filtered = filtered.filter(r => unifiedCycleFilterMatches(r, unifiedCycleFilter));
+  }
+
+  // Dedicated Reversal State filter. This reads the exact same authoritative
+  // reversal flags used to render "BOUNCE RISK — NOT REVERSAL".
+  const reversalStateFilter = el.reversalStateFilter ? el.reversalStateFilter.value : 'ALL';
+  if (reversalStateFilter !== 'ALL') {
+    filtered = filtered.filter(r => reversalStateFilterMatches(r, reversalStateFilter));
   }
 
   // Dedicated EMA Structure filter. This reads the exact EMA state exposed by
@@ -6599,6 +6640,9 @@ if (el.emaStructureFilter) {
 }
 if (el.unifiedCycleFilter) {
   el.unifiedCycleFilter.addEventListener('change', () => renderActiveView(true));
+}
+if (el.reversalStateFilter) {
+  el.reversalStateFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.smcBreakerFilter) {
   el.smcBreakerFilter.addEventListener('change', () => {
