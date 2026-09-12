@@ -4647,9 +4647,15 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
   const lastLow = recentLows.at(-1)?.value ?? null;
   const prevLow = recentLows.at(-2)?.value ?? null;
 
-  // Recent structural support/resistance are the latest confirmed swing zones.
-  const support = lastLow;
-  const resistance = lastHigh;
+  // Structural S/R must be on the correct side of live price. A raw "latest
+  // swing low/high" can otherwise invert the levels during a breakdown (for
+  // example, a newly confirmed swing low can still sit ABOVE the live price).
+  // Support = nearest confirmed swing low at/below price.
+  // Resistance = nearest confirmed swing high at/above price.
+  const supportCandidates = swingLows.map(x=>Number(x.value)).filter(v=>Number.isFinite(v) && v<=price);
+  const resistanceCandidates = swingHighs.map(x=>Number(x.value)).filter(v=>Number.isFinite(v) && v>=price);
+  const support = supportCandidates.length ? supportCandidates.reduce((a,b)=>b>a?b:a) : null;
+  const resistance = resistanceCandidates.length ? resistanceCandidates.reduce((a,b)=>b<a?b:a) : null;
 
   // S/R flip detection:
   // bullish flip = price broke above prior resistance and is holding above it;
@@ -8825,21 +8831,33 @@ function calculateUnifiedMarketCycle(item){
     const bearishStructure=(lh>=1&&ll>=1)||(lh>=2)||(ll>=2);
     const bullishStructure=(hh>=1&&hl>=1)||(hh>=2)||(hl>=2);
 
+    // Keep Unified Market-Cycle S/R physically ordered around live price.
+    // Never allow a level above price to be labelled Support, or a level below
+    // price to be labelled Resistance. Broken levels are handled separately by
+    // the S/R flip logic instead of being reused on the wrong side.
     const supportCandidates=[];
     const resistanceCandidates=[];
-    for(const x of pl) if(x.price<=price*1.003) supportCandidates.push(x.price);
-    for(const x of ph) if(x.price>=price*0.997) resistanceCandidates.push(x.price);
-    const externalSupport=[item.supportLevel,item.support,item.marketStructure?.support,item.liquidity?.nearestBelow?.price].map(Number).filter(v=>Number.isFinite(v)&&v>0&&v<=price*1.02);
-    const externalResistance=[item.resistanceLevel,item.resistance,item.marketStructure?.resistance,item.liquidity?.nearestAbove?.price].map(Number).filter(v=>Number.isFinite(v)&&v>=price*0.98);
+    for(const x of pl) if(Number.isFinite(x.price) && x.price<=price) supportCandidates.push(x.price);
+    for(const x of ph) if(Number.isFinite(x.price) && x.price>=price) resistanceCandidates.push(x.price);
+    const externalSupport=[item.supportLevel,item.support,item.marketStructure?.support,item.liquidity?.nearestBelow?.price]
+      .map(Number).filter(v=>Number.isFinite(v)&&v>0&&v<=price);
+    const externalResistance=[item.resistanceLevel,item.resistance,item.marketStructure?.resistance,item.liquidity?.nearestAbove?.price]
+      .map(Number).filter(v=>Number.isFinite(v)&&v>0&&v>=price);
     const allSupports=[...supportCandidates,...externalSupport];
     const allResistances=[...resistanceCandidates,...externalResistance];
-    const support=allSupports.length?allSupports.reduce((a,b)=>Math.abs(b-price)<Math.abs(a-price)?b:a):null;
-    const resistance=allResistances.length?allResistances.reduce((a,b)=>Math.abs(b-price)<Math.abs(a-price)?b:a):null;
+    // Nearest valid level on each side of price. If no confirmed level exists
+    // on a side, return null rather than inventing/inverting S/R.
+    const support=allSupports.length?allSupports.reduce((a,b)=>b>a?b:a):null;
+    const resistance=allResistances.length?allResistances.reduce((a,b)=>b<a?b:a):null;
     const supportDist=support?Math.abs(pct(price,support)):null;
     const resistanceDist=resistance?Math.abs(pct(resistance,price)):null;
     const supportTest=Number.isFinite(supportDist)&&support<=price*1.015&&price>=support*0.997;
     const supportFailed=Number.isFinite(supportDist)&&support!==null&&price<support*0.997;
-    const nearResistance=Number.isFinite(resistanceDist)&&resistance>=price*0.997&&resistance<=price*1.03;
+    // "Near resistance" is only valid for an actual resistance above live price.
+    // A 3% window is too broad for a location label and can make support areas
+    // look like resistance. Use a 1% proximity window here; the separate
+    // completed-candle failure test remains the authority for resistance failure.
+    const nearResistance=Number.isFinite(resistanceDist)&&resistance!==null&&resistance>=price&&resistance<=price*1.01;
 
     // Resistance failure is a completed-15m-candle event, not a price-location guess.
     // A resistance test is considered failed only when price trades into/through the
