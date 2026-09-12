@@ -1,5 +1,5 @@
 <!-- BUILD: FINAL-UNIFIED-CYCLE-GRADUATED-MARKUP-2026-09-10
-<!-- BUILD: CORRECTION-CONSISTENCY-FIX-2026-09-10 -->
+<!-- BUILD: FINAL-RECOMMENDATION-CONSISTENCY-FIX-2026-09-12 -->
 
 <!doctype html>
 <html lang="en">
@@ -2697,7 +2697,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         ? Promise.resolve(opts.prefetchedK15)
         : safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=15m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1m&limit=240`, { allowIfNotRunning: opts.allowIfNotRunning }),
-      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=10`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D
+      safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1d&limit=40`, { allowIfNotRunning: opts.allowIfNotRunning }), // 1D accumulation + volume/HVD
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1w&limit=20`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1W
       safeFetch(`${API_BASE}/fapi/v1/klines?symbol=${sym}&interval=1M&limit=12`, { allowIfNotRunning: opts.allowIfNotRunning }), // HVD 1M
       safeFetch(`${API_BASE}/fapi/v1/fundingRate?symbol=${sym}&limit=1`, { allowIfNotRunning: opts.allowIfNotRunning }),
@@ -2861,15 +2861,31 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     const acc15 = detectAccumulationGeneric(closes15, highs15, lows15, vols15, 30, sens);
     const acc1h = detectAccumulationGeneric(closes1h, highs1h, lows1h, vols1h, 30, sens);
     const acc4h = detectAccumulationGeneric(closes4h, highs4h, lows4h, vols4h, 20, sens);
+    // 1D accumulation is a separate higher-timeframe confirmation metric.
+    // Exclude the still-forming daily candle so the value is not distorted by
+    // an incomplete session. It is deliberately NOT part of the 15m/1h/4h
+    // combined accumulation score used by the core detector.
+    const completed1dKlines = (k1d||[]).filter(k=>{
+      const ct=Number(k?.[6]);
+      return Number.isFinite(ct) ? ct<=Date.now() : true;
+    });
+    const c1d=completed1dKlines.map(k=>Number(k[4]));
+    const h1d=completed1dKlines.map(k=>Number(k[2]));
+    const l1d=completed1dKlines.map(k=>Number(k[3]));
+    const v1d=completed1dKlines.map(k=>Number(k[5]));
+    const acc1d = detectAccumulationGeneric(c1d, h1d, l1d, v1d, 30, sens);
     const tfChecks = [
       { tf:'15m', result: acc15 },
       { tf:'1h', result: acc1h },
-      { tf:'4h', result: acc4h }
+      { tf:'4h', result: acc4h },
+      { tf:'1d', result: acc1d }
     ];
+    // Core combined maturity intentionally remains 15m/1h/4h only.
+    const combinedTfChecks = tfChecks.slice(0,3);
     let combinedConfidence = 0;
     if(tfChecks.length){
       let weightSum = 0;
-      tfChecks.forEach(t=>{
+      combinedTfChecks.forEach(t=>{
         const w = (t.tf === '4h') ? 1.2 : (t.tf === '1h' ? 1.0 : 0.8);
         combinedConfidence += (t.result.confidence || 0) * w;
         weightSum += w;
@@ -2902,20 +2918,9 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       fundingRate,
       accumCombined: { confidence: combinedConfidence }
     });
-    // Directional guard: raw HH/HL accumulation cannot be presented as
-    // confirmed bullish demand while the authoritative correction is active.
-    try{
-      const _corrNow = ema200Stretch15!=null && Number(ema200Stretch15)<0;
-      const _bearNow = _corrNow || (belowAll && bearishStack) ||
-        false;
-      if(_bearNow && structure4h){
-        structure4h.direction = 'BEARISH RISK';
-        structure4h.bias = 'BEARISH RISK';
-        structure4h.phase = 'BEARISH RISK';
-        structure4h.buyerPsychology = 'Demand not confirmed; higher-low recovery is required';
-        structure4h.sellerPsychology = 'Selling pressure dominates while correction remains confirmed';
-      }
-    }catch(_){}
+    // IMPORTANT: keep this layer genuinely independent. The 4H raw structure
+    // must be derived from 4H swings; the authoritative 15m EMA200 correction
+    // is synthesized later by Trader Decision and must not rewrite this label.
 
     const bearishStructure = detectBearishStructure({
       k15m: k15,
@@ -2992,8 +2997,11 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       structureExplanation: structure4h.explanation,
       slope15: structure4h.slope15,
       accumChecks: tfChecks,
-      accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6) },
+      accumCombined: { confidence: combinedConfidence, isAccum: combinedConfidence >= Math.max(45, (100 - sens) * 0.6), sourceTimeframes:['15m','1h','4h'], semantics:'maturity/intensity, not directional probability' },
       accum15: acc15,
+      accum1h: acc1h,
+      accum4h: acc4h,
+      accum1d: acc1d,
       preCrash,
       // annotate detection results:
       phase: detectPhaseForSymbol({
@@ -4012,9 +4020,8 @@ function getAccumulationDirectionalState(item){
   const structure=String(r.structure4h?.phase||r.structure4h?.bias||r.structureBias||'').toLowerCase();
   const lh=Number(r.lowerHighCount||0), ll=Number(r.lowerLowCount||0);
   const hh=Number(r.higherHighCount||0), hl=Number(r.higherLowCount||0);
-  const bearish = correctionConfirmed ||
-    /markdown|post-top|breakdown|bearish|distribution|correction/.test(phase) ||
-    /bearish/.test(ema) || /bearish/.test(structure) || lh>=2 || ll>=2;
+  const bearish = /markdown|post-top|breakdown|bearish|distribution|correction/.test(phase) ||
+    /bearish/.test(ema) || /bearish/.test(structure) || lh>=2 || ll>=2 || correctionConfirmed;
   const bullish = !bearish &&
     (/markup|recovery|bullish/.test(phase)||/bullish/.test(ema)||/bullish/.test(structure)) &&
     (hh>=1 || hl>=1);
@@ -4711,8 +4718,7 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
   const bullScore =
     (higherHighs * 2) +
     (higherLows * 2) +
-    (srFlipType === "BULLISH" ? 3 : 0) +
-    (accum >= 60 ? 1 : 0);
+    (srFlipType === "BULLISH" ? 3 : 0);
 
   const bearScore =
     (lowerHighs * 2) +
@@ -4743,10 +4749,12 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
       explanation = "Bearish structure has the stronger score, although higher swings show a recovery attempt.";
     }
   }else if(bullish){
-    bias = accum >= 60 ? "BULLISH / ACCUMULATION" : "BULLISH";
-    buyerPsych = accum >= 60 ? "Demand / position-building" : "Increasing demand / buyers accepting higher prices";
+    bias = "BULLISH";
+    buyerPsych = "Increasing demand / buyers accepting higher prices";
     sellerPsych = "Supply being absorbed / pullbacks defended";
-    explanation = "Higher highs and higher lows show buyers accepting higher prices and defending pullbacks.";
+    explanation = accum >= 60
+      ? "Higher highs and higher lows show bullish 4H structure; accumulation maturity is additional context, not the source of direction."
+      : "Higher highs and higher lows show buyers accepting higher prices and defending pullbacks.";
   }else if(bearish){
     bias = "BEARISH";
     buyerPsych = "Reluctant buying / trapped longs";
@@ -4758,10 +4766,10 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
     sellerPsych = "Profit-taking / increasing supply";
     explanation = "Lower highs are appearing without fresh higher highs, consistent with an exhaustion/distribution risk.";
   }else if(accum>=60){
-    bias = "ACCUMULATION";
-    buyerPsych = "Quiet demand / position-building";
-    sellerPsych = "Supply being absorbed";
-    explanation = "Price structure is not strongly directional, while multi-timeframe accumulation suggests demand is absorbing supply.";
+    bias = "MIXED / ACCUMULATION CONTEXT";
+    buyerPsych = "Possible demand / position-building";
+    sellerPsych = "Supply absorption remains unconfirmed";
+    explanation = "Accumulation maturity is elevated, but 4H swing structure is not sufficiently directional; accumulation does not create a bullish bias by itself.";
   }
 
   // Overall trap risk is the highest active trap state.
@@ -4778,7 +4786,7 @@ function calculateMarketStructurePsychology({k4h=[], k15m=[], closeNow=0, volSpi
     bias,explanation,
     bullScore,bearScore,bullShare,bearShare,
     slope15,
-    structureSource:"4H swing structure + 15m short-term confirmation",
+    structureSource:"4H swing structure only; 15m execution and correction are separate layers",
     volumeContext: Number(volSpike4||1),
     fundingContext: Number(fundingRate||0)
   };
@@ -5737,10 +5745,11 @@ function getEntryStatusSnapshot(r){
   // uses this entry-status helper as an execution gate, so doing so would
   // create a circular dependency. Correction confirmation comes directly
   // from the authoritative Correction Guide.
-  const correctionConfirmed=!!((ema200!=null && Number(ema200)<0) || /significant correction|correction confirmed/i.test(String(item.correctionGuide?.label||'')));
+  const correctionConfirmed=isSignificantCorrectionConfirmed(item);
   const drop=Math.abs(Number(item.dropPctFromPeak||0));
   const rtnScore=Number(item.returnToNormal?.score||0);
-  const postCorrection=correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const recoveryConfirmedStrict=!!(correctionConfirmed && hasHigherLow && !hasLowerHigh && a4h>=55 && a1d>=50 && (recovery || rtnScore>=3));
+  const postCorrection=!!recoveryConfirmedStrict;
   const lr=Number(item.liquidity?.score||0);
   const liqEvent=String(item.liquidity?.event||'').toUpperCase();
   const liqDownsideSweep=liqEvent.includes('DOWNSIDE LIQUIDITY SWEEP');
@@ -6960,7 +6969,9 @@ function getFinalRecommendation(item){
   const isAccumPhase=/accumulation|re-accumulation/.test(phaseLc);
   const isDistribution=/distribution|breakdown/.test(phaseLc);
   const isCapitulation=/capitulation/.test(phaseLc);
-  const isRecovery=cgCode==='POST_CORRECTION_RECOVERY';
+  const hasHigherLow = Number(r.higherLows||0)>0 || r.hasHigherLow===true || /higher[- ]?low/i.test(String(r.structureExplanation||''));
+  const hasLowerHigh = Number(r.lowerHighs||0)>0 || r.lowerHigh===true || /lower[- ]?high/i.test(String(r.structureExplanation||''));
+  const isRecovery=!!(cgCode==='POST_CORRECTION_RECOVERY' && hasHigherLow && !hasLowerHigh && a4h>=55 && a1h>=50);
   const blowoffStrong = (Number(r.score||0)>=7 && rsi4h>=80 && vol>=2) || (rsi4h>=88 && vol>=3 && Number(r.topDetection?.score||0)>=75);
   const exhaustion = rsi4h>=75 || vol>=2 || ema70>=20 || wick>=1.5 || warningScore>=6 || blow>=20;
   const strongSupport = accum>=65 && a4h>=55 && a1h>=50;
@@ -7086,11 +7097,11 @@ function getFinalRecommendation(item){
   }
   /* 4) Supported accumulation should win over generic extension unless exhaustion is severe. */
   else if(strongSupport && !isDistribution && !isCapitulation && rsi4h<75 && blow<30){
-    state='🟢 ACCUMULATION / RE-ACCUMULATION — SUPPORTED';
+    state='🟢 ACCUMULATION MATURITY — SUPPORTED';
     confidence=Math.min(94,Math.round(52 + accum*0.28 + a4h*0.12));
-    sentence=`Multi-timeframe support is aligned: accumulation ${accum}% with 4H ${a4h}%, 1H ${a1h}% and 15m ${a15}%. The market can continue higher, but entries should still be staged rather than chased.`;
+    sentence=`Accumulation maturity is elevated (${accum}%) with 4H ${a4h}%, 1H ${a1h}% and 15m ${a15}%. This supports the current structure but does not independently establish direction; entries still require 15m execution confirmation.`;
     rationale='Strong multi-TF accumulation + controlled RSI + low blowoff similarity';
-    tradeBias='Bullish / Controlled';
+    tradeBias='Neutral / Controlled';
     action='Prefer pullback or higher-low entries. Add only while 4H/1D structure and green volume continue to confirm accumulation.';
   }
   /* 5) Moderate accumulation with low exhaustion = developing continuation. */
@@ -7810,7 +7821,7 @@ function renderTraderDecisionBlock(r, compact=false){
    * the correction may already be mature or completed; it should not keep
    * printing "Correction active" merely because the correctionGuide remains red.
    */
-  const postCorrection = correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  const postCorrection = !!(correctionConfirmed && isRecovery && hasHigherLow && !hasLowerHigh);
   const recoveryScore=Math.max(0,Math.min(100,Math.round(
     (hasHigherLow?28:0) +
     (a4h>=55?18:a4h>=50?10:0) +
@@ -7891,10 +7902,10 @@ function renderTraderDecisionBlock(r, compact=false){
     bias = recoveryScore>=70 && strongHTF ? 'Neutral / Recovery Improving' : 'Neutral / Cautious Bearish';
     longEntry = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
     shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high rejection' : '⏸ Wait for downside structure';
-    readiness = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
+    readiness = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🔴 Correction active';
     bestAction = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow
       ? 'The major correction has already occurred and recovery structure is developing. Favor staged entries on higher-lows; add only while 4H/1D accumulation and volume continue to improve.'
-      : 'The major correction has already occurred. Do not chase the decline and do not wait for another correction. The market is now in a post-correction stabilization/recovery phase; wait for a higher-low and improving 4H/1D accumulation before treating it as a confirmed recovery entry.';
+      : 'Recovery conditions are confirmed after the correction. Favor staged entries only while the confirmed higher-low holds and 4H/1D participation continues to improve.';
     if(!hasHigherLow) missing.push('confirmed higher-low');
     if(a4h<55) missing.push('4H accumulation ≥55%');
     if(a1d<50) missing.push('1D accumulation ≥50%');
@@ -8127,9 +8138,9 @@ function renderTraderDecisionBlock(r, compact=false){
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
   const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
   const correctionText = postCorrection
-    ? `🟣 Confirmed — correction completed / recovery phase`
+    ? `🟣 Confirmed — recovery after correction`
     : correctionConfirmed
-      ? `🔴 Confirmed — correction still active`
+      ? `🔴 Confirmed — correction active; recovery not confirmed`
       : `🟢 Not confirmed`;
 
   // FINAL DECISION ENGINE: one authority for displayed direction, action and confidence.
@@ -8899,9 +8910,10 @@ function calculateUnifiedMarketCycle(item){
     // IMPORTANT: return-to-normal is context only. Recovery is authoritative
     // after POST_CORRECTION_RECOVERY, or after a confirmed correction has a
     // genuine bullish recovery. Oversold/bounce conditions alone never qualify.
-    const recoveryConfirmed=!supportFailed && (
-      correctionRecoveryCode ||
-      (correctionConfirmed && bullishRecoveryConfirmed)
+    const recoveryConfirmed=!!(
+      !supportFailed &&
+      bullishRecoveryConfirmed &&
+      (correctionRecoveryCode || correctionConfirmed)
     );
     const bounceOnly=(rsiOversold||rsiStretched) && (supportTest||price>e14) && !reversalConfirmed;
 
@@ -9041,7 +9053,7 @@ function calculateUnifiedMarketCycle(item){
       : bullishReversalConfirmed
         ? 'Bullish reversal is confirmed against the prior bearish trend. Avoid chasing; wait for reclaim + higher-low / bullish-break execution confirmation.'
         : phase==='POST-CORRECTION / RECOVERY'
-          ? 'Correction is complete enough to enter recovery-watch mode. Do not chase; require sustained higher-lows, liquidity acceptance and stronger 4H/1D support before scaling.'
+          ? 'Recovery is structurally confirmed. Do not chase; require sustained higher-lows, liquidity acceptance and stronger 4H/1D support before scaling.'
           : phase==='MARKDOWN / POST-TOP'
             ? 'Correction is confirmed. Stay defensive; wait for support defense + higher-low + EMA reclaim for recovery, or failed bounce/lower-high for continuation.'
             : phase==='CORRECTION DEVELOPING'
