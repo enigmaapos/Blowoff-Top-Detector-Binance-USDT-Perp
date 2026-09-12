@@ -689,14 +689,6 @@ body.authLocked{overflow:hidden}
 .finalDecisionAuthority .fdaState{margin-top:3px;font-size:16px;font-weight:950;line-height:1.25}
 .finalDecisionAuthority .fdaSub{margin-top:4px;font-size:10px;line-height:1.4;color:#9fb3cc}
 </style>
-
-<style id="accumulation-semantics-ui">
-.accumulationSemanticsNote{margin-top:7px;padding:8px 10px;border-radius:8px;
- border:1px dashed rgba(126,220,255,.16);background:rgba(126,220,255,.025);
- color:#9fb3cc;font-size:10px;line-height:1.45}
-.accumulationSemanticsNote strong{color:#dff7ff}
-</style>
-
 </head>
 <body class="authLocked">
 <div id="authScreen"><div class="authCard">
@@ -1407,7 +1399,7 @@ function calculateTopDetectionStack(item){
     else if(nearPeak && oneDVolumeWeakening) reasons.push(`1D volume weakening ${Number(item.volume1dTrendPct).toFixed(1)}% vs prior 3D average`);
     if(parabolic) reasons.push(`Parabolic EMA extension (${emaStretch.toFixed(1)}%)`);
     if(distributionPhase) reasons.push('Market phase is Distribution / Breakdown');
-    if(weakSupport) reasons.push(`Low accumulation maturity (${Math.round(Number(item.accumCombined?.confidence ?? item.accum ?? 0))}%)`);
+    if(weakSupport) reasons.push(`Weak accumulation support (${Math.round(Number(item.accumCombined?.confidence ?? item.accum ?? 0))}%)`);
     if(ema200CorrectionConfirmed){
       reasons.unshift(`15m EMA200 confirmation active (${Number(item.correctionGuide?.ema200Stretch15).toFixed(2)}%) — post-top/correction state`);
       const dd=Number(item.dropFromPeak);
@@ -2910,6 +2902,21 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
       fundingRate,
       accumCombined: { confidence: combinedConfidence }
     });
+    // Directional guard: raw HH/HL accumulation cannot be presented as
+    // confirmed bullish demand while the authoritative correction is active.
+    try{
+      const _corrNow = ema200Stretch15!=null && Number(ema200Stretch15)<0;
+      const _bearNow = _corrNow || (belowAll && bearishStack) ||
+        false;
+      if(_bearNow && structure4h){
+        structure4h.direction = 'BEARISH RISK';
+        structure4h.bias = 'BEARISH RISK';
+        structure4h.phase = 'BEARISH RISK';
+        structure4h.buyerPsychology = 'Demand not confirmed; higher-low recovery is required';
+        structure4h.sellerPsychology = 'Selling pressure dominates while correction remains confirmed';
+      }
+    }catch(_){}
+
     const bearishStructure = detectBearishStructure({
       k15m: k15,
       k4h,
@@ -3058,6 +3065,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     setCachedSymbol(sym, result);
 
     el.symbolStatus.innerText = `Analyzed ${sym} • ${result.correctionGuide.label}${result.correctionGuide.severity ? ' — '+result.correctionGuide.severity : ''} (${result.correctionGuide.confidence}%) • accum ${result.accumCombined.confidence}% • rsi4h ${Math.round(result.rsi4h||0)}`;
+    applyAccumulationSemantics(result);
     return result;
   } catch(err){
     el.symbolStatus.innerText = `Analyze ${sym} failed: ${err.message}`;
@@ -3984,34 +3992,58 @@ function stdDev(values){
   return Math.sqrt(variance);
 }
 
-
-/* ---------- ACCUMULATION SEMANTICS FIX ----------
-   Accumulation % is a MATURITY / SATURATION score, not bullish probability.
-   Higher values mean more accumulated structural evidence has built up.
-   High maturity can become a bearish-risk amplifier only when independent
-   evidence (distribution, exhaustion, bearish structure, extension, correction)
-   agrees. It must never by itself create a bearish or bullish trade signal.
-*/
-function accumulationMaturityLabel(pct){
-  const p=Math.max(0,Math.min(100,Number(pct)||0));
-  if(p>=80) return 'VERY HIGH MATURITY / SATURATED';
-  if(p>=60) return 'HIGH MATURITY';
-  if(p>=40) return 'ESTABLISHED / DEVELOPING';
-  if(p>=20) return 'EARLY';
-  return 'LOW / EARLY';
-}
-function accumulationRiskContext(pct, bearishEvidence, bullishEvidence){
-  const p=Math.max(0,Math.min(100,Number(pct)||0));
-  if(p>=80 && bearishEvidence) return 'HIGH MATURITY + BEARISH EVIDENCE';
-  if(p>=60 && bearishEvidence) return 'MATURE + BEARISH RISK RISING';
-  if(p>=80 && bullishEvidence) return 'VERY MATURE — BULLISH STRUCTURE STILL SUPPORTED';
-  if(p>=60) return 'MATURE — WATCH FOR TRANSITION';
-  if(p>=40) return 'DEVELOPING MATURITY';
-  return 'EARLY MATURITY';
-}
-
 /* ---------- ACCUMULATION DETECTOR ---------- */
 // ... same detectAccumulationGeneric function from original (kept as-is)
+
+/* ===== ACCUMULATION SEMANTICS / DIRECTIONAL AUTHORITY =====
+   Accumulation score = maturity/saturation of the detected base/absorption
+   pattern. It is NOT a bullish probability and must never override current
+   bearish structure, confirmed correction, or 15m execution.
+*/
+function getAccumulationDirectionalState(item){
+  const r=item||{};
+  const a=Number(r.accumCombined?.confidence ?? r.accum ?? 0);
+  const a4=Number((r.accumChecks||[]).find(x=>x.tf==='4h')?.result?.confidence ?? 0);
+  const phase=String(r.phase?.phase||r.phase||'').toLowerCase();
+  const cg=r.correctionGuide||{};
+  const ema200=cg.ema200Stretch15;
+  const correctionConfirmed=ema200!=null && Number(ema200)<0;
+  const ema=String(r.unifiedCycle?.trend||r.trend||'').toLowerCase();
+  const structure=String(r.structure4h?.phase||r.structure4h?.bias||r.structureBias||'').toLowerCase();
+  const lh=Number(r.lowerHighCount||0), ll=Number(r.lowerLowCount||0);
+  const hh=Number(r.higherHighCount||0), hl=Number(r.higherLowCount||0);
+  const bearish = correctionConfirmed ||
+    /markdown|post-top|breakdown|bearish|distribution|correction/.test(phase) ||
+    /bearish/.test(ema) || /bearish/.test(structure) || lh>=2 || ll>=2;
+  const bullish = !bearish &&
+    (/markup|recovery|bullish/.test(phase)||/bullish/.test(ema)||/bullish/.test(structure)) &&
+    (hh>=1 || hl>=1);
+  const maturity = a>=80 ? 'VERY HIGH / SATURATED' :
+                   a>=60 ? 'HIGH / MATURE' :
+                   a>=40 ? 'ESTABLISHED / DEVELOPING' :
+                   a>=20 ? 'EARLY' : 'LOW / EARLY';
+  const state = bearish && a>=60 ? '🔴 MATURE ACCUMULATION — BEARISH RISK' :
+                bearish ? '🟠 ACCUMULATION — BEARISH CONTEXT' :
+                bullish && a>=60 ? '🟢 SUPPORTED ACCUMULATION — MATURE' :
+                bullish ? '🟢 EARLY ACCUMULATION — BULLISH STRUCTURE' :
+                a>=60 ? '🟡 MATURE ACCUMULATION — UNRESOLVED' :
+                '⚪ ACCUMULATION — LOW / UNRESOLVED';
+  return {
+    score:Math.max(0,Math.min(100,a)), score4h:a4, maturity, state,
+    directionalBearish:bearish, directionalBullish:bullish,
+    note: bearish
+      ? 'Accumulation maturity is present, but bearish structure/correction dominates; this is not bullish confirmation.'
+      : bullish
+        ? 'Accumulation maturity supports the structure, but 15m execution confirmation is still required.'
+        : 'Accumulation maturity is contextual until structure resolves.'
+  };
+}
+function applyAccumulationSemantics(item){
+  const s=getAccumulationDirectionalState(item);
+  item.accumulationSemantics=s;
+  return s;
+}
+
 function detectAccumulationGeneric(closes, highs, lows, vols, period=30, sensitivity=50){
   const len = Math.min(period, closes.length);
   if(len < 10) return {isAccum:false, score:0, reasons:[], confidence:0, relSD:0};
@@ -5071,14 +5103,14 @@ function detectPhaseForSymbol(item){
     if(reasons.some(r=>r.includes('Blowoff'))) candidates.push({phase:'Blowoff / Mania', priority:9});
     if(reasons.some(r=>r.includes('Capitulation'))) candidates.push({phase:'Capitulation / Despair', priority:8});
     if(reasons.some(r=>r.includes('Return-to-Normal'))) candidates.push({phase:'Return-to-Normal / Weak Bounce', priority:7});
-    if(reasons.some(r=>r.includes('Accumulation')) ) candidates.push({phase:'Accumulation Maturity / Base', priority:3});
+    if(reasons.some(r=>r.includes('Accumulation')) ) candidates.push({phase:'Accumulation / Re-accumulation', priority:6});
     if(reasons.some(r=>r.includes('Breakdown') || r.includes('Distribution'))) candidates.push({phase:'Distribution / Breakdown', priority:5});
     if(reasons.some(r=>r.includes('Takeoff')) ) candidates.push({phase:'Takeoff / Early Pump', priority:4});
 
     if(candidates.length === 0){
       // fallback heuristics
       if(dropPctFromPeak <= -20) candidates.push({phase:'Capitulation / Despair', priority:7});
-      else if(item.accumCombined && item.accumCombined.confidence >= 55) candidates.push({phase:'Accumulation Maturity / Base', priority:3});
+      else if(item.accumCombined && item.accumCombined.confidence >= 55) candidates.push({phase:'Accumulation / Re-accumulation', priority:5});
       else candidates.push({phase:'Normal / Trending', priority:1});
     }
 
@@ -6754,7 +6786,7 @@ function getShortTermRecommendation(item){
   if(confirmed){
     if(accum>=60 && rsi4h<65){
       bias='Recovery Watch';
-      sentence='Correction is confirmed, but improving accumulation suggests a possible recovery phase; wait for a 15m/1h higher-low and stronger 4H confirmation before treating it as a long setup.';
+      sentence='Correction is confirmed, but accumulation maturity alone does not confirm recovery; wait for a 15m/1h higher-low and stronger 4H confirmation before treating it as a long setup.';
       plan='Watch for a higher-low with rising green volume; use the structural low as invalidation and the nearest resistance as the first bounce objective.';
     }else{
       bias='Neutral / Cautious Bearish';
@@ -7095,7 +7127,7 @@ function getFinalRecommendation(item){
     sentence='The market is extended or showing early exhaustion, but the evidence is not strong enough to call a blowoff or confirmed correction.';
     rationale='Extension/exhaustion present without decisive state confirmation';
     tradeBias='Neutral / Cautious';
-    action='Avoid aggressive entries at extremes. Wait for cooling and a higher-low, or for clearer structure or accumulation maturity to develop before adding.';
+    action='Avoid aggressive entries at extremes. Wait for cooling and a higher-low, or for stronger accumulation to resume before adding.';
   }
   /* 9) High cycle similarity without distribution: context only. */
   else if(simPct>=70){
@@ -7118,7 +7150,7 @@ function getFinalRecommendation(item){
   evidence.push(`Cycle ${simPct}%`);
   evidence.push(`Blowoff ${blow}%`);
   evidence.push(`Warning ${warningScore}/${warningMax}`);
-  evidence.push(`Accumulation maturity ${accum}% (15m ${a15}% / 1h ${a1h}% / 4h ${a4h}%)`);
+  evidence.push(`Accumulation ${accum}% (15m ${a15}% / 1h ${a1h}% / 4h ${a4h}%)`);
   evidence.push(`4H RSI ${rsi4h.toFixed(1)}`);
   evidence.push(`4H volume ×${vol.toFixed(2)}`);
   evidence.push(`EMA70 extension ${ema70.toFixed(2)}%`);
@@ -7908,8 +7940,8 @@ function renderTraderDecisionBlock(r, compact=false){
     readiness='🟠 High-risk / structurally vulnerable';
     if(!hasLowerHigh) missing.push('lower-high or failed-bounce confirmation for short');
     if(!hasHigherLow) missing.push('higher-low for long');
-    if(a4h<55) missing.push('4H accumulation maturity / base development');
-    if(a1d<50) missing.push('1D accumulation maturity / base development');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
     invalid.push('breakdown below support');
     decisionScore=62;
   } else if(strongHTF && hasHigherLow && !distribution && !overheated) {
@@ -7930,8 +7962,8 @@ function renderTraderDecisionBlock(r, compact=false){
     bestAction='The market is normalizing after a move. Treat this as a recovery process, not an automatic bottom. Wait for a higher-low and improving 4H/1D accumulation before scaling into recovery.';
     readiness='🟡 Recovery watch';
     if(!hasHigherLow) missing.push('stable higher-low');
-    if(a4h<55) missing.push('4H accumulation maturity / base development');
-    if(a1d<50) missing.push('1D accumulation maturity / base development');
+    if(a4h<55) missing.push('4H accumulation improvement');
+    if(a1d<50) missing.push('1D accumulation improvement');
     invalid.push('new lower-low / renewed distribution');
   } else if(distribution || structureBear) {
     currentState='🟠 STRUCTURE WEAKENING';
@@ -7941,8 +7973,8 @@ function renderTraderDecisionBlock(r, compact=false){
     bestAction='Structure is weakening, but do not chase the first breakdown. Wait for a failed bounce/lower-high for shorts or a higher-low plus accumulation recovery for longs.';
     readiness='🟠 Structure unresolved';
     if(!hasLowerHigh) missing.push('defined lower-high / failed bounce');
-    if(a4h<50) missing.push('4H accumulation maturity / base rebuilding');
-    if(a1d<50) missing.push('1D accumulation maturity / base rebuilding');
+    if(a4h<50) missing.push('4H accumulation recovery');
+    if(a1d<50) missing.push('1D accumulation recovery');
     invalid.push('breakdown confirmation / support failure');
   } else {
     currentState=rec.state||'⚪ NO CLEAR EDGE';
@@ -8888,8 +8920,7 @@ function calculateUnifiedMarketCycle(item){
     const markdownSimple=(belowAll&&bearishStack&&(correctionConfirmed||Math.abs(Number(item.dropPctFromPeak||0))>=15||lh>=2||ll>=2));
     const distributionCore=(nearResistance && (lh>=1 || topScore>=45 || /distribution|breakdown/.test(phaseText)) && !belowAll);
     const markupCore=(aboveAll&&bullishStack&&bullishStructure&&!distributionCore);
-    const accumulationPct=Math.max(0,Math.min(100,Number(item.accumCombined?.confidence||0)));
-    const accumulationCore=(accumulationPct>=60 && !markdownCore && !distributionCore && (hl>=1||supportTest));
+    const accumulationCore=(Math.max(0,Number(item.accumCombined?.confidence||0))>=60 && !markdownCore && !distributionCore && (hl>=1||supportTest));
 
     // A confirmed recovery is a correction-state outcome, not necessarily the
     // final cycle phase. Once recovery has completed and the market has
