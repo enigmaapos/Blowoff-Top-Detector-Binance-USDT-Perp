@@ -1745,12 +1745,81 @@ function classifySimilarityPhase(sim) {
   // Unified Cycle Match display helper.
   // Falls back to the classifier for older/cached result objects.
 
+
+/*
+ * FINAL RECOVERY AUTHORITY
+ * Recovery is NOT inferred from RSI normalization, return-to-normal, proximity
+ * to EMA200, or an old cached POST_CORRECTION_RECOVERY label.
+ * A confirmed correction can leave correction state only when the current data
+ * also proves the minimum recovery checklist:
+ *   15m higher-low + EMA14/EMA21 reclaim + 1D accumulation >= 50% +
+ *   sustained 4H volume participation (>= 1.20x).
+ */
+function getStrictRecoveryState(r){
+  const item=r||{};
+  const cg=(item.correctionGuide && typeof item.correctionGuide==='object')
+    ? item.correctionGuide
+    : (typeof getCorrectionGuide==='function' ? getCorrectionGuide(item) : {});
+  const emaStretch=Number(cg.ema200Stretch15);
+  const correctionConfirmed=String(cg.code||'').toUpperCase()==='SIGNIFICANT_CORRECTION_CONFIRMED'
+    || (Number.isFinite(emaStretch) && emaStretch<0);
+
+  const checks=Array.isArray(item.accumChecks)?item.accumChecks:[];
+  const oneDay=checks.find(x=>String(x?.tf||'').toLowerCase()==='1d');
+  const oneDayAvailable=!!oneDay && !!oneDay.result && Number.isFinite(Number(oneDay.result.confidence));
+  const a1d=oneDayAvailable?Number(oneDay.result.confidence):null;
+  const vol=Number(item.volSpike4||0);
+
+  const price=Number(item.closeNow||0);
+  const k15=Array.isArray(item.k15m)?item.k15m:[];
+  const c15=k15.map(x=>Number(x?.[4])).filter(Number.isFinite);
+  const e14=Number(item.ema14_15??item.ema14_15m??(c15.length>=14?ema(c15,14):0));
+  const e21=Number(item.ema21_15??item.ema21_15m??(c15.length>=21?ema(c15,21):0));
+
+  // Prefer an actual 15m swing higher-low. Legacy result flags/reasons are
+  // accepted only as fallback for older cached result objects.
+  let pivotHL=false;
+  if(k15.length>=9){
+    const lows=k15.map(x=>Number(x?.[3])).filter(Number.isFinite);
+    const start=Math.max(2,lows.length-30);
+    for(let i=start;i<lows.length-2;i++){
+      if(lows[i]>lows[i-1] && lows[i]>=lows[i+1] && lows[i]>lows[i-2] && lows[i]>=lows[i+2]){
+        pivotHL=true; break;
+      }
+    }
+  }
+  const hasHL=pivotHL || !!item.hasHigherLow
+    || Number(item.higherLowCount||0)>0
+    || (item.phase?.reasons||[]).some(x=>/higher[- ]?low/i.test(String(x)));
+
+  const emaReclaim=price>0 && e14>0 && e21>0 && price>e14 && price>e21;
+
+  const confirmed=correctionConfirmed && hasHL && emaReclaim && a1d!==null && a1d>=50 && vol>=1.2;
+  return {
+    confirmed,
+    correctionConfirmed,
+    hasHigherLow:hasHL,
+    emaReclaim,
+    oneDayAvailable,
+    a1d,
+    sustainedVolume:vol>=1.2,
+    volume:vol,
+    reason:confirmed
+      ? 'Higher-low + EMA14/EMA21 reclaim + 1D accumulation ≥50% + sustained 4H volume are confirmed.'
+      : 'Recovery requires a confirmed correction plus higher-low, EMA14/EMA21 reclaim, 1D accumulation ≥50%, and sustained 4H volume.'
+  };
+}
+
 function getAuthoritativeMarketPhase(r){
   const item=r||{};
   const cg=(item.correctionGuide && typeof item.correctionGuide==='object') ? item.correctionGuide : (typeof getCorrectionGuide==='function' ? getCorrectionGuide(item) : {});
   const code=String(cg.code||'').toUpperCase();
   const label=String(cg.label||'').toUpperCase();
-  if(code==='POST_CORRECTION_RECOVERY') return {name:'POST-CORRECTION / RECOVERY', confidence:Number(cg.confidence||75), code};
+  if(code==='POST_CORRECTION_RECOVERY'){
+    const recoveryState=getStrictRecoveryState(item);
+    if(recoveryState.confirmed) return {name:'POST-CORRECTION / RECOVERY', confidence:Number(cg.confidence||75), code};
+    if(recoveryState.correctionConfirmed) return {name:'MARKDOWN / POST-TOP — SIGNIFICANT CORRECTION CONFIRMED', confidence:100, code:'SIGNIFICANT_CORRECTION_CONFIRMED'};
+  }
   if(code==='SIGNIFICANT_CORRECTION_CONFIRMED') return {name:'MARKDOWN / POST-TOP — SIGNIFICANT CORRECTION CONFIRMED', confidence:Number(cg.confidence||100), code};
   if(code==='CORRECTION_DEVELOPING' || /CORRECTION DEVELOPING|DEEPENING CORRECTION/.test(label)) return {name:'CORRECTION DEVELOPING — NOT CONFIRMED', confidence:Number(cg.confidence||70), code:'CORRECTION_DEVELOPING'};
   if(code==='HIGH_CORRECTION_RISK_MANIA') return {name:'HIGH CORRECTION RISK / MANIA', confidence:Number(cg.confidence||90), code};
@@ -1924,6 +1993,7 @@ function renderOverallMarketVerdict(r){
         <div class="unifiedVerdictBadge ${mspEscape(v.tone)}">${mspEscape(v.verdict)}</div>
       </div>
       <div class="unifiedVerdictReason">${mspEscape(v.reason)}</div>
+      <div class="small" style="margin-top:6px;color:#9fb3cc">4H SMC sequence confirmation and 4H structural psychology are separate layers. <strong>BEARISH RISK</strong> describes structural risk; it does not mean MSS → CHoCH → BOS → Retest → Breakdown is confirmed.</div>
       <div class="unifiedSignals">
         <div class="unifiedSignal">
           <div class="unifiedSignalLabel">Market Phase</div>
@@ -1934,7 +2004,7 @@ function renderOverallMarketVerdict(r){
           <div class="unifiedSignalValue">${mspEscape(v.cyclePhase)} • ${mspEscape(v.similarity)}%</div>
         </div>
         <div class="unifiedSignal">
-          <div class="unifiedSignalLabel">Raw Structural Bias (4H independent)</div>
+          <div class="unifiedSignalLabel">4H Structural Psychology (independent)</div>
           <div class="unifiedSignalValue">${mspEscape(v.structuralBias)}</div>${v.directionalOverride?`<div class="unifiedSignalLabel">Directional Override</div><div class="unifiedSignalValue">${mspEscape(v.directionalOverride)}</div>`:``}
         </div>
       </div>
@@ -4593,7 +4663,7 @@ function renderBearishStructureDetector(r){
     <div class="bearStructMeta">
       ${b.mssLevel!=null?`MSS level ${Number(b.mssLevel).toPrecision(8)} • `:''}${b.bosLevel!=null?`BOS ${Number(b.bosLevel).toPrecision(8)} • `:''}${b.retestLevel!=null?`Retest ${Number(b.retestLevel).toPrecision(8)}`:''}
     </div>
-    <div class="bearStructAuthority">${correctionConfirmed?'🔴 SIGNIFICANT CORRECTION CONFIRMED remains authoritative. Bearish structure is supporting context only.':'Independent price-action check only. It does not confirm a significant correction; the separate 15m EMA200 correction layer remains authoritative.'}</div>
+    <div class="bearStructAuthority">${correctionConfirmed?'🔴 SIGNIFICANT CORRECTION CONFIRMED remains authoritative. 4H SMC is supporting context only.':'Independent 4H SMC sequence check only. It does not confirm a significant correction; the separate 15m EMA200 correction layer remains authoritative.'}<br>🧠 <strong>Structural psychology ≠ SMC confirmation:</strong> a separate 4H BEARISH RISK / S/R-flip reading may coexist with SMC MSS/CHoCH/BOS still pending.</div>
   </div>`;
 }
 
@@ -6944,6 +7014,8 @@ function getFinalRecommendation(item){
   const accum=Number(r.accumCombined?.confidence||0);
   const tf=(r.accumChecks||[]).reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
   const a15=tf['15m']??0, a1h=tf['1h']??0, a4h=tf['4h']??0;
+  const oneDayAccumCheck=(r.accumChecks||[]).find(x=>String(x?.tf||'').toLowerCase()==='1d');
+  const a1dAvailable=!!oneDayAccumCheck && !!oneDayAccumCheck.result && Number.isFinite(Number(oneDayAccumCheck.result.confidence));
   const rsi4h=Number(r.rsi4h||0), rsi1d=Number(r.rsi1d||0), rsi15=Number(r.rsi15||0);
   const vol=Number(r.volSpike4||1), wick=Number(r.wickRatio4||0), ema70=Number(r.ema70DistPct||0);
   const funding=Number(r.fundingRate||0), drop=Number(r.dropPctFromPeak||0);
@@ -6961,7 +7033,9 @@ function getFinalRecommendation(item){
   const isAccumPhase=/accumulation|re-accumulation/.test(phaseLc);
   const isDistribution=/distribution|breakdown/.test(phaseLc);
   const isCapitulation=/capitulation/.test(phaseLc);
-  const isRecovery=cgCode==='POST_CORRECTION_RECOVERY';
+  const strictRecovery=getStrictRecoveryState(r);
+  const missing1dAccum=a1dAvailable ? `1D accumulation ≥50% (currently ${a1d}%)` : '1D accumulation ≥50% (insufficient 1D data)';
+  const isRecovery=strictRecovery.confirmed;
   const blowoffStrong = (Number(r.score||0)>=7 && rsi4h>=80 && vol>=2) || (rsi4h>=88 && vol>=3 && Number(r.topDetection?.score||0)>=75);
   const exhaustion = rsi4h>=75 || vol>=2 || ema70>=20 || wick>=1.5 || warningScore>=6 || blow>=20;
   const strongSupport = accum>=65 && a4h>=55 && a1h>=50;
@@ -7396,9 +7470,7 @@ function calculateTimingFramework(item, side){
   const lhAfterBounce = !!(lastH&&prevH&&lastH.price<prevH.price && shortBounceStart>=0 && lastH.i>shortBounceStart);
   const shortEarly=bounceFailureShort&&lhAfterBounce;
   const shortStrong=shortEarly&&bearishBreak;
-  // Final failed-bounce confirmation requires an actual completed-candle LL.
-  // A generic bearish break is only an intermediate trigger.
-  const shortBest=shortEarly && ll;
+  const shortBest=shortStrong && ll;
 
   // STRICT 15m reclaim/recovery sequence for longs:
   // price must first recover from below the buying zone, then defend/reclaim it,
@@ -7417,7 +7489,7 @@ function calculateTimingFramework(item, side){
   const longEarly=reclaimDefenseLong&&hlAfterReclaim;
   const longStrong=longEarly&&bullishBreak;
   const longBest=longStrong && hh;
-  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONDITIONAL':shortEarly?'CONDITIONAL':lh?'LOWER_HIGH':rejectionShort?'REJECTION':'NOT YET';
+  const shortEntry=shortBest?'CONFIRMED':shortStrong?'CONFIRMED':shortEarly?'CONDITIONAL':lh?'LOWER_HIGH':rejectionShort?'REJECTION':'NOT YET';
   const longEntry=longBest?'CONFIRMED':longStrong?'CONFIRMED':longEarly?'CONDITIONAL':hl?'HIGHER_LOW':rejectionLong?'RECLAIM':'NOT YET';
   const correctionConfirmed=Number(cg.ema200Stretch15)<0;
   let reversalSide='';
@@ -7714,6 +7786,9 @@ function renderTraderDecisionBlock(r, compact=false){
   const tf=checks.reduce((o,x)=>{o[x.tf]=Number(x.result?.confidence||0);return o;},{});
   const a15=Number(tf['15m']??0), a1h=Number(tf['1h']??0), a4h=Number(tf['4h']??0), a1d=Number(tf['1d']??0);
   const accum=Number(item.accumCombined?.confidence??rec.accum??0);
+  const oneDayAccumCheck=checks.find(x=>String(x?.tf||'').toLowerCase()==='1d');
+  const a1dAvailable=!!oneDayAccumCheck && !!oneDayAccumCheck.result && Number.isFinite(Number(oneDayAccumCheck.result.confidence));
+  const a1dStatus=a1dAvailable ? `${a1d}% — measured detector result (0% means no/very low accumulation detected, not missing data)` : '— — insufficient 1D accumulation data';
   const rsi4h=Number(item.rsi4h||0), rsi15=Number(item.rsi15||0);
   const rsi15Session=item.rsi15Session||{};
   const rsi15Below50=Number(rsi15Session.countBelow50||0);
@@ -7743,8 +7818,10 @@ function renderTraderDecisionBlock(r, compact=false){
   const hasLowerHigh=reasons.some(x=>/lower[- ]?high/i.test(x)) || Number(item.lowerHighCount||0)>0 || item.lowerHigh===true;
   const distribution=/distribution|breakdown/i.test(phaseLc);
   const returnObj=item.returnToNormal||{};
-  const recovery=/recovery|return-to-normal/i.test(phaseLc) || !!returnObj.isReturn;
-  const accumulationPhase=/accumulation|re-accumulation/i.test(phaseLc);
+  const strictRecoveryState=getStrictRecoveryState(item);
+  const missing1dAccum = a1dAvailable ? `1D accumulation ≥50% (currently ${a1d}%)` : '1D accumulation ≥50% (insufficient 1D data)';
+  const recovery=!!strictRecoveryState.confirmed;
+  const accumulationPhase=/accumulation|re-accumulation/.test(phaseLc);
   const strongHTF=a4h>=60 && a1d>=55;
   const improvingHTF=a4h>=55 && a1d>=40;
   const structureBull=hasHigherLow || accumulationPhase;
@@ -7813,13 +7890,16 @@ function renderTraderDecisionBlock(r, compact=false){
    * the correction may already be mature or completed; it should not keep
    * printing "Correction active" merely because the correctionGuide remains red.
    */
-  const postCorrection = correctionConfirmed && (recovery || rsi4h<65 || rtnScore>=3 || (drop>=15 && !overheated));
+  // A correction remains ACTIVE until the strict recovery authority confirms
+  // the complete recovery checklist. RSI normalization / return-to-normal alone
+  // can never move the UI into POST-CORRECTION / RECOVERY.
+  const postCorrection = correctionConfirmed && recovery;
   const recoveryScore=Math.max(0,Math.min(100,Math.round(
     (hasHigherLow?28:0) +
     (a4h>=55?18:a4h>=50?10:0) +
     (a1d>=50?20:a1d>=40?10:0) +
     (rsi4h>=40 && rsi4h<=70?12:0) +
-    (recovery?12:0) +
+    (strictRecoveryState.confirmed?12:0) +
     (vol>=1.2?5:0) +
     (!hasLowerHigh?5:0)
   )));
@@ -7890,17 +7970,15 @@ function renderTraderDecisionBlock(r, compact=false){
   let decisionScore=0, currentState='';
 
   if(postCorrection){
-    currentState = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 RECOVERY DEVELOPING' : '🟣 POST-CORRECTION / RETURN-TO-NORMAL';
-    bias = recoveryScore>=70 && strongHTF ? 'Neutral / Recovery Improving' : 'Neutral / Cautious Bearish';
-    longEntry = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Staged recovery entry — confirmation present' : '❌ Not yet — recovery not confirmed';
-    shortEntry = downsideScore>=35 || hasLowerHigh ? '🟠 Conditional — failed bounce / lower-high rejection' : '⏸ Wait for downside structure';
-    readiness = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow ? '🟢 Recovery developing' : '🟣 Correction completed / recovery watch';
-    bestAction = liquidityRecoveryScore>=70 && strongHTF && hasHigherLow
-      ? 'The major correction has already occurred and recovery structure is developing. Favor staged entries on higher-lows; add only while 4H/1D accumulation and volume continue to improve.'
-      : 'The major correction has already occurred. Do not chase the decline and do not wait for another correction. The market is now in a post-correction stabilization/recovery phase; wait for a higher-low and improving 4H/1D accumulation before treating it as a confirmed recovery entry.';
+    currentState = '🟣 POST-CORRECTION / RECOVERY';
+    bias = 'Neutral / Recovery Improving';
+    longEntry = '🟡 Staged recovery entry — confirmation present; execute only on the 15m gate';
+    shortEntry = hasLowerHigh ? '🟠 Conditional — lower-high / rejection must confirm downside' : '⏸ Wait for downside structure';
+    readiness = '🟣 Recovery confirmed';
+    bestAction = 'The major correction is complete enough for a post-correction recovery state. Recovery is confirmed only because the strict checklist is satisfied; continue to require the 15m execution gate and protect against renewed EMA200/support failure.';
     if(!hasHigherLow) missing.push('confirmed higher-low');
     if(a4h<55) missing.push('4H accumulation ≥55%');
-    if(a1d<50) missing.push('1D accumulation ≥50%');
+    if(a1d<50) missing.push(missing1dAccum);
     if(vol<1.2) missing.push('sustained volume participation');
     invalid.push('new lower-low');
     invalid.push('renewed EMA200 loss / support failure');
@@ -7931,7 +8009,7 @@ function renderTraderDecisionBlock(r, compact=false){
     readiness=strongHTF && hasHigherLow ? '🟡 Recovery developing' : '🔴 Correction active';
     if(!hasHigherLow) missing.push('confirmed higher-low');
     if(a4h<55) missing.push('4H accumulation ≥55%');
-    if(a1d<50) missing.push('1D accumulation ≥50%');
+    if(a1d<50) missing.push(missing1dAccum);
     invalid.push('new lower-low / renewed EMA200 loss');
     decisionScore=Math.round(Math.max(25,Math.min(92,48 + recoveryScore*0.25 - downsideScore*0.2)));
   } else if(overheated && (distribution || Number(item.preCrash?.score||0)>=6)) {
@@ -7944,7 +8022,7 @@ function renderTraderDecisionBlock(r, compact=false){
     if(!hasLowerHigh) missing.push('lower-high or failed-bounce confirmation for short');
     if(!hasHigherLow) missing.push('higher-low for long');
     if(a4h<55) missing.push('4H accumulation improvement');
-    if(a1d<50) missing.push('1D accumulation improvement');
+    if(a1d<50) missing.push(missing1dAccum);
     invalid.push('breakdown below support');
     decisionScore=62;
   } else if(strongHTF && hasHigherLow && !distribution && !overheated) {
@@ -7966,7 +8044,7 @@ function renderTraderDecisionBlock(r, compact=false){
     readiness='🟡 Recovery watch';
     if(!hasHigherLow) missing.push('stable higher-low');
     if(a4h<55) missing.push('4H accumulation improvement');
-    if(a1d<50) missing.push('1D accumulation improvement');
+    if(a1d<50) missing.push(missing1dAccum);
     invalid.push('new lower-low / renewed distribution');
   } else if(distribution || structureBear) {
     currentState='🟠 STRUCTURE WEAKENING';
@@ -7977,7 +8055,7 @@ function renderTraderDecisionBlock(r, compact=false){
     readiness='🟠 Structure unresolved';
     if(!hasLowerHigh) missing.push('defined lower-high / failed bounce');
     if(a4h<50) missing.push('4H accumulation recovery');
-    if(a1d<50) missing.push('1D accumulation recovery');
+    if(a1d<50) missing.push(missing1dAccum);
     invalid.push('breakdown confirmation / support failure');
   } else {
     currentState=rec.state||'⚪ NO CLEAR EDGE';
@@ -7988,7 +8066,7 @@ function renderTraderDecisionBlock(r, compact=false){
     readiness='⚪ No clear edge';
     if(!hasHigherLow) missing.push('higher-low / stable base');
     if(a4h<50) missing.push('4H accumulation ≥50%');
-    if(a1d<50) missing.push('1D accumulation ≥50%');
+    if(a1d<50) missing.push(missing1dAccum);
     invalid.push('breakdown or deterioration in higher-timeframe support');
   }
 
@@ -8130,9 +8208,9 @@ function renderTraderDecisionBlock(r, compact=false){
   const missingHtml=missing.length?missing.map(x=>`<li>${x}</li>`).join(''):'<li>No major confirmation gap — continue monitoring.</li>';
   const invalidHtml=invalid.length?invalid.map(x=>`<li>${x}</li>`).join(''):'<li>Monitor structural support.</li>';
   const correctionText = postCorrection
-    ? `🟣 Confirmed — correction completed / recovery phase`
+    ? `🟣 Confirmed — correction completed / recovery confirmed`
     : correctionConfirmed
-      ? `🔴 Confirmed — correction still active`
+      ? `🔴 Confirmed — correction active`
       : `🟢 Not confirmed`;
 
   // FINAL DECISION ENGINE: one authority for displayed direction, action and confidence.
@@ -8161,7 +8239,9 @@ function renderTraderDecisionBlock(r, compact=false){
     <div class="finalDecisionAuthority"><div class="fdaTitle">FINAL DECISION ENGINE • AUTHORITATIVE</div><div class="fdaState">${currentState}</div><div class="fdaSub">All calculated scanner evidence is synthesized here. Trader Decision, entry status and primary execution path follow this result. 4H/1H = context; 15m = execution.</div></div>\n    <div style="margin-top:7px"><strong>Current state:</strong> ${currentState}</div>
     <div><strong>Final Decision:</strong> ${currentState}</div>\n    <div><strong>Trend:</strong> ${String(rec.trend||'UNKNOWN')}</div>\n    <div><strong>Directional Override:</strong> ${String(rec.directionalOverride||'NONE')}</div>\n    <div><strong>Reversal Continuation:</strong> ${String(rec.reversalContinuation?.label||'NOT ACTIVE')}${Number.isFinite(Number(rec.reversalContinuation?.score))?` • ${Number(rec.reversalContinuation.score)}%`:''}</div>\n    <div class="small"><strong>Continuation evidence:</strong> ${(rec.reversalContinuation?.reasons||[]).join(' • ')||'Waiting for post-reversal follow-through'}${rec.reversalContinuation?.state==='CONFIRMED'?' • 100% = complete required 15m continuation checklist':''}</div>\n    <div><strong>Bias:</strong> ${bias}</div>
     <div><strong>Correction:</strong> ${correctionText}${cg.label?` • ${cg.label}`:''}</div>
-    <div><strong>Long entry:</strong> ${longEntry}</div>
+    <div><strong>Recovery:</strong> ${postCorrection ? '🟣 CONFIRMED' : '⚪ NOT CONFIRMED'}${postCorrection ? ` • ${strictRecoveryState.reason}` : ` • ${strictRecoveryState.reason}`}</div>
+    <div><strong>Reversal:</strong> ${confirmedBearishReversal ? '🔴 CONFIRMED' : confirmedBullishReversal ? '🟢 CONFIRMED' : '⚪ NOT CONFIRMED'}</div>
+    <div><strong>Long entry:</strong> ${longEntry}
     <div><strong>Short entry:</strong> ${shortEntry}</div>
     <div style="margin-top:10px;padding:12px 13px;border-radius:10px;background:linear-gradient(180deg,rgba(126,220,255,.065),rgba(126,220,255,.025));border:1px solid rgba(126,220,255,.16);box-shadow:0 2px 10px rgba(0,0,0,.08)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-size:15px">⚡</span><strong style="font-size:13px;letter-spacing:.02em">BEST ACTION NOW</strong><span style="margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.05em;color:var(--muted);text-transform:uppercase">Execution guidance</span></div>
@@ -8178,7 +8258,7 @@ function renderTraderDecisionBlock(r, compact=false){
     <div style="margin-top:8px;padding:8px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>💧 Liquidity context:</strong> <span class="liqDecisionState ${liqDecisionTone}">${liqDecisionToneLabel}</span> <span class="small">${liqEvent}</span> • Strength ${liqScore}/100<br><span class="small">${liqContextTxt}</span><br><span class="small">${liquidityDecision}</span></div>
     ${renderEntryPathFramework(item, (()=>{ const fr=getFinalRecommendation(item)||{}; const tb=String(fr.tradeBias||'').toLowerCase(); if(/bearish|short/.test(tb)) return 'short'; if(/bullish|controlled|recovery/.test(tb)) return 'long'; const z=getTraderDecisionZones(item)||{}; if(z.contested) return 'wait'; if(z.active?.side==='SELL') return 'short'; if(z.active?.side==='BUY') return 'long'; const es=getEntryStatusSnapshot(item)||{}; if(es.short&&es.short!=='WAIT'&&es.long==='WAIT') return 'short'; if(es.long&&es.long!=='WAIT'&&es.short==='WAIT') return 'long'; return 'wait'; })(), ((getEntryStatusSnapshot(item)||{}).short||''))}
     ${renderTraderDecisionAudit(item,compact)}
-    <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1d}% • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
+    <div style="margin-top:8px"><strong>Why this decision:</strong> 4H Accum ${a4h}% • 1D Accum ${a1dStatus} • Combined ${accum}% • 4H RSI ${rsi4h.toFixed(1)} • Phase ${phase}</div>
     <div style="margin-top:7px;padding:7px 9px;border-radius:8px;background:rgba(255,180,0,.05);border:1px solid rgba(255,180,0,.10)"><strong>📉 15m RSI weakness:</strong> ${rsi15Below50}/${rsi15SessionTotal || 96} completed candles below RSI 50${rsi15SessionTotal?` • ${rsi15Below50Pct.toFixed(1)}%`:''} • 1D • 24H</div>
     <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>📉 4H RSI weakness:</strong> ${rsi4h1wBelow50}/${rsi4h1wTotal || 42} completed 4H candles below RSI 50${rsi4h1wTotal?` • ${rsi4h1wPct.toFixed(1)}%`:''} • 1W • 7D</div>
     <div style="margin-top:6px;padding:7px 9px;border-radius:8px;background:rgba(126,220,255,.045);border:1px solid rgba(126,220,255,.10)"><strong>🌐 8H RSI weakness:</strong> ${rsi8h1mBelow50}/${rsi8h1mTotal || 90} completed 8H candles below RSI 50${rsi8h1mTotal?` • ${rsi8h1mPct.toFixed(1)}%`:''} • 1M • 30D</div>
@@ -8851,7 +8931,9 @@ function calculateUnifiedMarketCycle(item){
     const vulnerability=correctionCode==='VULNERABILITY_INCREASING' || correctionCode==='HIGH_VULNERABILITY';
     const overboughtSupported=correctionCode==='OVERBOUGHT_CONTINUATION_SUPPORTED';
     const correctionRecoveryCode=correctionCode==='POST_CORRECTION_RECOVERY';
-    // Return-to-normal is context only. It never authorizes Support / Recovery.
+    // FINAL RECOVERY AUTHORITY: a cached/low-level POST_CORRECTION_RECOVERY
+    // label is only accepted when the strict recovery checklist is satisfied.
+    const strictRecovery=getStrictRecoveryState(item);
     const returnToNormalActive=!!returnToNormal?.isReturn;
 
     // ===== COUNTER-TREND REVERSAL =====
@@ -8902,10 +8984,7 @@ function calculateUnifiedMarketCycle(item){
     // IMPORTANT: return-to-normal is context only. Recovery is authoritative
     // after POST_CORRECTION_RECOVERY, or after a confirmed correction has a
     // genuine bullish recovery. Oversold/bounce conditions alone never qualify.
-    const recoveryConfirmed=!supportFailed && (
-      correctionRecoveryCode ||
-      (correctionConfirmed && bullishRecoveryConfirmed)
-    );
+    const recoveryConfirmed=!supportFailed && strictRecovery.confirmed;
     const bounceOnly=(rsiOversold||rsiStretched) && (supportTest||price>e14) && !reversalConfirmed;
 
     let phase='NORMAL / TRENDING', code='TRENDING', state='⚪ NEUTRAL TREND', tone='neutral';
@@ -8931,7 +9010,7 @@ function calculateUnifiedMarketCycle(item){
     // Market-Cycle graduates into MARKUP / EXPANSION while Correction Guide
     // remains ⚫ RECOVERY. This cleanly separates "what happened" (correction)
     // from "where price is now" (cycle phase).
-    const recoveryGraduatedToMarkup=!!(correctionConfirmed && recoveryConfirmed && bullishRecoveryConfirmed && markupCore);
+    const recoveryGraduatedToMarkup=!!(strictRecovery.confirmed && bullishRecoveryConfirmed && markupCore);
 
     /*
       PRIORITY ORDER:
@@ -8956,7 +9035,7 @@ function calculateUnifiedMarketCycle(item){
       phase='POST-CORRECTION / RECOVERY'; code='POST_CORRECTION_RECOVERY'; state='🟣 POST-CORRECTION / RECOVERY'; tone='purple';
       reasons.push('Significant correction was confirmed by the authoritative correction layer');
       reasons.push('Recovery structure is confirmed: higher-low + EMA14/EMA21 reclaim');
-      if(correctionRecoveryCode) reasons.push('Correction Guide explicitly reports post-correction recovery');
+      if(strictRecovery.confirmed) reasons.push('Strict recovery checklist is confirmed');
     }else if(correctionConfirmed){
       phase='MARKDOWN / POST-TOP'; code='MARKDOWN_POST_TOP'; state='🔴 MARKDOWN / POST-TOP'; tone='red';
       reasons.push('15m EMA200 correction confirmation is active');
@@ -9071,7 +9150,7 @@ function calculateUnifiedMarketCycle(item){
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
       meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,
-          bullishRecoveryConfirmed,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction}
+          bullishRecoveryConfirmed,strictRecoveryConfirmed:strictRecovery.confirmed,strictRecoveryReason:strictRecovery.reason,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction}
     };
   }catch(err){
     return {code:'ERROR',phase:'UNKNOWN',state:'⚪ MARKET-CYCLE UNAVAILABLE',confidence:0,authoritative:false,tone:'neutral',trend:'UNKNOWN',momentum:'UNKNOWN',location:'UNKNOWN',reversal:'NOT ASSESSABLE',action:'Use the existing independent detectors until the unified engine recovers.',reasons:[`Unified market-cycle error: ${err.message}`],ema:{},structure:{},support:null,resistance:null,meta:{}};
@@ -9081,7 +9160,7 @@ function calculateUnifiedMarketCycle(item){
 function getUnifiedCycleMapStage(u){
   const phase=String(u?.phase||'').toUpperCase();
   const correction=String(u?.correctionCode||u?.correctionStage||'').toUpperCase();
-  const recovery=!!u?.recoveryConfirmed || correction.includes('POST_CORRECTION_RECOVERY') || phase.includes('POST-CORRECTION / RECOVERY');
+  const recovery=!!u?.recoveryConfirmed;
   const location=String(u?.location||'').toUpperCase();
 
   // Correction Guide is authoritative for the correction state, but a
@@ -9154,7 +9233,7 @@ function renderUnifiedMarketCycle(item){
     <div style="font-size:19px;font-weight:950;color:${tone};margin-top:3px">${u.state||'⚪ UNKNOWN'}</div>
     ${renderUnifiedCycleMap(u)}
     <div style="margin-top:9px"><strong>Trend:</strong> ${u.trend||'—'} • <strong>Momentum:</strong> ${u.momentum||'—'} • <strong>Location:</strong> ${u.location||'—'}</div>
-    <div style="margin-top:4px"><strong>Correction authority:</strong> ${u.correctionStage||'—'}${u.recoveryConfirmed?' • 🟣 Recovery state active':''}</div>
+    <div style="margin-top:4px"><strong>Correction authority:</strong> ${u.correctionStage||'—'}${u.recoveryConfirmed?' • 🟣 Recovery confirmed':''}</div>
     <div style="margin-top:4px"><strong>Reversal:</strong> ${u.reversal||'—'}</div>
     <div style="margin-top:6px"><strong>EMA structure:</strong> ${e.bearishStack?'🔴 Bearish aligned':e.bullishStack?'🟢 Bullish aligned':'🟡 Mixed / transitional'} • Price ${e.belowAll?'below all major EMAs':e.aboveAll?'above all major EMAs':'between EMA layers'}</div>
     <div class="small" style="margin-top:4px">EMA14 ${fmt(e.ema14)} • EMA21 ${fmt(e.ema21)} • EMA50 ${fmt(e.ema50)} • EMA70 ${fmt(e.ema70)} • EMA200 ${fmt(e.ema200)}</div>
