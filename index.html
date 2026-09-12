@@ -9002,14 +9002,16 @@ function calculateUnifiedMarketCycle(item){
       if(hl) reasons.push(`Higher-low evidence ${hl}`);
     }
 
-    // Location must not downgrade an already-confirmed bearish continuation to
-    // the generic RESISTANCE TEST label. Keep resistance as a reason/context
-    // only when the stronger continuation state is active.
+    // Location and trend/state answer different questions.
+    // Location MUST describe where price is now, so a genuine resistance test
+    // is never hidden merely because bearish continuation is confirmed.
+    // The stronger bearish condition remains exposed through the TREND/STATE
+    // fields above; it does not replace the physical price-location label.
     if(recoveryConfirmed && (supportTest || correctionConfirmed)) location='SUPPORT / RECOVERY';
-    else if(supportFailed) location='SUPPORT FAILED';
-    else if(strongBearishContinuation) location='STRONG BEARISH CONTINUATION';
     else if(nearResistance) location='RESISTANCE TEST';
+    else if(supportFailed) location='SUPPORT FAILED';
     else if(supportTest) location='SUPPORT TEST';
+    else if(strongBearishContinuation) location='STRONG BEARISH CONTINUATION';
 
     if(supportTest) reasons.push(`Support ${Number(support).toPrecision(8)} • ${supportDist.toFixed(2)}% from price`);
     if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away`);
