@@ -585,6 +585,12 @@ table{min-width:0!important;width:100%}.tableScroll{width:100%;overflow-x:auto;-
 
 <style>
 .coinAction{border:0;border-radius:6px;padding:2px 7px;cursor:pointer;background:rgba(255,255,255,.08);color:#cfe8ff;font-size:15px;line-height:1.2;margin-left:3px}.coinAction:hover{background:rgba(255,255,255,.16)}.closeAction{font-weight:700}.favAction{color:#ffd966}.coinRow1{align-items:center}
+
+/* Trader Decision: same collapsible interaction and visual treatment as Detailed evidence. */
+.traderDecisionDetails{margin-top:10px}
+.traderDecisionDetails > summary{cursor:pointer;list-style:none;padding:8px 10px;border-radius:8px;background:rgba(255,255,255,.035);color:var(--text,#fff);font-weight:800;user-select:none}
+.traderDecisionDetails > summary::-webkit-details-marker{display:none}
+.traderDecisionDetails[open] > summary{background:rgba(255,255,255,.06)}
 </style>
 
 <style>
@@ -3436,6 +3442,7 @@ let favoritesLiveUpdating = false; // refresh the 10-coin watchlist every 60s
 let showFavoritesOnly = false;
 const closedSymbols = new Set();
 const expandedDetailSymbols = new Set(); // preserve per-coin Detailed evidence state across re-renders
+const expandedTraderDecisionSymbols = new Set(); // preserve per-coin Trader Decision collapse state across re-renders
 const expandedCompareSymbols = new Set(); // preserve per-coin Compare current vs saved state across re-renders
 let favoriteSymbols = new Set();
 try {
@@ -9381,7 +9388,12 @@ function renderCards(results){
 
         ${renderUnifiedMarketCycle(r)}
 
-                <div style="margin-top:10px">${renderTraderDecisionBlock(r, true)}</div>
+                <details class="coinDetails traderDecisionDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedTraderDecisionSymbols.has(String(r.symbol||'').trim().toUpperCase())?'open':''} style="margin-top:10px">
+                  <summary><strong>${expandedTraderDecisionSymbols.has(String(r.symbol||'').trim().toUpperCase())?'− Trader Decision':'＋ Trader Decision'}</strong></summary>
+                  <div class="coinDetailsBody" style="margin-top:10px">
+                    ${renderTraderDecisionBlock(r, true)}
+                  </div>
+                </details>
 
         <!-- PRIMARY COIN CARD: top / HVD warning stack is visible without opening details. -->
         <div class="primaryDecisionEvidence" style="margin-top:11px">
@@ -9502,9 +9514,16 @@ function renderCards(results){
   // Re-apply saved open state after every render so live updates/sorting do not collapse details.
   el.cardView.querySelectorAll('details.coinDetails[data-symbol]').forEach(d=>{
     const sym=d.dataset.symbol;
-    d.open=expandedDetailSymbols.has(sym);
-    const summary=d.querySelector('summary strong');
-    if(summary) summary.textContent=d.open ? '− Detailed evidence' : '＋ Detailed evidence';
+    if(d.classList.contains('traderDecisionDetails')){
+      const key=String(sym||'').trim().toUpperCase();
+      d.open=expandedTraderDecisionSymbols.has(key);
+      const summary=d.querySelector('summary strong');
+      if(summary) summary.textContent=d.open ? '− Trader Decision' : '＋ Trader Decision';
+    }else{
+      d.open=expandedDetailSymbols.has(sym);
+      const summary=d.querySelector('summary strong');
+      if(summary) summary.textContent=d.open ? '− Detailed evidence' : '＋ Detailed evidence';
+    }
   });
 }
 
@@ -9527,10 +9546,34 @@ document.addEventListener('toggle', (ev) => {
   if(!details) return;
   const symbol = details.dataset.symbol;
   if(!symbol) return;
+
+  if(details.classList.contains('traderDecisionDetails')){
+    const sym = String(symbol).trim().toUpperCase();
+    if(details.open) expandedTraderDecisionSymbols.add(sym);
+    else expandedTraderDecisionSymbols.delete(sym);
+    const summary = details.querySelector('summary strong');
+    if(summary) summary.textContent = details.open ? '− Trader Decision' : '＋ Trader Decision';
+    return;
+  }
+
   if(details.open) expandedDetailSymbols.add(symbol);
   else expandedDetailSymbols.delete(symbol);
   const summary = details.querySelector('summary strong');
   if(summary) summary.textContent = details.open ? '− Detailed evidence' : '＋ Detailed evidence';
+}, true);
+
+/* ---------- Persistent per-coin Trader Decision toggle ---------- */
+document.addEventListener('click', (ev) => {
+  const summary = ev.target.closest && ev.target.closest('details.traderDecisionDetails > summary');
+  if(!summary) return;
+  const details = summary.parentElement;
+  const symbol = details && details.dataset ? details.dataset.symbol : '';
+  if(!symbol) return;
+  setTimeout(()=>{
+    const sym = String(symbol).trim().toUpperCase();
+    if(details.open) expandedTraderDecisionSymbols.add(sym);
+    else expandedTraderDecisionSymbols.delete(sym);
+  }, 0);
 }, true);
 
 /* ---------- Detailed evidence state preservation ---------- */
@@ -9539,8 +9582,14 @@ function preserveExpandedDetailState(){
     document.querySelectorAll('details.coinDetails[data-symbol]').forEach(d=>{
       const sym=d.dataset.symbol;
       if(!sym) return;
-      if(d.open) expandedDetailSymbols.add(sym);
-      else expandedDetailSymbols.delete(sym);
+      if(d.classList.contains('traderDecisionDetails')){
+        const key=String(sym).trim().toUpperCase();
+        if(d.open) expandedTraderDecisionSymbols.add(key);
+        else expandedTraderDecisionSymbols.delete(key);
+      }else{
+        if(d.open) expandedDetailSymbols.add(sym);
+        else expandedDetailSymbols.delete(sym);
+      }
     });
   }catch(e){ console.warn('detail state preserve error', e); }
 }
