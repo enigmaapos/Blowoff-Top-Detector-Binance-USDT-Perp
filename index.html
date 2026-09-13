@@ -6610,13 +6610,13 @@ if (el.sortDir) el.sortDir.innerText = 'Desc';
 
 // Instant local UI controls: sorting/filtering never require a network request.
 if (el.sortBy) {
-  el.sortBy.addEventListener('change', () => renderActiveView(true));
+  el.sortBy.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.correctionFilter) {
-  el.correctionFilter.addEventListener('change', () => renderActiveView(true));
+  el.correctionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.biasFilter) {
-  el.biasFilter.addEventListener('change', () => renderActiveView(true));
+  el.biasFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.longEntryFilter) {
   el.longEntryFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
@@ -6626,6 +6626,7 @@ if (el.shortEntryFilter) {
 }
 if (el.traderZoneFilter) {
   el.traderZoneFilter.addEventListener('change', () => {
+    updateResultFilterStatus();
     const v=el.traderZoneFilter.value;
     // Zone filtering is decision-first: keep the current sort unless the user
     // explicitly chooses a different sort. No network request is required.
@@ -6641,16 +6642,16 @@ if (el.entryStatusSort) {
   });
 }
 if (el.fundingFilter) {
-  el.fundingFilter.addEventListener('change', () => renderActiveView(true));
+  el.fundingFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.accumDoubleTopFilter) {
-  el.accumDoubleTopFilter.addEventListener('change', () => renderActiveView(true));
+  el.accumDoubleTopFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.marketExhaustionFilter) {
-  el.marketExhaustionFilter.addEventListener('change', () => renderActiveView(true));
+  el.marketExhaustionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.rsi15SessionFilter) {
-  el.rsi15SessionFilter.addEventListener('change', () => renderActiveView(true));
+  el.rsi15SessionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.rsi15SessionSort) {
   el.rsi15SessionSort.addEventListener('change', () => {
@@ -6661,7 +6662,7 @@ if (el.rsi15SessionSort) {
   });
 }
 if (el.rsi4h1wFilter) {
-  el.rsi4h1wFilter.addEventListener('change', () => renderActiveView(true));
+  el.rsi4h1wFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.rsi4h1wSort) {
   el.rsi4h1wSort.addEventListener('change', () => {
@@ -6672,7 +6673,7 @@ if (el.rsi4h1wSort) {
   });
 }
 if (el.rsi8h1mFilter) {
-  el.rsi8h1mFilter.addEventListener('change', () => renderActiveView(true));
+  el.rsi8h1mFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.rsi8h1mSort) {
   el.rsi8h1mSort.addEventListener('change', () => {
@@ -6683,10 +6684,11 @@ if (el.rsi8h1mSort) {
   });
 }
 if (el.hvdFilter) {
-  el.hvdFilter.addEventListener('change', () => renderActiveView(true));
+  el.hvdFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.liquidityFilter) {
   el.liquidityFilter.addEventListener('change', () => {
+    updateResultFilterStatus();
     const v=el.liquidityFilter.value;
 
     // Filter + sort use one explicit liquidity contract.
@@ -6743,7 +6745,7 @@ if (el.smcBreakerFilter) {
 }
 updateResultFilterStatus();
 if (el.smcDirectionFilter) {
-  el.smcDirectionFilter.addEventListener('change', () => renderActiveView(true));
+  el.smcDirectionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 
 
@@ -10979,8 +10981,6 @@ el.sensitivity.addEventListener('input', ()=>{ el.sensVal.innerText = el.sensiti
     window.fastPatchResultDOM=function(results,isMobile){const ok=oldFast(results,isMobile);if(ok)decorateQueue();return ok;};
   }
 
-  // If renderer wrapping above is bypassed by initialization order, listen for the result panes changing.
-  document.addEventListener('change',e=>{if(e.target?.id==='trendTransitionFilter')typeof renderActiveView==='function'&&renderActiveView(true);});
   // Initial render is owned by the main application lifecycle; do not schedule duplicate renders.
 
 })();
