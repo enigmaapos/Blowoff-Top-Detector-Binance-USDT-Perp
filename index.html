@@ -973,7 +973,25 @@ body.authLocked{overflow:hidden}
           </select>
           <div class="dashboardHint">Uses the same authoritative Unified Market-Cycle reversal state shown in each result. Bounce risk never counts as reversal confirmation.</div>
         </div>
+      </div>      <div class="controlGrid two" style="margin-top:10px">
+        <div class="controlItem">
+          <label class="controlLabel">⭐ Trend Transition Filter</label>
+          <select id="trendTransitionFilter">
+            <option value="ALL">All Transition States</option>
+            <option value="WATCH">🟡 Vulnerability Increasing ≥45</option>
+            <option value="PRE_BREAKDOWN">🟠 Pre-Breakdown ≥60</option>
+            <option value="HIGH">🔴 High Priority ≥75</option>
+            <option value="CONFIRMED">🔴 Breakdown Confirmed</option>
+          </select>
+          <div class="dashboardHint">Uses the same Trend Transition Priority engine shown on each result. Local filter only.</div>
+        </div>
+        <div class="controlItem">
+          <label class="controlLabel">🧹 Filter Controls</label>
+          <button id="resetFiltersBtn" class="alt" type="button" style="width:100%;min-height:42px">Reset All Result Filters</button>
+          <div id="filterStatus" class="dashboardHint">No result filters active • showing all matching data</div>
+        </div>
       </div>
+
 
       <div class="controlSectionTitle" style="margin-top:14px">
         <span>🎯</span> 6 · Trader Decision & Entry Filters
@@ -1107,7 +1125,10 @@ const el = {
   unifiedCycleFilter: document.getElementById('unifiedCycleFilter'),
   reversalStateFilter: document.getElementById('reversalStateFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
-  smcDirectionFilter: document.getElementById('smcDirectionFilter')
+  smcDirectionFilter: document.getElementById('smcDirectionFilter'),
+  trendTransitionFilter: document.getElementById('trendTransitionFilter'),
+  resetFiltersBtn: document.getElementById('resetFiltersBtn'),
+  filterStatus: document.getElementById('filterStatus')
 };
 
   // ---------------------- Symbol search + single-symbol analyzer ----------------------
@@ -6047,7 +6068,11 @@ function filterResultsForDist(results) {
     });
     source = [...bySymbol.values()];
   }
-  let filtered = source.filter(r => r && !closedSymbols.has(r.symbol));
+  let filtered = source.filter(r => {
+    if(!r) return false;
+    const sym=String(r.symbol||'').trim().toUpperCase();
+    return !closedSymbols.has(sym) && !closedSymbols.has(String(r.symbol||''));
+  });
   if (activeViewMode === 'favorite' || showFavoritesOnly) {
     filtered = filtered.filter(r => favoriteSymbols.has(String(r.symbol || '').trim().toUpperCase()));
   }
@@ -6332,6 +6357,52 @@ function filterResultsForDist(results) {
   });
 }
 
+
+function getActiveResultFilterSummary(){
+  const labels=[];
+  const fields=[
+    ['correctionFilter','Correction'],['biasFilter','Bias'],['marketStructureFilter','Structure'],
+    ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
+    ['trendTransitionFilter','Trend Transition'],['traderZoneFilter','Zone'],['longEntryFilter','Long Entry'],
+    ['shortEntryFilter','Short Entry'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
+    ['hvdFilter','HVD'],['rsi15SessionFilter','15m RSI'],['rsi4h1wFilter','4H RSI'],
+    ['rsi8h1mFilter','8H RSI'],['liquidityFilter','Liquidity'],['accumDoubleTopFilter','Double Top'],
+    ['smcBreakerFilter','SMC Breaker'],['smcDirectionFilter','SMC Direction']
+  ];
+  fields.forEach(([id,label])=>{
+    const x=document.getElementById(id);
+    if(x && x.value && x.value!=='ALL') labels.push(`${label}: ${x.options?.[x.selectedIndex]?.text || x.value}`);
+  });
+  if(showOnlyDist) labels.push('Distribution view');
+  if(showFavoritesOnly) labels.push('Favorites only');
+  return labels;
+}
+function updateResultFilterStatus(){
+  const box=document.getElementById('filterStatus');
+  if(!box) return;
+  const active=getActiveResultFilterSummary();
+  box.innerText=active.length
+    ? `${active.length} active filter${active.length===1?'':'s'} • AND logic`
+    : 'No result filters active • showing all matching data';
+}
+function resetAllResultFilters(){
+  [
+    'correctionFilter','biasFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
+    'reversalStateFilter','trendTransitionFilter','traderZoneFilter','longEntryFilter','shortEntryFilter',
+    'fundingFilter','marketExhaustionFilter','hvdFilter','rsi15SessionFilter','rsi4h1wFilter',
+    'rsi8h1mFilter','liquidityFilter','accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter'
+  ].forEach(id=>{const x=document.getElementById(id);if(x)x.value='ALL';});
+  showOnlyDist=false;
+  const legacy=document.getElementById('showDistBtn');
+  if(legacy&&legacy.type==='checkbox')legacy.checked=false;
+  try{localStorage.removeItem('scanner_ema_structure_filter')}catch(_){}
+  if(el.sortBy)el.sortBy.value='score';
+  sortDesc=true;
+  if(el.sortDir)el.sortDir.innerText='Desc';
+  updateResultFilterStatus();
+  renderActiveView(true);
+}
+
 function persistFavorites(){
   localStorage.setItem('magmaFavoriteSymbols', JSON.stringify([...favoriteSymbols]));
   localStorage.setItem('magmaFavoritesView', showFavoritesOnly ? '1' : '0');
@@ -6548,10 +6619,10 @@ if (el.biasFilter) {
   el.biasFilter.addEventListener('change', () => renderActiveView(true));
 }
 if (el.longEntryFilter) {
-  el.longEntryFilter.addEventListener('change', () => renderActiveView(true));
+  el.longEntryFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.shortEntryFilter) {
-  el.shortEntryFilter.addEventListener('change', () => renderActiveView(true));
+  el.shortEntryFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.traderZoneFilter) {
   el.traderZoneFilter.addEventListener('change', () => {
@@ -6629,7 +6700,7 @@ if (el.liquidityFilter) {
   });
 }
 if (el.marketStructureFilter) {
-  el.marketStructureFilter.addEventListener('change', () => renderActiveView(true));
+  el.marketStructureFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.emaStructureFilter) {
   try{
@@ -6646,11 +6717,15 @@ if (el.emaStructureFilter) {
   });
 }
 if (el.unifiedCycleFilter) {
-  el.unifiedCycleFilter.addEventListener('change', () => renderActiveView(true));
+  el.unifiedCycleFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.reversalStateFilter) {
-  el.reversalStateFilter.addEventListener('change', () => renderActiveView(true));
+  el.reversalStateFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
+if (el.trendTransitionFilter) {
+  el.trendTransitionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
+}
+if (el.resetFiltersBtn) el.resetFiltersBtn.addEventListener('click', resetAllResultFilters);
 if (el.smcBreakerFilter) {
   el.smcBreakerFilter.addEventListener('change', () => {
     // Selecting an SMC lifecycle stage automatically switches to the
@@ -6666,6 +6741,7 @@ if (el.smcBreakerFilter) {
     renderActiveView(true);
   });
 }
+updateResultFilterStatus();
 if (el.smcDirectionFilter) {
   el.smcDirectionFilter.addEventListener('change', () => renderActiveView(true));
 }
@@ -9602,9 +9678,13 @@ function renderResponsiveResults(results, allowFast=false){
   const activeBefore = softRefresh ? document.activeElement : null;
   window.results = Array.isArray(results) ? results : [];
   if(!window.results.length){
-    const empty = `<div class="card-panel"><strong>No completed scan results.</strong><div class="small" style="margin-top:6px">The scan finished without a valid analyzed symbol. Check Scanner Status and the Debug/connection message rather than treating this as a market signal.</div></div>`;
-    if(el.cardView) el.cardView.innerHTML = empty;
-    if(el.tableView) el.tableView.innerHTML = empty;
+    const activeFilters=getActiveResultFilterSummary();
+    const empty=activeFilters.length
+      ? `<div class="card-panel"><strong>No coins match the current result filters.</strong><div class="small" style="margin-top:6px">${activeFilters.map(x=>mspEscape(x)).join(' • ')}</div><button type="button" class="alt" style="margin-top:9px" onclick="resetAllResultFilters()">Reset Filters</button></div>`
+      : `<div class="card-panel"><strong>No completed scan results.</strong><div class="small" style="margin-top:6px">The scan finished without a valid analyzed symbol. Check Scanner Status and the Debug/connection message rather than treating this as a market signal.</div></div>`;
+    if(el.cardView)el.cardView.innerHTML=empty;
+    if(el.tableView)el.tableView.innerHTML=empty;
+    updateResultFilterStatus();
     return;
   }
   preserveExpandedDetailState();
@@ -9634,6 +9714,18 @@ function renderResponsiveResults(results, allowFast=false){
   if(isMobile) renderCards(safe);
   else renderTable(safe);
 
+  try{
+    const nodes=isMobile
+      ? el.cardView.querySelectorAll('[data-symbol]')
+      : el.tableView.querySelectorAll('tbody tr[data-symbol]');
+    nodes.forEach(node=>{
+      const sym=String(node.dataset.symbol||'').toUpperCase();
+      const row=safe.find(r=>String(r?.symbol||'').toUpperCase()===sym);
+      if(row) node.dataset.renderFingerprint=resultRenderFingerprint(row);
+    });
+  }catch(_){}
+  updateResultFilterStatus();
+
   try{ restoreHistoricalCompareStates(); }catch(e){ console.warn('compare restore error',e); }
   if(isMobile){
     try{
@@ -9654,16 +9746,36 @@ function renderResponsiveResults(results, allowFast=false){
   }
 }
 
+function resultRenderFingerprint(r){
+  try{
+    return JSON.stringify(r||{},(key,value)=>{
+      if(/^k(?:15m|1h|4h|1d|1w|1m|15|15MCandles|1HCandles|4HCandles)$/i.test(key)) return undefined;
+      return value;
+    });
+  }catch(_){return String(r?.symbol||'')+'|'+String(r?.score??'');}
+}
+
 function fastPatchResultDOM(results, isMobile){
   try{
     const symbols = new Set(results.map(r => String(r?.symbol || '').toUpperCase()));
+    const nextFingerprints=new Map(results.map(r=>[String(r?.symbol||'').toUpperCase(),resultRenderFingerprint(r)]));
+    const existingNodes=isMobile
+      ? Array.from(el.cardView.querySelectorAll('.resultCard[data-symbol], .coinCard[data-symbol]'))
+      : Array.from(el.tableView.querySelectorAll('tbody tr[data-symbol]'));
+    for(const node of existingNodes){
+      const sym=String(node.dataset.symbol||'').toUpperCase();
+      if(sym && nextFingerprints.has(sym)){
+        const oldFp=node.dataset.renderFingerprint||'';
+        if(oldFp && oldFp!==nextFingerprints.get(sym)) return false;
+      }
+    }
     if(isMobile){
       const cards = Array.from(el.cardView.querySelectorAll('.resultCard[data-symbol]'));
       if(cards.length < symbols.size) return false;
       const by = new Map(cards.map(c => [String(c.dataset.symbol||'').toUpperCase(), c]));
       for(const sym of symbols) if(!by.has(sym)) return false;
       const frag=document.createDocumentFragment();
-      results.forEach(r=>{ const c=by.get(String(r.symbol).toUpperCase()); c.hidden=false; frag.appendChild(c); });
+      results.forEach(r=>{ const c=by.get(String(r.symbol).toUpperCase()); c.hidden=false; c.dataset.renderFingerprint=resultRenderFingerprint(r); frag.appendChild(c); });
       cards.forEach(c=>{ if(!symbols.has(String(c.dataset.symbol||'').toUpperCase())) c.hidden=true; });
       el.cardView.appendChild(frag);
       return true;
@@ -9683,7 +9795,7 @@ function fastPatchResultDOM(results, isMobile){
     const frag=document.createDocumentFragment();
     results.forEach(r=>{
       const pair=by.get(String(r.symbol).toUpperCase());
-      pair.forEach(row=>{ row.hidden=false; frag.appendChild(row); });
+      pair.forEach(row=>{ row.hidden=false; row.dataset.renderFingerprint=resultRenderFingerprint(r); frag.appendChild(row); });
     });
     rows.forEach(row=>{ if(!symbols.has(String(row.dataset.symbol||'').toUpperCase())) row.hidden=true; });
     tbody.appendChild(frag);
