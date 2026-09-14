@@ -1014,11 +1014,14 @@ body.authLocked{overflow:hidden}
           <select id="srTestFilter">
             <option value="ALL">All S/R States</option>
             <option value="SUPPORT_TEST">🟢 Support Test</option>
-            <option value="SUPPORT_FAILED">🔴 Support Failed Test Confirmed</option>
+            <option value="SUPPORT_FAILED">🟢 Support Test • Failed Test Confirmed</option>
             <option value="RESISTANCE_TEST">🔴 Resistance Test</option>
-            <option value="RESISTANCE_FAILED">🔴 Resistance Failed Test Confirmed</option>
+            <option value="RESISTANCE_FAILED">🔴 Resistance Test • Failed Test Confirmed</option>
+            <option value="BOTH_TEST">🟡 Support + Resistance Test</option>
+            <option value="BOTH_FAILED">🟠 Both Tests Failed</option>
+            <option value="NO_TEST">⚪ No Nearby S/R Test</option>
           </select>
-          <div class="dashboardHint">Uses completed 15m candle behavior for Failed Test confirmation. A wick into support followed by a close back above confirms support failure; a wick into resistance followed by a close back below confirms resistance failure.</div>
+          <div class="dashboardHint">Uses the same live S/R location and completed-15m candle confirmation shown in each result.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">🟢 Long Entry Status</label>
@@ -5653,6 +5656,7 @@ function getValueForKey(r, key) {
       if(st.includes('APPROACHING')) return 1;
       return 0;
     }
+    case 'srTestState': { const rank={BOTH_FAILED:6,RESISTANCE_FAILED:5,SUPPORT_FAILED:4,BOTH_TEST:3,RESISTANCE_TEST:2,SUPPORT_TEST:1,NO_TEST:0}; return rank[getSRTestState(r)] ?? 0; }
     case 'smcStageRank': {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.stageRank, 0);
@@ -6006,30 +6010,6 @@ function traderZoneFilterMatches(r, filter){
   return true;
 }
 
-function getSRTestFilterState(r){
-  const item = r || {};
-  let u = item.unifiedMarketCycle;
-  if(!u || !u.meta){
-    try{ if(typeof calculateUnifiedMarketCycle==='function') u=calculateUnifiedMarketCycle(item); }catch(_){}
-  }
-  const m=u?.meta || {};
-  const supportTest=!!m.supportTest;
-  const resistanceTest=!!m.nearResistance;
-  const supportFailed=!!m.supportFailureConfirmed;
-  const resistanceFailed=!!m.resistanceFailureConfirmed;
-  return {supportTest,resistanceTest,supportFailed,resistanceFailed};
-}
-
-function srTestFilterMatches(r, filter){
-  if(filter==='ALL') return true;
-  const s=getSRTestFilterState(r);
-  if(filter==='SUPPORT_TEST') return s.supportTest && !s.supportFailed;
-  if(filter==='SUPPORT_FAILED') return s.supportFailed;
-  if(filter==='RESISTANCE_TEST') return s.resistanceTest && !s.resistanceFailed;
-  if(filter==='RESISTANCE_FAILED') return s.resistanceFailed;
-  return true;
-}
-
 function unifiedCycleFilterMatches(r, filter){
   if(filter === 'ALL') return true;
   const item = r || {};
@@ -6086,6 +6066,20 @@ function emaStructureFilterMatches(r, filter){
   if(filter==='BETWEEN') return !above && !below;
   return true;
 }
+
+function getSRTestState(r){
+  let u=r?.unifiedMarketCycle;
+  if(!u || u.code==='ERROR' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE'){
+    try{ if(typeof calculateUnifiedMarketCycle==='function') u=calculateUnifiedMarketCycle(r||{}); }catch(_){}
+  }
+  const m=u?.meta||{};
+  const st=!!m.supportTest, rt=!!m.nearResistance, sf=!!m.supportFailureConfirmed, rf=!!m.resistanceFailureConfirmed;
+  if(st && rt) return sf && rf ? 'BOTH_FAILED' : 'BOTH_TEST';
+  if(st) return sf ? 'SUPPORT_FAILED' : 'SUPPORT_TEST';
+  if(rt) return rf ? 'RESISTANCE_FAILED' : 'RESISTANCE_TEST';
+  return 'NO_TEST';
+}
+function srTestFilterMatches(r, filter){ return filter==='ALL' || getSRTestState(r)===filter; }
 
 function filterResultsForDist(results) {
   // When Favorites mode is active, include the persistent favorite snapshots
@@ -6165,14 +6159,8 @@ function filterResultsForDist(results) {
   if (traderZoneFilter !== 'ALL') {
     filtered = filtered.filter(r => traderZoneFilterMatches(r, traderZoneFilter));
   }
-
-  // Dedicated Support/Resistance test filter. This reads the same completed-15m
-  // candle confirmation used by the Unified Market-Cycle display, so the filter
-  // cannot disagree with the result card.
   const srTestFilter = el.srTestFilter ? el.srTestFilter.value : 'ALL';
-  if (srTestFilter !== 'ALL') {
-    filtered = filtered.filter(r => srTestFilterMatches(r, srTestFilter));
-  }
+  if (srTestFilter !== 'ALL') filtered = filtered.filter(r => srTestFilterMatches(r, srTestFilter));
 
   const fundingFilter = el.fundingFilter ? el.fundingFilter.value : 'ALL';
   if (fundingFilter !== 'ALL') {
@@ -6407,8 +6395,8 @@ function getActiveResultFilterSummary(){
   const fields=[
     ['correctionFilter','Correction'],['biasFilter','Bias'],['marketStructureFilter','Structure'],
     ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
-    ['trendTransitionFilter','Trend Transition'],['traderZoneFilter','Zone'],['srTestFilter','S/R Test'],['longEntryFilter','Long Entry'],
-    ['shortEntryFilter','Short Entry'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
+    ['trendTransitionFilter','Trend Transition'],['traderZoneFilter','Zone'],['longEntryFilter','Long Entry'],
+    ['shortEntryFilter','Short Entry'],['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
     ['hvdFilter','HVD'],['rsi15SessionFilter','15m RSI'],['rsi4h1wFilter','4H RSI'],
     ['rsi8h1mFilter','8H RSI'],['liquidityFilter','Liquidity'],['accumDoubleTopFilter','Double Top'],
     ['smcBreakerFilter','SMC Breaker'],['smcDirectionFilter','SMC Direction']
@@ -6662,6 +6650,7 @@ if (el.correctionFilter) {
 if (el.biasFilter) {
   el.biasFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
+if (el.srTestFilter) el.srTestFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 if (el.longEntryFilter) {
   el.longEntryFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
@@ -6674,12 +6663,6 @@ if (el.traderZoneFilter) {
     const v=el.traderZoneFilter.value;
     // Zone filtering is decision-first: keep the current sort unless the user
     // explicitly chooses a different sort. No network request is required.
-    renderActiveView(true);
-  });
-}
-if (el.srTestFilter) {
-  el.srTestFilter.addEventListener('change', () => {
-    updateResultFilterStatus();
     renderActiveView(true);
   });
 }
@@ -9030,43 +9013,33 @@ function calculateUnifiedMarketCycle(item){
     const resistance=allResistances.length?allResistances.reduce((a,b)=>b<a?b:a):null;
     const supportDist=support?Math.abs(pct(price,support)):null;
     const resistanceDist=resistance?Math.abs(pct(resistance,price)):null;
-    const supportTest=Number.isFinite(supportDist)&&support!==null&&support<=price*1.015&&price>=support*0.997;
-    // "Near resistance" is only valid for an actual resistance above live price.
-    // Keep the 1% location window so a distant level cannot become a resistance test.
+    // S/R location is based on the live price. A failed test is a completed 15m
+    // candle rejection, not simply price crossing a level.
+    const supportTest=Number.isFinite(supportDist)&&support!==null&&support<=price*1.01&&price>=support*0.99;
     const nearResistance=Number.isFinite(resistanceDist)&&resistance!==null&&resistance>=price&&resistance<=price*1.01;
-
-    // Failed Test is a completed-15m-candle event, not a price-location guess.
-    // Support failure: candle trades into/below support and CLOSES back above it.
-    // Resistance failure: candle trades into/above resistance and CLOSES back below it.
-    // LH/LL or a live price crossing alone never confirms either Failed Test.
     const srTol=Math.max(price*0.0015, 1e-12);
     const recentSupportFailure=(()=>{
-      if(!Number.isFinite(support)||support<=0 || bars.length<2) return false;
+      if(!Number.isFinite(support)||support<=0 || !Array.isArray(bars) || bars.length<2) return false;
       for(let i=Math.max(0,bars.length-4); i<bars.length; i++){
-        const b=bars[i];
-        const lo=Number(b?.[3]), cl=Number(b?.[4]);
+        const b=bars[i], lo=Number(b?.[3]), cl=Number(b?.[4]);
         if(!Number.isFinite(lo)||!Number.isFinite(cl)) continue;
-        const tested=lo<=support+srTol;
-        const closedBackAbove=cl>support+srTol;
-        if(tested && closedBackAbove) return true;
+        if(lo<=support+srTol && cl>support+srTol) return true;
       }
       return false;
     })();
     const recentResistanceFailure=(()=>{
-      if(!Number.isFinite(resistance)||resistance<=0 || bars.length<2) return false;
+      if(!Number.isFinite(resistance)||resistance<=0 || !Array.isArray(bars) || bars.length<2) return false;
       for(let i=Math.max(0,bars.length-4); i<bars.length; i++){
-        const b=bars[i];
-        const hi=Number(b?.[2]), cl=Number(b?.[4]);
+        const b=bars[i], hi=Number(b?.[2]), cl=Number(b?.[4]);
         if(!Number.isFinite(hi)||!Number.isFinite(cl)) continue;
-        const tested=hi>=resistance-srTol;
-        const closedBackBelow=cl<resistance-srTol;
-        if(tested && closedBackBelow) return true;
+        if(hi>=resistance-srTol && cl<resistance-srTol) return true;
       }
       return false;
     })();
     const supportFailureConfirmed=!!(supportTest && recentSupportFailure);
     const resistanceFailureConfirmed=!!(nearResistance && recentResistanceFailure);
-    const supportFailed=Number.isFinite(supportDist)&&support!==null&&price<support*0.997;
+    const srBothTest=!!(supportTest && nearResistance);
+    const srBothFailed=!!(supportFailureConfirmed && resistanceFailureConfirmed);
 
     const rsi15=Number(item.rsi15||0);
     const rsiOversold=rsi15>0&&rsi15<=30;
@@ -9259,20 +9232,23 @@ function calculateUnifiedMarketCycle(item){
     }
 
     // Location answers WHERE price is; trend/state answers WHAT price is doing.
-    // Never hide a genuine resistance test behind the continuation label.
-    if(resistanceFailureConfirmed) location='RESISTANCE TEST • FAILED TEST';
-    else if(supportFailureConfirmed) location='SUPPORT TEST • FAILED TEST';
-    else if(recoveryConfirmed && supportTest) location='SUPPORT / RECOVERY';
-    else if(nearResistance) location='RESISTANCE TEST';
-    else if(supportFailed) location='SUPPORT FAILED';
-    else if(supportTest) location='SUPPORT TEST';
+    // When support and resistance are both genuinely nearby, show both instead of
+    // arbitrarily choosing one side.
+    if(recoveryConfirmed && supportTest) location='SUPPORT / RECOVERY';
+    else if(srBothTest){
+      if(srBothFailed) location='SUPPORT + RESISTANCE TEST • BOTH FAILED';
+      else if(supportFailureConfirmed) location='SUPPORT + RESISTANCE TEST • SUPPORT FAILED';
+      else if(resistanceFailureConfirmed) location='SUPPORT + RESISTANCE TEST • RESISTANCE FAILED';
+      else location='SUPPORT + RESISTANCE TEST';
+    }else if(nearResistance) location=resistanceFailureConfirmed?'RESISTANCE TEST • FAILED TEST':'RESISTANCE TEST';
+    else if(supportTest) location=supportFailureConfirmed?'SUPPORT TEST • FAILED TEST':'SUPPORT TEST';
     else if(strongBearishContinuation) location='STRONG BEARISH CONTINUATION';
 
     if(supportTest) reasons.push(`Support ${Number(support).toPrecision(8)} • ${supportDist.toFixed(2)}% from price${supportFailureConfirmed?' • FAILED TEST':''}`);
     if(resistance && nearResistance) reasons.push(`Resistance ${Number(resistance).toPrecision(8)} • ${resistanceDist.toFixed(2)}% away${resistanceFailureConfirmed?' • FAILED TEST':''}`);
-    if(supportFailureConfirmed) reasons.push('Completed 15m candle tested support and closed back above it — support failure confirmed');
+    if(supportFailureConfirmed) reasons.push('Completed 15m candle tested support and closed back above it — support test failure confirmed');
     if(nearResistance && !resistanceFailureConfirmed && correctionConfirmed && lh>=1 && ll>=1) reasons.push('Resistance test is not failed yet; STRONG BEARISH CONTINUATION remains unconfirmed');
-    if(resistanceFailureConfirmed) reasons.push('Completed 15m candle tested resistance and closed back below it — resistance failure confirmed');
+    if(resistanceFailureConfirmed) reasons.push('Completed 15m candle tested resistance and closed back below it — resistance test failure confirmed');
     if(rsiOversold){ momentum='OVERSOLD / STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — oversold condition`); }
     else if(rsiStretched){ momentum='STRETCHED'; reasons.push(`15m RSI ${rsi15.toFixed(1)} — stretched`); }
     if(bearishReversalConfirmed){
@@ -9340,7 +9316,7 @@ function calculateUnifiedMarketCycle(item){
       ema:{...emaVals,belowAll,aboveAll,bearishStack,bullishStack,fastBear,fastBull,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction},
       structure:{hh,hl,lh,ll,bearishStructure,bullishStructure},
       support:support?Number(support):null,resistance:resistance?Number(resistance):null,
-      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed,nearResistance,supportFailureConfirmed,recentSupportFailure,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,resistanceFailureConfirmed,recentResistanceFailure,
+      meta:{price,rsi15,rsiOversold,rsiStretched,correctionConfirmed,correctionDeveloping,correctionCode,correctionLabel,correctionStage:cg.label||'',drawdown:Math.abs(Number(item.dropPctFromPeak||0)),topScore,priorTopEvidence:priorTopEvidenceFlag,supportDist,resistanceDist,supportTest,supportFailed:supportFailureConfirmed,supportFailureConfirmed,recentSupportFailure,nearResistance,resistanceFailureConfirmed,recentResistanceFailure,srBothTest,srBothFailed,ema14Reclaim,ema21Reclaim,reversalConfirmed,bearishReversalConfirmed,bullishReversalConfirmed,resistanceFailureConfirmed,recentResistanceFailure,
           bullishRecoveryConfirmed,aboveEma200,belowEma200,bounceOnly,recoveryConfirmed,ema70Above200,ema70Below200,ema70CrossBullish,ema70CrossBearish,ema70200Direction}
     };
   }catch(err){
