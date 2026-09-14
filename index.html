@@ -9113,7 +9113,7 @@ function calculateUnifiedMarketCycle(item){
       ema14Reclaim &&
       ema21Reclaim &&
       (hh>=1||bullishStack) &&
-      !supportFailed
+      !supportFailureConfirmed
     );
 
     // IMPORTANT: return-to-normal is context only. Recovery is authoritative
@@ -9127,7 +9127,7 @@ function calculateUnifiedMarketCycle(item){
     const accum1dForRecovery=Number(accumChecksForRecovery.find(x=>String(x?.tf||'').toLowerCase()==='1d')?.result?.confidence ?? 0);
     const volume4hForRecovery=Number(item.volSpike4||0);
     const strictRecoveryChecklist=!!(
-      correctionConfirmed && !supportFailed &&
+      correctionConfirmed && !supportFailureConfirmed &&
       hl>=1 && ema14Reclaim && ema21Reclaim &&
       accum1dForRecovery>=50 && volume4hForRecovery>=1.20
     );
