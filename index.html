@@ -949,16 +949,22 @@ body.authLocked{overflow:hidden}
       </div>
       <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">🧭 Unified Market-Cycle Filter</label>
+          <label class="controlLabel">🧭 Unified Market-Cycle State Filter</label>
           <select id="unifiedCycleFilter">
-            <option value="ALL">All Market-Cycle Stages</option>
-            <option value="awareness">🟠 AWARENESS — Support / Accumulation</option>
-            <option value="markup">🟢 MARKUP — Expansion / Continuation</option>
-            <option value="distribution">🟠 RESISTANCE / DISTRIBUTION — Topping / Exhaustion</option>
-            <option value="markdown">🔵 PROFIT / MARKDOWN — Downtrend / Correction</option>
-            <option value="support">🔴 SUPPORT / RECOVERY — Defense / Reversal watch</option>
+            <option value="ALL">All Market-Cycle States</option>
+            <option value="NEUTRAL_TREND">⚪ NEUTRAL TREND</option>
+            <option value="MARKUP_EXPANSION">🟢 MARKUP / EXPANSION</option>
+            <option value="ACCUMULATION_BASE">🟢 ACCUMULATION / BASE</option>
+            <option value="DISTRIBUTION_TOPPING">🟠 DISTRIBUTION / TOPPING</option>
+            <option value="CORRECTION_DEVELOPING">🟠 CORRECTION DEVELOPING</option>
+            <option value="MARKDOWN_POST_TOP">🔴 MARKDOWN / POST-TOP</option>
+            <option value="MARKDOWN_POST_TOP_SUPPORT_TEST">🔴 MARKDOWN / POST-TOP → 🟡 SUPPORT TEST</option>
+            <option value="CORRECTION_DEVELOPING_RESISTANCE_TEST">🟠 CORRECTION DEVELOPING → 🟠 RESISTANCE TEST</option>
+            <option value="POST_CORRECTION_RECOVERY">🟣 POST-CORRECTION / RECOVERY</option>
+            <option value="BEARISH_REVERSAL_CONFIRMED">🔴 BEARISH REVERSAL CONFIRMED</option>
+            <option value="BULLISH_REVERSAL_CONFIRMED">🟢 BULLISH REVERSAL CONFIRMED</option>
           </select>
-          <div class="dashboardHint">Filters by the exact active stage highlighted in the 🧭 UNIFIED MARKET-CYCLE MAP.</div>
+          <div class="dashboardHint">Filters by the exact <strong>🧭 UNIFIED MARKET-CYCLE state</strong> shown in each result — including <strong>🔴 MARKDOWN / POST-TOP → 🟡 SUPPORT TEST</strong>. It no longer groups every markdown/support condition together.</div>
         </div>
       </div>
       <div class="controlGrid two" style="margin-top:10px">
@@ -6059,7 +6065,28 @@ function unifiedCycleFilterMatches(r, filter){
       if(typeof calculateUnifiedMarketCycle === 'function') u = calculateUnifiedMarketCycle(item);
     }catch(_){}
   }
-  return getUnifiedCycleMapStage(u || {}) === filter;
+
+  // IMPORTANT: this filter now matches the exact displayed UNIFIED MARKET-CYCLE
+  // state, not the broader map stage. This prevents states such as
+  // "MARKDOWN / POST-TOP" and "MARKDOWN / POST-TOP → SUPPORT TEST" from being
+  // merged into the same filter bucket.
+  const state = String(u?.state || '').trim().toUpperCase();
+
+  const exactStates = {
+    NEUTRAL_TREND: '⚪ NEUTRAL TREND',
+    MARKUP_EXPANSION: '🟢 MARKUP / EXPANSION',
+    ACCUMULATION_BASE: '🟢 ACCUMULATION / BASE',
+    DISTRIBUTION_TOPPING: '🟠 DISTRIBUTION / TOPPING',
+    CORRECTION_DEVELOPING: '🟠 CORRECTION DEVELOPING',
+    MARKDOWN_POST_TOP: '🔴 MARKDOWN / POST-TOP',
+    MARKDOWN_POST_TOP_SUPPORT_TEST: '🔴 MARKDOWN / POST-TOP → 🟡 SUPPORT TEST',
+    CORRECTION_DEVELOPING_RESISTANCE_TEST: '🟠 CORRECTION DEVELOPING → 🟠 RESISTANCE TEST',
+    POST_CORRECTION_RECOVERY: '🟣 POST-CORRECTION / RECOVERY',
+    BEARISH_REVERSAL_CONFIRMED: '🔴 BEARISH REVERSAL CONFIRMED',
+    BULLISH_REVERSAL_CONFIRMED: '🟢 BULLISH REVERSAL CONFIRMED'
+  };
+
+  return exactStates[filter] ? state === exactStates[filter].toUpperCase() : true;
 }
 
 function reversalStateFilterMatches(r, filter){
