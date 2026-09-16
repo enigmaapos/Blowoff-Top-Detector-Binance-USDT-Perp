@@ -999,10 +999,19 @@ body.authLocked{overflow:hidden}
         <div class="controlItem">
           <label class="controlLabel">🧭 Correction Authority Filter</label>
           <select id="correctionAuthorityFilter">
-            <option value="ALL">All Correction Authority States</option>
-            <option value="CONFIRMED">🔴 CONFIRMED</option>
+            <option value="ALL">All Correction Guide States</option>
+            <option value="SIGNIFICANT_CORRECTION_CONFIRMED">🔴 CONFIRMED</option>
+            <option value="POST_CORRECTION_RECOVERY">⚫ RECOVERY</option>
+            <option value="CORRECTION_DEVELOPING">🟠 CORRECTION DEVELOPING — NOT CONFIRMED</option>
+            <option value="HIGH_CORRECTION_RISK_MANIA">🔥 HIGH RISK / MANIA</option>
+            <option value="HIGH_CORRECTION_RISK">🟡 HIGH RISK</option>
+            <option value="OVERBOUGHT_CONTINUATION_SUPPORTED">⚪ OVERBOUGHT / CONTINUATION SUPPORTED</option>
+            <option value="VULNERABILITY_INCREASING">🟡 VULNERABILITY INCREASING</option>
+            <option value="HIGH_VULNERABILITY">🟠 HIGH VULNERABILITY</option>
+            <option value="OVERBOUGHT">⚪ OVERBOUGHT</option>
+            <option value="NO_SIGNIFICANT_CORRECTION_SIGNAL">🟢 CONTINUATION</option>
           </select>
-          <div class="dashboardHint">Filters by the same authoritative Correction Status / Correction authority layer shown in each result. <strong>🔴 CONFIRMED</strong> requires the scanner's significant-correction confirmation.</div>
+          <div class="dashboardHint">Filters directly by the scanner's authoritative <strong>Correction Guide</strong> code. This includes confirmed correction, recovery, developing correction, <strong>🔥 HIGH RISK / MANIA</strong>, high-risk/vulnerability states, overbought states, and continuation.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📍 S/R Test Filter</label>
@@ -6014,14 +6023,15 @@ function finalDecisionFilterMatches(r, filter){
 
 function correctionAuthorityFilterMatches(r, filter){
   if(filter==='ALL') return true;
-  if(filter!=='CONFIRMED') return true;
   try{
-    let u = r?.unifiedMarketCycle;
-    if(!u || u.authoritative !== true){
-      if(typeof calculateUnifiedMarketCycle === 'function') u = calculateUnifiedMarketCycle(r || {});
+    // Correction Authority Filter is intentionally a direct view of the
+    // authoritative Correction Guide state. Do not derive a second
+    // classification from EMA/RSI/etc. here.
+    let cg = r?.correctionGuide;
+    if(!cg || typeof cg !== 'object' || !cg.code){
+      if(typeof getCorrectionGuide === 'function') cg = getCorrectionGuide(r || {});
     }
-    // Match the exact correction authority boolean used by the Unified Market-Cycle renderer.
-    return !!u?.correctionConfirmed;
+    return String(cg?.code || '').toUpperCase() === String(filter || '').toUpperCase();
   }catch(_){
     return false;
   }
