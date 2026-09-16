@@ -683,13 +683,6 @@ body.authLocked{overflow:hidden}
     box-shadow:0 0 0 1px rgba(126,220,255,.08),0 5px 18px rgba(0,0,0,.14);
   }
 </style>
-<style id="trader-zone-overlap-ui">
-.filtersZone #traderZoneFilter{
-  width:100%;min-height:42px;font-weight:800;font-size:14px;
-  border:1px solid rgba(126,220,255,.55);
-  box-shadow:0 0 0 1px rgba(126,220,255,.08),0 5px 18px rgba(0,0,0,.14);
-}
-</style>
 <style id="final-decision-authority-ui">
 .finalDecisionAuthority{margin-top:8px;padding:10px 11px;border-radius:10px;border:1px solid rgba(126,220,255,.22);background:linear-gradient(180deg,rgba(126,220,255,.07),rgba(255,255,255,.018))}
 .finalDecisionAuthority .fdaTitle{font-size:10px;font-weight:950;letter-spacing:.09em;text-transform:uppercase;color:#7edcff}
@@ -1004,16 +997,12 @@ body.authLocked{overflow:hidden}
       </div>
       <div class="controlGrid two">
         <div class="controlItem">
-          <label class="controlLabel">📍 Zone Filter</label>
-          <select id="traderZoneFilter">
-            <option value="ALL">All Zones</option>
-            <option value="BUYING">🟢 Buying Zone</option>
-            <option value="SELLING">🔴 Selling Zone</option>
-            <option value="ACTIONABLE">⚡ Actionable Zone</option>
-            <option value="CONTESTED">⚠️ Contested / Overlapping</option>
-            <option value="NO_ZONE">⚪ No Nearby Zone</option>
+          <label class="controlLabel">🧭 Correction Authority Filter</label>
+          <select id="correctionAuthorityFilter">
+            <option value="ALL">All Correction Authority States</option>
+            <option value="CONFIRMED">🔴 CONFIRMED</option>
           </select>
-          <div class="dashboardHint">Filters by the same Trader Decision price zones shown in each result. Buying/Selling means the price is inside or approaching that zone.</div>
+          <div class="dashboardHint">Filters by the same authoritative Correction Status / Correction authority layer shown in each result. <strong>🔴 CONFIRMED</strong> requires the scanner's significant-correction confirmation.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📍 S/R Test Filter</label>
@@ -1126,10 +1115,9 @@ const el = {
   // sorting elements (populated below)
   sortBy: document.getElementById('sortBy'),
   sortDir: document.getElementById('sortDir'),
-  correctionFilter: document.getElementById('correctionFilter'),
+  correctionAuthorityFilter: document.getElementById('correctionAuthorityFilter'),
   biasFilter: document.getElementById('biasFilter'),
   traderDecisionFilter: document.getElementById('traderDecisionFilter'),
-  traderZoneFilter: document.getElementById('traderZoneFilter'),
   srTestFilter: document.getElementById('srTestFilter'),
   entryStatusSort: document.getElementById('entryStatusSort'),
   fundingFilter: document.getElementById('fundingFilter'),
@@ -6024,36 +6012,19 @@ function finalDecisionFilterMatches(r, filter){
   return !!patterns[filter]?.test(state);
 }
 
-function getTraderZoneFilterState(r){
-  const z = (typeof getTraderDecisionZones === 'function')
-    ? getTraderDecisionZones(r || {})
-    : {buy:null,sell:null,active:null,overlap:false,contested:false};
-  const buyNear = !!z?.buy && !!(z.buy.inside || z.buy.near);
-  const sellNear = !!z?.sell && !!(z.sell.inside || z.sell.near);
-  const contested = !!z?.contested && buyNear && sellNear;
-  const buyConfirmed = buyNear && !!z.buy.confirmed && !contested;
-  const sellConfirmed = sellNear && !!z.sell.confirmed && !contested;
-  return {
-    buy: buyNear,
-    sell: sellNear,
-    actionable: (buyConfirmed || sellConfirmed) && !contested,
-    contested,
-    none: !buyNear && !sellNear,
-    buyConfirmed,
-    sellConfirmed,
-    zones: z
-  };
-}
-
-function traderZoneFilterMatches(r, filter){
+function correctionAuthorityFilterMatches(r, filter){
   if(filter==='ALL') return true;
-  const state=getTraderZoneFilterState(r);
-  if(filter==='BUYING') return state.buy;
-  if(filter==='SELLING') return state.sell;
-  if(filter==='ACTIONABLE') return state.actionable;
-  if(filter==='CONTESTED') return state.contested;
-  if(filter==='NO_ZONE') return state.none;
-  return true;
+  if(filter!=='CONFIRMED') return true;
+  try{
+    let u = r?.unifiedMarketCycle;
+    if(!u || u.authoritative !== true){
+      if(typeof calculateUnifiedMarketCycle === 'function') u = calculateUnifiedMarketCycle(r || {});
+    }
+    // Match the exact correction authority boolean used by the Unified Market-Cycle renderer.
+    return !!u?.correctionConfirmed;
+  }catch(_){
+    return false;
+  }
 }
 
 function unifiedCycleFilterMatches(r, filter){
@@ -6173,9 +6144,9 @@ function filterResultsForDist(results) {
   if (activeViewMode === 'favorite' || showFavoritesOnly) {
     filtered = filtered.filter(r => favoriteSymbols.has(String(r.symbol || '').trim().toUpperCase()));
   }
-  const correctionCode = el.correctionFilter ? el.correctionFilter.value : 'ALL';
-  if (correctionCode !== 'ALL') {
-    filtered = filtered.filter(r => String(r?.correctionGuide?.code || '').toUpperCase() === correctionCode);
+  const correctionAuthorityFilter = el.correctionAuthorityFilter ? el.correctionAuthorityFilter.value : 'ALL';
+  if (correctionAuthorityFilter !== 'ALL') {
+    filtered = filtered.filter(r => correctionAuthorityFilterMatches(r, correctionAuthorityFilter));
   }
   const biasFilter = el.biasFilter ? el.biasFilter.value : 'ALL';
   if (biasFilter !== 'ALL') {
@@ -6211,14 +6182,6 @@ function filterResultsForDist(results) {
   const traderDecisionFilter = el.traderDecisionFilter ? el.traderDecisionFilter.value : 'ALL';
   if (traderDecisionFilter !== 'ALL') {
     filtered = filtered.filter(r => finalDecisionFilterMatches(r || {}, traderDecisionFilter));
-  }
-// Dedicated Trader Decision price-zone filter. This uses the exact same
-  // getTraderDecisionZones() logic rendered in the result cards.
-  // BUYING/SELLING are proximity filters (inside OR approaching), while
-  // ACTIONABLE requires a confirmed nearby zone.
-  const traderZoneFilter = el.traderZoneFilter ? el.traderZoneFilter.value : 'ALL';
-  if (traderZoneFilter !== 'ALL') {
-    filtered = filtered.filter(r => traderZoneFilterMatches(r, traderZoneFilter));
   }
   const srTestFilter = el.srTestFilter ? el.srTestFilter.value : 'ALL';
   if (srTestFilter !== 'ALL') filtered = filtered.filter(r => srTestFilterMatches(r, srTestFilter));
@@ -6454,9 +6417,9 @@ function filterResultsForDist(results) {
 function getActiveResultFilterSummary(){
   const labels=[];
   const fields=[
-    ['correctionFilter','Correction'],['biasFilter','Bias'],['marketStructureFilter','Structure'],
+    ['correctionAuthorityFilter','Correction authority'],['biasFilter','Bias'],['marketStructureFilter','Structure'],
     ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
-    ['trendTransitionFilter','Trend Transition'],['traderDecisionFilter','Trader Decision'],['traderZoneFilter','Zone'],
+    ['trendTransitionFilter','Trend Transition'],['traderDecisionFilter','Trader Decision'],
     ['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
     ['hvdFilter','HVD'],['rsi15SessionFilter','15m RSI'],['rsi4h1wFilter','4H RSI'],
     ['rsi8h1mFilter','8H RSI'],['liquidityFilter','Liquidity'],['accumDoubleTopFilter','Double Top'],
@@ -6480,8 +6443,8 @@ function updateResultFilterStatus(){
 }
 function resetAllResultFilters(){
   [
-    'correctionFilter','biasFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
-    'reversalStateFilter','trendTransitionFilter','traderDecisionFilter','traderZoneFilter','srTestFilter',
+    'correctionAuthorityFilter','biasFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
+    'reversalStateFilter','trendTransitionFilter','traderDecisionFilter','srTestFilter',
     'fundingFilter','marketExhaustionFilter','hvdFilter','rsi15SessionFilter','rsi4h1wFilter',
     'rsi8h1mFilter','liquidityFilter','accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter'
   ].forEach(id=>{const x=document.getElementById(id);if(x)x.value='ALL';});
@@ -6705,8 +6668,8 @@ if (el.sortDir) el.sortDir.innerText = 'Desc';
 if (el.sortBy) {
   el.sortBy.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
-if (el.correctionFilter) {
-  el.correctionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
+if (el.correctionAuthorityFilter) {
+  el.correctionAuthorityFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.biasFilter) {
   el.biasFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
@@ -6714,15 +6677,6 @@ if (el.biasFilter) {
 if (el.srTestFilter) el.srTestFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 if (el.traderDecisionFilter) {
   el.traderDecisionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
-}
-if (el.traderZoneFilter) {
-  el.traderZoneFilter.addEventListener('change', () => {
-    updateResultFilterStatus();
-    const v=el.traderZoneFilter.value;
-    // Zone filtering is decision-first: keep the current sort unless the user
-    // explicitly chooses a different sort. No network request is required.
-    renderActiveView(true);
-  });
 }
 if (el.entryStatusSort) {
   el.entryStatusSort.addEventListener('change', () => {
@@ -10345,7 +10299,7 @@ function commitMarketScanResults(nextResults){
   const activeFilterState = (() => {
     try {
       const ids = [
-        'correctionFilter','biasFilter','traderDecisionFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
+        'correctionAuthorityFilter','biasFilter','traderDecisionFilter','fundingFilter','marketExhaustionFilter',
         'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
