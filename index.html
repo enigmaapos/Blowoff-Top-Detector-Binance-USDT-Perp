@@ -1023,30 +1023,33 @@ body.authLocked{overflow:hidden}
           </select>
           <div class="dashboardHint">Uses the same live S/R location and completed-15m candle confirmation shown in each result.</div>
         </div>
-        <div class="controlItem">
-          <label class="controlLabel">🟢 Long Entry Status</label>
-          <select id="longEntryFilter">
-            <option value="ALL">All Long Entry States</option>
-            <option value="CONFIRMED">🟢 Confirmed / staged</option>
-            <option value="STAGED">⚠️ Staged / conditional</option>
-            <option value="CONDITIONAL">🟡 Conditional</option>
-            <option value="WAIT">⏸ Wait</option>
-            <option value="NOT_READY">❌ Not yet / wait</option>
-            <option value="DONT_CHASE">🚫 Don't chase</option>
+        <div class="controlItem" style="grid-column:1/-1">
+          <label class="controlLabel">🎯 TRADER DECISION • FINAL DECISION ENGINE</label>
+          <select id="traderDecisionFilter">
+            <option value="ALL">All Final Decision Engine States</option>
+            <option value="BEARISH_REVERSAL_CONFIRMED">🔴 Bearish Reversal Confirmed</option>
+            <option value="BULLISH_REVERSAL_CONFIRMED">🟢 Bullish Reversal Confirmed</option>
+            <option value="BEARISH_REVERSAL_CONTINUATION_CONFIRMED">🔴 Bearish Reversal Continuation Confirmed</option>
+            <option value="BULLISH_REVERSAL_CONTINUATION_CONFIRMED">🟢 Bullish Reversal Continuation Confirmed</option>
+            <option value="BEARISH_REVERSAL_CONTINUATION_DEVELOPING">🟠 Bearish Reversal Continuation Developing</option>
+            <option value="BULLISH_REVERSAL_CONTINUATION_DEVELOPING">🟠 Bullish Reversal Continuation Developing</option>
+            <option value="EMA_BULLISH_CROSS">🟢 EMA70 / EMA200 Bullish Cross</option>
+            <option value="EMA_BEARISH_CROSS">🔴 EMA70 / EMA200 Bearish Cross</option>
+            <option value="CORRECTION_RECOVERY_WATCH">🟣 Correction Confirmed — Recovery / Re-accumulation Watch</option>
+            <option value="CORRECTION_CAPITULATION">🔴 Correction Confirmed — Capitulation / Downside Risk</option>
+            <option value="SIGNIFICANT_CORRECTION_CONFIRMED">🔴 Significant Correction Confirmed</option>
+            <option value="CORRECTION_DEVELOPING">🟠 Correction Developing — Not Confirmed</option>
+            <option value="BLOWOFF_MANIA">🔥 Blowoff / Mania — High Exhaustion Risk</option>
+            <option value="CYCLE_MATCH_DISTRIBUTION">🟣 Cycle Match + Distribution Warning</option>
+            <option value="ACCUMULATION_SUPPORTED">🟢 Accumulation / Re-accumulation — Supported</option>
+            <option value="DEVELOPING_CONTINUATION">🟢 Developing Continuation / Accumulation</option>
+            <option value="RECOVERY_RETURN_NORMAL">🟣 Recovery / Return-to-Normal — Bottom Not Confirmed</option>
+            <option value="DISTRIBUTION_BREAKDOWN">🟠 Distribution / Breakdown — Correction Developing — Not Confirmed</option>
+            <option value="EXTENDED_EXHAUSTION">🟡 Extended / Watch for Exhaustion</option>
+            <option value="HIGH_CYCLE_SIMILARITY">🔵 High Cycle Similarity — Context Watch</option>
+            <option value="NO_CLEAR_EDGE">⚪ No Clear Edge</option>
           </select>
-          <div class="dashboardHint">Filters by the actual Long entry status and its current confirmation condition.</div>
-        </div>
-        <div class="controlItem">
-          <label class="controlLabel">🔴 Short Entry Status</label>
-          <select id="shortEntryFilter">
-            <option value="ALL">All Short Entry States</option>
-            <option value="CONDITIONAL">🟠 Conditional</option>
-            <option value="WAIT">⏸ Wait</option>
-            <option value="REJECTION">🟠 Rejection / failed bounce</option>
-            <option value="LOWER_HIGH">🔴 Failed bounce / lower-high</option>
-            <option value="ACCEPTANCE">🔴 Acceptance below liquidity</option>
-          </select>
-          <div class="dashboardHint">Filters by the actual Short entry condition, including failed-bounce, lower-high and liquidity acceptance.</div>
+          <div class="dashboardHint">Filters by the exact authoritative Trader Decision state produced by the Final Decision Engine. 4H/1H = context; 15m = execution.</div>
         </div>
       </div>
     </div>
@@ -1119,10 +1122,9 @@ const el = {
   sortDir: document.getElementById('sortDir'),
   correctionFilter: document.getElementById('correctionFilter'),
   biasFilter: document.getElementById('biasFilter'),
-  longEntryFilter: document.getElementById('longEntryFilter'),
+  traderDecisionFilter: document.getElementById('traderDecisionFilter'),
   traderZoneFilter: document.getElementById('traderZoneFilter'),
   srTestFilter: document.getElementById('srTestFilter'),
-  shortEntryFilter: document.getElementById('shortEntryFilter'),
   entryStatusSort: document.getElementById('entryStatusSort'),
   fundingFilter: document.getElementById('fundingFilter'),
   accumDoubleTopFilter: document.getElementById('accumDoubleTopFilter'),
@@ -5978,6 +5980,44 @@ function entryStatusMatches(r, side, code){
   return s.short===code;
 }
 
+function getFinalDecisionFilterState(r){
+  try{
+    const rec=(typeof getFinalRecommendation==='function') ? getFinalRecommendation(r || {}) : null;
+    return String(rec?.state || '⚪ NO CLEAR EDGE').trim().toUpperCase();
+  }catch(_){
+    return '⚪ NO CLEAR EDGE';
+  }
+}
+
+function finalDecisionFilterMatches(r, filter){
+  if(filter==='ALL') return true;
+  const state=getFinalDecisionFilterState(r);
+  const patterns={
+    BEARISH_REVERSAL_CONFIRMED:/^🔴 BEARISH REVERSAL CONFIRMED$/,
+    BULLISH_REVERSAL_CONFIRMED:/^🟢 BULLISH REVERSAL CONFIRMED$/,
+    BEARISH_REVERSAL_CONTINUATION_CONFIRMED:/^🔴 BEARISH REVERSAL CONTINUATION CONFIRMED$/,
+    BULLISH_REVERSAL_CONTINUATION_CONFIRMED:/^🟢 BULLISH REVERSAL CONTINUATION CONFIRMED$/,
+    BEARISH_REVERSAL_CONTINUATION_DEVELOPING:/^🟠 BEARISH REVERSAL CONTINUATION DEVELOPING$/,
+    BULLISH_REVERSAL_CONTINUATION_DEVELOPING:/^🟠 BULLISH REVERSAL CONTINUATION DEVELOPING$/,
+    EMA_BULLISH_CROSS:/^🟢 EMA70 \/ EMA200 BULLISH CROSS$/,
+    EMA_BEARISH_CROSS:/^🔴 EMA70 \/ EMA200 BEARISH CROSS$/,
+    CORRECTION_RECOVERY_WATCH:/^🟣 CORRECTION CONFIRMED — RECOVERY \/ RE-ACCUMULATION WATCH$/,
+    CORRECTION_CAPITULATION:/^🔴 CORRECTION CONFIRMED — CAPITULATION \/ DOWNSIDE RISK$/,
+    SIGNIFICANT_CORRECTION_CONFIRMED:/^🔴 SIGNIFICANT CORRECTION CONFIRMED$/,
+    CORRECTION_DEVELOPING:/^🟠 CORRECTION DEVELOPING — NOT CONFIRMED$/,
+    BLOWOFF_MANIA:/^🔥 BLOWOFF \/ MANIA — HIGH EXHAUSTION RISK$/,
+    CYCLE_MATCH_DISTRIBUTION:/^🟣 CYCLE MATCH \+ DISTRIBUTION WARNING$/,
+    ACCUMULATION_SUPPORTED:/^🟢 ACCUMULATION \/ RE-ACCUMULATION — SUPPORTED$/,
+    DEVELOPING_CONTINUATION:/^🟢 DEVELOPING CONTINUATION \/ ACCUMULATION$/,
+    RECOVERY_RETURN_NORMAL:/^🟣 RECOVERY \/ RETURN-TO-NORMAL — BOTTOM NOT CONFIRMED$/,
+    DISTRIBUTION_BREAKDOWN:/^🟠 DISTRIBUTION \/ BREAKDOWN — CORRECTION DEVELOPING — NOT CONFIRMED$/,
+    EXTENDED_EXHAUSTION:/^🟡 EXTENDED \/ WATCH FOR EXHAUSTION$/,
+    HIGH_CYCLE_SIMILARITY:/^🔵 HIGH CYCLE SIMILARITY — CONTEXT WATCH$/,
+    NO_CLEAR_EDGE:/^⚪ NO CLEAR EDGE$/
+  };
+  return !!patterns[filter]?.test(state);
+}
+
 function getTraderZoneFilterState(r){
   const z = (typeof getTraderDecisionZones === 'function')
     ? getTraderDecisionZones(r || {})
@@ -6138,18 +6178,12 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => emaStructureFilterMatches(r, emaStructureFilter));
   }
 
-  // Entry-status filters use the same status intelligence that powers the
-  // Trader Decision entry condition. Filtering therefore follows the actual
-  // long/short state, including correction, recovery, failed-bounce/lower-high
-  // and liquidity-acceptance conditions.
-  const longEntryFilter = el.longEntryFilter ? el.longEntryFilter.value : 'ALL';
-  if (longEntryFilter !== 'ALL') {
-    filtered = filtered.filter(r => entryStatusMatches(r || {}, 'long', longEntryFilter));
-  }
-
-  const shortEntryFilter = el.shortEntryFilter ? el.shortEntryFilter.value : 'ALL';
-  if (shortEntryFilter !== 'ALL') {
-    filtered = filtered.filter(r => entryStatusMatches(r || {}, 'short', shortEntryFilter));
+  // Dedicated Trader Decision filter. This uses the exact same
+  // Final Decision Engine state that is rendered as the authoritative
+  // Trader Decision card. It replaces the separate Long/Short entry filters.
+  const traderDecisionFilter = el.traderDecisionFilter ? el.traderDecisionFilter.value : 'ALL';
+  if (traderDecisionFilter !== 'ALL') {
+    filtered = filtered.filter(r => finalDecisionFilterMatches(r || {}, traderDecisionFilter));
   }
 // Dedicated Trader Decision price-zone filter. This uses the exact same
   // getTraderDecisionZones() logic rendered in the result cards.
@@ -6395,8 +6429,8 @@ function getActiveResultFilterSummary(){
   const fields=[
     ['correctionFilter','Correction'],['biasFilter','Bias'],['marketStructureFilter','Structure'],
     ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
-    ['trendTransitionFilter','Trend Transition'],['traderZoneFilter','Zone'],['longEntryFilter','Long Entry'],
-    ['shortEntryFilter','Short Entry'],['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
+    ['trendTransitionFilter','Trend Transition'],['traderDecisionFilter','Trader Decision'],['traderZoneFilter','Zone'],
+    ['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
     ['hvdFilter','HVD'],['rsi15SessionFilter','15m RSI'],['rsi4h1wFilter','4H RSI'],
     ['rsi8h1mFilter','8H RSI'],['liquidityFilter','Liquidity'],['accumDoubleTopFilter','Double Top'],
     ['smcBreakerFilter','SMC Breaker'],['smcDirectionFilter','SMC Direction']
@@ -6420,7 +6454,7 @@ function updateResultFilterStatus(){
 function resetAllResultFilters(){
   [
     'correctionFilter','biasFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
-    'reversalStateFilter','trendTransitionFilter','traderZoneFilter','srTestFilter','longEntryFilter','shortEntryFilter',
+    'reversalStateFilter','trendTransitionFilter','traderDecisionFilter','traderZoneFilter','srTestFilter',
     'fundingFilter','marketExhaustionFilter','hvdFilter','rsi15SessionFilter','rsi4h1wFilter',
     'rsi8h1mFilter','liquidityFilter','accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter'
   ].forEach(id=>{const x=document.getElementById(id);if(x)x.value='ALL';});
@@ -6651,11 +6685,8 @@ if (el.biasFilter) {
   el.biasFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.srTestFilter) el.srTestFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
-if (el.longEntryFilter) {
-  el.longEntryFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
-}
-if (el.shortEntryFilter) {
-  el.shortEntryFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
+if (el.traderDecisionFilter) {
+  el.traderDecisionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.traderZoneFilter) {
   el.traderZoneFilter.addEventListener('change', () => {
@@ -10287,7 +10318,7 @@ function commitMarketScanResults(nextResults){
   const activeFilterState = (() => {
     try {
       const ids = [
-        'correctionFilter','biasFilter','longEntryFilter','shortEntryFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
+        'correctionFilter','biasFilter','traderDecisionFilter','traderZoneFilter','fundingFilter','marketExhaustionFilter',
         'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
         'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
       ];
