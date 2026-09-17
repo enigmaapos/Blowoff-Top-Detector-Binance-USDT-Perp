@@ -9408,6 +9408,216 @@ function renderUnifiedCycleMap(u){
   </div>`;
 }
 
+/* ==========================================================
+   BOX BASE FOUND — CONSOLIDATION → BREAKOUT → EXPANSION ENGINE
+   Primary timeframe: 15m, using completed candles only.
+   This is intentionally separate from the Unified Market-Cycle so the
+   cycle engine remains authoritative while this detector describes the
+   specific "box/base" geometry seen on the chart.
+   ========================================================== */
+function calculateBoxBaseFound(item){
+  try{
+    const r=item||{};
+    const raw=Array.isArray(r.k15m)?r.k15m:[];
+    const now=Date.now();
+    const bars=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
+    if(bars.length<40){
+      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:['At least 40 completed 15m candles are required.'],trigger:'Collect more completed 15m candles.',box:{},structure:{},breakout:{},expansion:{}};
+    }
+
+    const O=bars.map(k=>Number(k[1])), H=bars.map(k=>Number(k[2])), L=bars.map(k=>Number(k[3])), C=bars.map(k=>Number(k[4])), V=bars.map(k=>Number(k[5]));
+    if(![...H,...L,...C,...V].every(Number.isFinite)) throw new Error('Invalid 15m OHLCV data');
+    const price=Number(r.closeNow)||C.at(-1);
+    const pct=(a,b)=>b?((a-b)/b)*100:0;
+    const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+    const stdev=a=>{ const m=avg(a); return a.length?Math.sqrt(avg(a.map(x=>(x-m)*(x-m)))):0; };
+    const smaLocal=(a,n)=>a.length>=n?avg(a.slice(-n)):avg(a);
+    const near=(x,level,tolPct)=>level>0 && Math.abs((x-level)/level)*100<=tolPct;
+
+    function pivotHighs(values,look=2){
+      const out=[];
+      for(let i=look;i<values.length-look;i++){
+        let ok=true;
+        for(let j=1;j<=look;j++) if(values[i]<values[i-j] || values[i]<values[i+j]){ok=false;break;}
+        if(ok) out.push({i,v:values[i]});
+      }
+      return out;
+    }
+    function pivotLows(values,look=2){
+      const out=[];
+      for(let i=look;i<values.length-look;i++){
+        let ok=true;
+        for(let j=1;j<=look;j++) if(values[i]>values[i-j] || values[i]>values[i+j]){ok=false;break;}
+        if(ok) out.push({i,v:values[i]});
+      }
+      return out;
+    }
+
+    let best=null;
+    const maxEnd=bars.length-1;
+    const minEnd=Math.max(32,bars.length-80);
+    const lens=[32,40,48,64,80,96];
+
+    for(let end=maxEnd;end>=minEnd;end--){
+      for(const len of lens){
+        const start=end-len+1;
+        if(start<0) continue;
+        const hs=H.slice(start,end+1), ls=L.slice(start,end+1), cs=C.slice(start,end+1), vs=V.slice(start,end+1);
+        const hi=Math.max(...hs), lo=Math.min(...ls), mid=(hi+lo)/2;
+        if(!(mid>0&&hi>lo)) continue;
+        const rangePct=pct(hi,lo);
+        // The pictured setup is a compact base, not an unrestricted swing range.
+        if(rangePct>30) continue;
+
+        const tol=Math.max(rangePct*0.12,0.6); // touch tolerance in percent
+        const highTouches=hs.filter(x=>near(x,hi,tol)).length;
+        const lowTouches=ls.filter(x=>near(x,lo,tol)).length;
+        if(highTouches<2 || lowTouches<2) continue;
+
+        const half=Math.max(8,Math.floor(cs.length/2));
+        const firstH=Math.max(...hs.slice(0,half)), firstL=Math.min(...ls.slice(0,half));
+        const secondH=Math.max(...hs.slice(half)), secondL=Math.min(...ls.slice(half));
+        const firstRange=pct(firstH,firstL), secondRange=pct(secondH,secondL);
+        const contraction=firstRange>0 ? Math.max(0,Math.min(1,(firstRange-secondRange)/firstRange)) : 0;
+
+        const ph=pivotHighs(hs,2), pl=pivotLows(ls,2);
+        const lastPH=ph.slice(-4), lastPL=pl.slice(-4);
+        let hh=0,lh=0,hl=0,ll=0;
+        for(let i=1;i<lastPH.length;i++){
+          if(lastPH[i].v>lastPH[i-1].v*1.002) hh++;
+          else if(lastPH[i].v<lastPH[i-1].v*0.998) lh++;
+        }
+        for(let i=1;i<lastPL.length;i++){
+          if(lastPL[i].v>lastPL[i-1].v*1.002) hl++;
+          else if(lastPL[i].v<lastPL[i-1].v*0.998) ll++;
+        }
+
+        const relSD=mid?stdev(cs)/mid*100:99;
+        const volMA=Math.max(smaLocal(vs,Math.min(8,vs.length)),1e-12);
+        const recentVol=avg(vs.slice(-Math.min(8,vs.length)));
+        const earlyVol=avg(vs.slice(0,Math.min(8,vs.length)));
+        const volumeQuiet=earlyVol>0?Math.max(0,Math.min(1,1-recentVol/earlyVol)):0;
+
+        // Internal containment: most candle bodies/closes should live inside the box.
+        const insideCount=cs.filter(x=>x>=lo*(1-0.004)&&x<=hi*(1+0.004)).length;
+        const containment=insideCount/cs.length;
+        if(containment<0.72) continue;
+
+        const rangeQuality=Math.max(0,Math.min(1,(30-rangePct)/22));
+        const touchQuality=Math.min(1,(highTouches+lowTouches)/10);
+        const structureQuality=Math.max(0,Math.min(1,(hl*0.22+hh*0.12+(ll===0?0.18:0)+(lh<=1?0.10:0))));
+        const compressionQuality=Math.max(0,Math.min(1,contraction/0.55));
+        const volatilityQuality=Math.max(0,Math.min(1,(8-relSD)/8));
+        const score=Math.round(rangeQuality*20+containment*18+touchQuality*14+structureQuality*18+compressionQuality*14+volatilityQuality*10+volumeQuiet*6);
+
+        // Look for a close above the box high after this candidate window.
+        let breakIndex=-1;
+        const breakoutLevel=hi;
+        for(let j=end+1;j<bars.length;j++){
+          if(C[j]>breakoutLevel*1.0035){breakIndex=j;break;}
+        }
+        let breakoutVolumeRatio=0, breakoutHeld=false, retest=false, expansionPct=0, expansionMultiple=0;
+        if(breakIndex>=0){
+          const baseVol=avg(V.slice(Math.max(start,breakIndex-8),breakIndex));
+          breakoutVolumeRatio=baseVol>0?V[breakIndex]/baseVol:0;
+          const postHigh=Math.max(...H.slice(breakIndex));
+          expansionPct=pct(postHigh,breakoutLevel);
+          expansionMultiple=rangePct>0?expansionPct/rangePct:0;
+          const holdBars=C.slice(breakIndex).filter(x=>x>breakoutLevel*1.001).length;
+          breakoutHeld=holdBars>=Math.min(3,Math.max(1,bars.length-breakIndex));
+          retest=L.slice(breakIndex+1).some(x=>x>=breakoutLevel*(1-0.012)&&x<=breakoutLevel*(1+0.012));
+        }
+
+        const currentNearTop=price>=lo+(hi-lo)*0.78;
+        const currentInside=price>=lo*0.99&&price<=hi*1.01;
+        const quality=Math.max(0,Math.min(100,score + (breakIndex>=0?8:0) + (breakoutVolumeRatio>=1.4?4:0) + (breakoutHeld?4:0)));
+        const candidate={start,end,len,hi,lo,mid,rangePct,highTouches,lowTouches,firstRange,secondRange,contraction,relSD,containment,hh,hl,lh,ll,volumeQuiet,score:quality,breakIndex,breakoutVolumeRatio,breakoutHeld,retest,expansionPct,expansionMultiple,currentNearTop,currentInside};
+        // Prefer the most recent high-quality box; quality wins when recency is similar.
+        const recencyBonus=(end/maxEnd)*8;
+        candidate.rank=quality+recencyBonus;
+        if(!best||candidate.rank>best.rank) best=candidate;
+      }
+    }
+
+    if(!best){
+      return {state:'⚪ NO BOX BASE FOUND',code:'NONE',score:0,confidence:0,reasons:['No recent compact 15m consolidation met the support/resistance and containment requirements.'],trigger:'Wait for a defined consolidation range.',box:{},structure:{},breakout:{},expansion:{}};
+    }
+
+    const accum=Number(r.accumCombined?.confidence||0);
+    const ema14=ema(C,14), ema21=ema(C,21), ema50=ema(C,50);
+    const emaBull=ema14>ema21 && ema21>ema50;
+    const emaTurning=ema14>=ema21 || ema14>ema(C.slice(0,-4),14);
+    const accumSupport=accum>=45;
+    let score=best.score;
+    if(accumSupport) score=Math.min(100,score+5);
+    if(emaBull) score=Math.min(100,score+5);
+    else if(emaTurning) score=Math.min(100,score+2);
+
+    const reasons=[];
+    reasons.push(`Box range ${best.rangePct.toFixed(2)}%`);
+    reasons.push(`${best.highTouches} resistance touches / ${best.lowTouches} support touches`);
+    if(best.hl>0) reasons.push(`Higher-low structure (${best.hl})`);
+    if(best.hh>0) reasons.push(`Higher-high structure (${best.hh})`);
+    if(best.contraction>=0.12) reasons.push(`Range contraction ${(best.contraction*100).toFixed(0)}%`);
+    if(best.relSD<=4) reasons.push(`Volatility compressed (${best.relSD.toFixed(2)}% relSD)`);
+    if(accumSupport) reasons.push(`Accumulation context ${Math.round(accum)}%`);
+    if(emaBull) reasons.push('EMA14 > EMA21 > EMA50');
+
+    let state='🟡 BOX BASE FOUND — DEVELOPING', code='DEVELOPING', trigger='Watch for a completed 15m close above Box High.';
+    if(best.breakIndex>=0){
+      if(best.breakoutHeld && (best.expansionPct>=Math.max(5,best.rangePct*0.5) || best.expansionMultiple>=0.75)){
+        state='🟢 BOX BASE FOUND — BREAKOUT + EXPANSION'; code='EXPANSION_CONFIRMED';
+        trigger=`Box High ${best.hi.toPrecision(8)} was broken and price expanded ${best.expansionPct.toFixed(2)}% beyond the box.`;
+      }else if(best.breakoutHeld){
+        state='🟢 BOX BASE FOUND — BREAKOUT CONFIRMED'; code='BREAKOUT_CONFIRMED';
+        trigger=`15m close above Box High ${best.hi.toPrecision(8)} with price holding above the range.`;
+      }else{
+        state='🟠 BOX BASE FOUND — BREAKOUT / RETEST DEVELOPING'; code='BREAKOUT_DEVELOPING';
+        trigger=`Breakout detected above ${best.hi.toPrecision(8)}; wait for acceptance/retest.`;
+      }
+    }else if(best.currentInside && best.currentNearTop){
+      state='🟡 BOX BASE FOUND — UPPER-BOUNDARY WATCH'; code='BREAKOUT_WATCH';
+      trigger=`Price is in the upper box area. Watch for a completed 15m close above ${best.hi.toPrecision(8)}.`;
+    }
+
+    const confidence=Math.max(10,Math.min(98,Math.round(score)));
+    return {
+      state,code,score:confidence,confidence,
+      reasons:reasons.slice(0,9),
+      trigger,
+      timeframe:'15m',
+      box:{high:best.hi,low:best.lo,rangePct:best.rangePct,candles:best.len,startIndex:best.start,endIndex:best.end,highTouches:best.highTouches,lowTouches:best.lowTouches,containmentPct:best.containment*100,contractionPct:best.contraction*100,relativeSD:best.relSD},
+      structure:{hh:best.hh,hl:best.hl,lh:best.lh,ll:best.ll},
+      breakout:{detected:best.breakIndex>=0,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
+      expansion:{pct:best.expansionPct,multiple:best.expansionMultiple,postBreakHigh:best.breakIndex>=0?Math.max(...H.slice(best.breakIndex)):null},
+      meta:{price,accumulationConfidence:accum,ema14,ema21,ema50,emaBull,emaTurning}
+    };
+  }catch(e){
+    return {state:'⚪ BOX BASE — ENGINE ERROR',code:'ERROR',score:0,confidence:0,reasons:[`Box detector error: ${e.message}`],trigger:'No box trigger available.',box:{},structure:{},breakout:{},expansion:{}};
+  }
+}
+window.calculateBoxBaseFound=calculateBoxBaseFound;
+
+function renderBoxBaseFound(item){
+  const b=calculateBoxBaseFound(item||{}), box=b.box||{}, st=b.structure||{}, br=b.breakout||{}, ex=b.expansion||{}, m=b.meta||{};
+  const tone=b.code==='EXPANSION_CONFIRMED'||b.code==='BREAKOUT_CONFIRMED'?'#2dd4bf':b.code==='BREAKOUT_DEVELOPING'?'#ff9f43':b.code==='ERROR'||b.code==='NONE'?'#9fb3cc':'#ffd966';
+  const fmt=v=>Number.isFinite(Number(v))?(Number(v)<1?Number(v).toPrecision(7):Number(v).toFixed(6)):'—';
+  return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
+    <div style="font-size:16px;font-weight:950">📦 BOX BASE FOUND — ${b.confidence||0}%</div>
+    <div style="font-size:18px;font-weight:950;color:${tone};margin-top:3px">${esc(b.state||'⚪ UNKNOWN')}</div>
+    <div style="margin-top:8px"><strong>Box:</strong> ${fmt(box.low)} → ${fmt(box.high)} • Range ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}% • ${box.candles||'—'} completed 15m candles</div>
+    <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
+    <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
+    <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
+    <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
+    <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% beyond Box High • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
+    <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${esc(b.trigger||'Wait for structural confirmation.')}</div>
+    <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(b.reasons||[]).join(' • ')||'No box evidence available.'}</div>
+    <div class="small" style="margin-top:6px;color:var(--muted)">This detector describes price structure. It does not treat a box or breakout as a guaranteed outcome.</div>
+  </div>`;
+}
+window.renderBoxBaseFound=renderBoxBaseFound;
+
 function renderUnifiedMarketCycle(item){
   const r=item||{};
   let u=r.unifiedMarketCycle;
@@ -9527,6 +9737,7 @@ function renderCards(results){
         </div>
 
         ${renderUnifiedMarketCycle(r)}
+        ${renderBoxBaseFound(r)}
 
                 <details class="coinDetails traderDecisionDetails" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" ${expandedTraderDecisionSymbols.has(String(r.symbol||'').trim().toUpperCase())?'open':''} style="margin-top:10px">
                   <summary><strong>${expandedTraderDecisionSymbols.has(String(r.symbol||'').trim().toUpperCase())?'− Trader Decision':'＋ Trader Decision'}</strong></summary>
