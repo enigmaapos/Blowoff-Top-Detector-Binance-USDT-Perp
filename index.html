@@ -10154,6 +10154,80 @@ function updateUnifiedScanCountdown(){
   }
 }
 
+// Background-aware scanner scheduler.
+// Browsers may throttle/suspend JavaScript in hidden tabs, so this does not
+// promise 24/7 execution. It records the intended next-run time and performs
+// one safe catch-up scan when the page becomes active again. Missed intervals
+// are never replayed as a burst.
+const BG_SCAN_STATE_KEY = 'magmaBackgroundScanStateV1';
+function readBackgroundScanState(){
+  try{
+    const x = JSON.parse(localStorage.getItem(BG_SCAN_STATE_KEY) || '{}');
+    return x && typeof x === 'object' ? x : {};
+  }catch(e){ return {}; }
+}
+function writeBackgroundScanState(patch){
+  try{
+    const state = Object.assign(readBackgroundScanState(), patch || {});
+    localStorage.setItem(BG_SCAN_STATE_KEY, JSON.stringify(state));
+  }catch(e){}
+}
+function markScannerRefreshCompleted(mode){
+  const m = mode || activeScannerMode || 'main';
+  writeBackgroundScanState({
+    mode: m,
+    lastCompletedAt: Date.now(),
+    autoEnabled: !!marketAutoEnabled
+  });
+}
+function getScannerIntervalMs(){
+  const sec = Math.max(10, Math.min(3600, parseInt(el.interval?.value,10) || 120));
+  return sec * 1000;
+}
+function scannerBackgroundCatchUpNeeded(){
+  if(activeViewMode !== 'scan' || !marketAutoEnabled || running) return false;
+  const state = readBackgroundScanState();
+  const interval = getScannerIntervalMs();
+  const last = Number(state.lastCompletedAt || 0);
+  return !last || (Date.now() - last >= interval);
+}
+
+function scheduleMarketAutoRefresh(delayMs){
+  return scheduleUnifiedScannerAutoRefresh(delayMs, 'main');
+}
+
+function pauseMarketAutoRefresh(){
+  if(activeViewMode === 'scan' && marketNextScanAt){
+    marketAutoRemainingMs = Math.max(0, marketNextScanAt - Date.now());
+  }
+  if(autoTimer) clearTimeout(autoTimer);
+  if(countdownTimer) clearInterval(countdownTimer);
+  autoTimer = null;
+  countdownTimer = null;
+  writeBackgroundScanState({autoEnabled:false, nextScanAt:0});
+}
+
+function getActiveScannerLabel(){
+  const mode = String(activeScannerMode || el.scanMode?.value || 'main');
+  if(mode === 'topGreen') return 'Top30 Gainers';
+  if(mode === 'topRed') return 'Top30 Losers';
+  if(mode === 'below50') return 'Below-50';
+  return 'Market Scan';
+}
+
+function updateUnifiedScanCountdown(){
+  if(!el.countdown || activeViewMode !== 'scan') return;
+  if(running) return;
+  if(!marketAutoEnabled){
+    el.countdown.innerText = `${getActiveScannerLabel()} auto-refresh paused`;
+    return;
+  }
+  if(marketNextScanAt){
+    const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
+    el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+  }
+}
+
 function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
   if(autoTimer) clearTimeout(autoTimer);
   if(countdownTimer) clearInterval(countdownTimer);
@@ -10165,6 +10239,12 @@ function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
   const session = modeSession;
   activeScannerMode = scannerMode || activeScannerMode || 'main';
   marketNextScanAt = Date.now() + delay;
+  marketAutoRemainingMs = delay;
+  writeBackgroundScanState({
+    mode: activeScannerMode,
+    autoEnabled: true,
+    nextScanAt: marketNextScanAt
+  });
 
   countdownTimer = setInterval(()=>{
     if(session !== modeSession || activeViewMode !== 'scan' || !marketAutoEnabled){
@@ -10173,7 +10253,10 @@ function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
       return;
     }
     const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
-    if(el.countdown) el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+    marketAutoRemainingMs = Math.max(0, marketNextScanAt - Date.now());
+    if(el.countdown) el.countdown.innerText = document.hidden
+      ? `Background: next ${getActiveScannerLabel()} in: ${left}s`
+      : `Next ${getActiveScannerLabel()} in: ${left}s`;
     if(left <= 0){
       clearInterval(countdownTimer);
       countdownTimer = null;
@@ -10184,6 +10267,8 @@ function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
   autoTimer = setTimeout(async ()=>{
     autoTimer = null;
     marketNextScanAt = 0;
+    marketAutoRemainingMs = 0;
+    writeBackgroundScanState({nextScanAt:0});
     if(session !== modeSession || activeViewMode !== 'scan' || running) return;
     const mode = scannerMode || activeScannerMode || 'main';
     try{
@@ -10196,6 +10281,7 @@ function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
       }else await runScan(false, session);
 
       if(session === modeSession && activeViewMode === 'scan' && !running){
+        markScannerRefreshCompleted(mode);
         const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
         scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
       }
@@ -10208,19 +10294,52 @@ function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
   updateUnifiedScanCountdown();
 }
 
-// v3 startup restoration.
-// Favorites visibility is persistent. If it was ON before reload, Favorites
-// becomes a pure view/filter over the preserved result snapshots. It never
-// starts its own network refresh.
+function resumeBackgroundScannerIfNeeded(reason='resume'){
+  if(activeViewMode !== 'scan' || !marketAutoEnabled || running) return;
+  const mode = activeScannerMode || el.scanMode?.value || 'main';
+  const state = readBackgroundScanState();
+  const interval = getScannerIntervalMs();
+  const now = Date.now();
+  const last = Number(state.lastCompletedAt || 0);
+  const next = Number(state.nextScanAt || 0);
+
+  // If a timer was throttled while hidden, the recorded target tells us that
+  // the scan is due. Run exactly one catch-up; never replay missed intervals.
+  if((next && now >= next) || (!next && (!last || now - last >= interval))){
+    if(el.countdown) el.countdown.innerText = reason === 'visibility'
+      ? `Resuming ${getActiveScannerLabel()}…`
+      : `Catching up ${getActiveScannerLabel()}…`;
+    scheduleUnifiedScannerAutoRefresh(1000, mode);
+  }else if(next){
+    scheduleUnifiedScannerAutoRefresh(Math.max(1000, next - now), mode);
+  }
+}
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    // Do not launch work here. Keep the absolute target timestamp so a
+    // throttled background timer can be reconciled when the page returns.
+    if(activeViewMode === 'scan' && marketAutoEnabled && marketNextScanAt){
+      marketAutoRemainingMs = Math.max(0, marketNextScanAt - Date.now());
+      writeBackgroundScanState({nextScanAt:marketNextScanAt, autoEnabled:true, mode:activeScannerMode});
+    }
+    if(el.countdown && activeViewMode === 'scan' && marketAutoEnabled)
+      el.countdown.innerText = 'Background refresh active — browser may throttle timers';
+  }else{
+    resumeBackgroundScannerIfNeeded('visibility');
+  }
+});
+
+window.addEventListener('pageshow', ()=>resumeBackgroundScannerIfNeeded('pageshow'));
+window.addEventListener('focus', ()=>resumeBackgroundScannerIfNeeded('focus'));
+
+// Startup restoration with background-aware auto-refresh.
 (function restoreActiveModeOnLoad(){
   try{
-    // User requested a fixed startup default: every app open starts with
-    // Prefilter — Top by 24h = 15. Do not restore an older value.
     if(el.prefilter) el.prefilter.value = '15';
     const savedFavView = localStorage.getItem('magmaFavoritesView') === '1';
     const savedMode = localStorage.getItem('magmaActiveViewMode') || 'idle';
     const savedScanner = localStorage.getItem('magmaActiveScannerMode') || 'main';
-
     activeScannerMode = savedScanner;
 
     if(savedFavView && favoriteSymbols.size){
@@ -10243,18 +10362,14 @@ function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
       scheduleSingleLiveUpdate();
     }else if(activeViewMode === 'scan'){
       renderActiveView();
+      const bgState = readBackgroundScanState();
+      marketAutoEnabled = bgState.autoEnabled === true;
+      if(marketAutoEnabled) resumeBackgroundScannerIfNeeded('startup');
     }
     updateFavoritesButton();
-  }catch(e){
-    console.warn('Could not restore active mode:', e);
-  }
+  }catch(e){ console.warn('Could not restore active mode:', e); }
 })();
-/* ---------- MAIN RUN ---------- */
-/*
- * Atomic market-result commit.
- * A scan builds its next dataset in memory. The currently visible dataset
- * stays untouched until this function is called after the scan completes.
- */
+
 function commitScannerSurface(surface){
   // A scanner surface is published only after its scan is complete.
   // The previous surface remains untouched while analysis is running.
@@ -10568,6 +10683,7 @@ async function runScan(once=false, suppliedSession=null){
     triggerBlowoffExhaustionSounds(window.lastScanResults);
 
     running=false;
+    markScannerRefreshCompleted('main');
 
     // Schedule the NEXT Market Scan only after this scan has completely finished.
     // This timer is independent from the Single Analyze 60s watchlist timer.
@@ -10760,6 +10876,7 @@ el.stopBtn.addEventListener('click', ()=>{
   marketAutoEnabled=false;
   marketNextScanAt=0;
   marketAutoRemainingMs=0;
+  writeBackgroundScanState({autoEnabled:false,nextScanAt:0,mode:activeScannerMode});
   persistActiveMode();
   el.startBtn.disabled=false;
   el.stopBtn.disabled=true;
