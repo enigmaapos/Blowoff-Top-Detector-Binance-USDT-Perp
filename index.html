@@ -9422,74 +9422,112 @@ function calculateBoxBaseFound(item){
     const now=Date.now();
 
     /*
-      EARLY BOX DETECTION
-      -------------------
-      Start looking as soon as 40 completed 15m candles exist (40 x 15m = 10h).
-      Do NOT wait for a fixed 08:00-08:00 session.
+      DAY-TRADING BOX SESSION
+      ------------------------
+      One and only one session is evaluated at a time:
+        08:00 local time today -> 08:00 local time tomorrow.
 
-      A candidate is eligible when:
-        1) enough completed candles exist;
-        2) the candidate contains both a structural high and low;
-        3) the EMA structure confirms the current direction:
-             bullish = EMA14 > EMA21 > EMA50 AND all three EMAs are rising
-             bearish = EMA14 < EMA21 < EMA50 AND all three EMAs are falling
+      The detector starts with the first 15m candle at 08:00 and evaluates
+      progressively after every completed 15m candle. There is NO 40-candle
+      minimum and NO rolling history across the 08:00 boundary.
 
-      The detector remains rolling, so every new completed 15m candle can update
-      the box without resetting at a clock/session boundary.
+      The EMA formation follows the reference box:
+        directional EMA backbone -> compression/convergence -> stabilization/
+        turn -> re-expansion/breakout.
     */
-    const completedBars=raw.filter(k=>{
-      const openTs=Number(k?.[0]);
-      const closeTs=Number(k?.[6]);
-      if(!Number.isFinite(openTs)||!Number.isFinite(closeTs)) return false;
-      return openTs<now && closeTs<=now;
-    });
+    function getSessionStart(ts){
+      const d=new Date(ts);
+      d.setHours(8,0,0,0);
+      if(d.getTime()>ts) d.setDate(d.getDate()-1);
+      return d.getTime();
+    }
+    function getSessionEnd(startTs){
+      const d=new Date(startTs);
+      d.setDate(d.getDate()+1);
+      d.setHours(8,0,0,0);
+      return d.getTime();
+    }
 
-    const MIN_CANDLES=40;
-    if(completedBars.length<MIN_CANDLES){
+    const sessionStart=getSessionStart(now);
+    const sessionEnd=getSessionEnd(sessionStart);
+
+    // Hard session boundary: only candles OPENED at/after 08:00 and before
+    // the next 08:00 are eligible. A candle must also be fully completed.
+    const sessionBars=raw
+      .filter(k=>{
+        const openTs=Number(k?.[0]);
+        const closeTs=Number(k?.[6]);
+        return Number.isFinite(openTs)&&Number.isFinite(closeTs)&&
+          openTs>=sessionStart&&openTs<sessionEnd&&closeTs<=now;
+      })
+      .sort((a,b)=>Number(a[0])-Number(b[0]));
+
+    const sessionLabel=new Date(sessionStart).toLocaleDateString(undefined,{year:'numeric',month:'2-digit',day:'2-digit'});
+    const completed=sessionBars.length;
+
+    if(completed<1){
       return {
-        state:'⚪ BOX BASE — INSUFFICIENT DATA',
-        code:'INSUFFICIENT',
+        state:'⚪ BOX BASE — SESSION STARTING',
+        code:'SESSION_START',
         score:0,
         confidence:0,
-        reasons:[`Only ${completedBars.length} completed 15m candles are available; box detection starts at ${MIN_CANDLES} candles (10 hours).`],
-        trigger:`Collect ${MIN_CANDLES-completedBars.length} more completed 15m candle${MIN_CANDLES-completedBars.length===1?'':'s'} before box detection starts.`,
-        box:{},
-        structure:{},
-        breakout:{},
-        expansion:{}
+        reasons:[`08:00 session ${sessionLabel} has started; waiting for the first completed 15m candle.`],
+        trigger:'Monitor the 15m candles from 08:00 onward. No prior-session candles are used.',
+        timeframe:'15m',
+        box:{sessionStart,sessionEnd,candles:0},
+        structure:{},breakout:{},expansion:{},
+        meta:{sessionStart,sessionEnd,sessionLabel,sessionCandles:0}
       };
     }
 
-    // Keep a practical rolling history. We need enough history for EMA50 while
-    // allowing the detector to react immediately once the 40-candle threshold is met.
-    const bars=completedBars.slice(-120);
-
-    const O=bars.map(k=>Number(k[1]));
-    const H=bars.map(k=>Number(k[2]));
-    const L=bars.map(k=>Number(k[3]));
-    const C=bars.map(k=>Number(k[4]));
-    const V=bars.map(k=>Number(k[5]));
+    const O=sessionBars.map(k=>Number(k[1]));
+    const H=sessionBars.map(k=>Number(k[2]));
+    const L=sessionBars.map(k=>Number(k[3]));
+    const C=sessionBars.map(k=>Number(k[4]));
+    const V=sessionBars.map(k=>Number(k[5]));
     if(![...H,...L,...C,...V].every(Number.isFinite)) throw new Error('Invalid 15m OHLCV data');
 
     const price=Number(r.closeNow)||C.at(-1);
     const pct=(a,b)=>b?((a-b)/b)*100:0;
     const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
-    const stdev=a=>{ const m=avg(a); return a.length?Math.sqrt(avg(a.map(x=>(x-m)*(x-m)))):0; };
-    const smaLocal=(a,n)=>a.length>=n?avg(a.slice(-n)):avg(a);
-    const near=(x,level,tolPct)=>level>0 && Math.abs((x-level)/level)*100<=tolPct;
+    const stdev=a=>{const m=avg(a);return a.length?Math.sqrt(avg(a.map(x=>(x-m)*(x-m)))):0;};
+    const near=(x,level,tolPct)=>level>0&&Math.abs((x-level)/level)*100<=tolPct;
 
     function emaSeries(values,n){
-      if(!Array.isArray(values)||!values.length) return [];
-      const out=[];
-      const k=2/(n+1);
+      if(!Array.isArray(values)||!values.length)return[];
+      const out=[],k=2/(n+1);
       let e=Number(values[0]);
-      if(!Number.isFinite(e)) return [];
+      if(!Number.isFinite(e))return[];
       out.push(e);
       for(let i=1;i<values.length;i++){
         const v=Number(values[i]);
-        if(!Number.isFinite(v)){ out.push(e); continue; }
-        e=(v-e)*k+e;
+        if(Number.isFinite(v))e=(v-e)*k+e;
         out.push(e);
+      }
+      return out;
+    }
+    function slope(series,n){
+      if(series.length<=n)return 0;
+      const a=series.at(-1),b=series.at(-(n+1));
+      return b?((a-b)/b)*100:0;
+    }
+    function pivotHighs(values,look=2){
+      const out=[];
+      if(values.length<(look*2+1))return out;
+      for(let i=look;i<values.length-look;i++){
+        let ok=true;
+        for(let j=1;j<=look;j++)if(values[i]<values[i-j]||values[i]<values[i+j]){ok=false;break;}
+        if(ok)out.push({i,v:values[i]});
+      }
+      return out;
+    }
+    function pivotLows(values,look=2){
+      const out=[];
+      if(values.length<(look*2+1))return out;
+      for(let i=look;i<values.length-look;i++){
+        let ok=true;
+        for(let j=1;j<=look;j++)if(values[i]>values[i-j]||values[i]>values[i+j]){ok=false;break;}
+        if(ok)out.push({i,v:values[i]});
       }
       return out;
     }
@@ -9497,230 +9535,165 @@ function calculateBoxBaseFound(item){
     const ema14Series=emaSeries(C,14);
     const ema21Series=emaSeries(C,21);
     const ema50Series=emaSeries(C,50);
-    const ema14=ema14Series.at(-1)||0;
-    const ema21=ema21Series.at(-1)||0;
-    const ema50=ema50Series.at(-1)||0;
-
-    // EMA direction is measured over completed candles, not the live/incomplete bar.
-    const slopeLookback=Math.min(8,Math.max(3,C.length-1));
-    const slope=(series)=>{
-      if(series.length<=slopeLookback) return 0;
-      const a=series.at(-1), b=series.at(-(slopeLookback+1));
-      return b?((a-b)/b)*100:0;
-    };
-    const ema14Slope=slope(ema14Series);
-    const ema21Slope=slope(ema21Series);
-    const ema50Slope=slope(ema50Series);
-
-    // Do NOT require all three EMAs to be rising/falling at the exact current candle.
-    // The reference box shows the more useful formation: directional EMA backbone ->
-    // EMA compression/convergence inside the box -> stabilization/turn -> expansion.
-    const bullishEMA=ema14>ema21 && ema21>ema50;
-    const bearishEMA=ema14<ema21 && ema21<ema50;
-    const bullishTrend=bullishEMA && ema50Slope>0;
-    const bearishTrend=bearishEMA && ema50Slope<0;
+    const ema14=ema14Series.at(-1)||0,ema21=ema21Series.at(-1)||0,ema50=ema50Series.at(-1)||0;
+    const slopeLookback=Math.min(8,Math.max(2,completed-1));
+    const ema14Slope=slope(ema14Series,slopeLookback);
+    const ema21Slope=slope(ema21Series,slopeLookback);
+    const ema50Slope=slope(ema50Series,slopeLookback);
+    const bullishEMA=ema14>ema21&&ema21>ema50;
+    const bearishEMA=ema14<ema21&&ema21<ema50;
+    const bullishTrend=bullishEMA&&ema50Slope>=0;
+    const bearishTrend=bearishEMA&&ema50Slope<=0;
     const trendDirection=bullishTrend?'BULLISH':bearishTrend?'BEARISH':
-      bullishEMA?'BULLISH ALIGNMENT':
-      bearishEMA?'BEARISH ALIGNMENT':'MIXED';
+      bullishEMA?'BULLISH ALIGNMENT':bearishEMA?'BEARISH ALIGNMENT':'MIXED / TRANSITIONAL';
 
-    function pivotHighs(values,look=2){
-      const out=[];
-      for(let i=look;i<values.length-look;i++){
-        let ok=true;
-        for(let j=1;j<=look;j++) if(values[i]<values[i-j] || values[i]<values[i+j]){ok=false;break;}
-        if(ok) out.push({i,v:values[i]});
-      }
-      return out;
-    }
-    function pivotLows(values,look=2){
-      const out=[];
-      for(let i=look;i<values.length-look;i++){
-        let ok=true;
-        for(let j=1;j<=look;j++) if(values[i]>values[i-j] || values[i]>values[i+j]){ok=false;break;}
-        if(ok) out.push({i,v:values[i]});
-      }
-      return out;
+    // With fewer than five completed candles there is not enough information
+    // to establish two-sided boundary behavior. We still process the session;
+    // this is simply the progressive pre-box state.
+    if(completed<5){
+      const hi=Math.max(...H),lo=Math.min(...L);
+      return {
+        state:'⚪ BOX BASE — FORMING',
+        code:'FORMING',score:0,confidence:0,
+        reasons:[
+          `${completed} completed 15m candle${completed===1?'':'s'} since 08:00`,
+          `Session high ${hi.toPrecision(8)} / low ${lo.toPrecision(8)}`,
+          `EMA14 ${bullishEMA?'above':bearishEMA?'below':'not clearly separated from'} EMA21/EMA50`
+        ],
+        trigger:'Keep monitoring the same 08:00–08:00 session. The detector will evaluate the box after each completed 15m candle.',
+        timeframe:'15m',
+        box:{high:hi,low:lo,rangePct:pct(hi,lo),candles:completed,sessionStart,sessionEnd},
+        structure:{},breakout:{},expansion:{},
+        meta:{sessionStart,sessionEnd,sessionLabel,sessionCandles:completed,price,ema14,ema21,ema50,ema14Slope,ema21Slope,ema50Slope,bullishTrend,bearishTrend,trendDirection}
+      };
     }
 
-    /*
-      Candidate windows are intentionally allowed below 40 candles.
-      40 candles is the amount of history required to BEGIN searching; it is
-      not a requirement that the box itself must already be 40 candles long.
-    */
     let best=null;
-    const maxEnd=bars.length-1;
-    const minEnd=MIN_CANDLES-1;
-    const lens=[16,20,24,28,32,36,40,48,64,80,96];
+    const maxEnd=completed-1;
 
-    for(let end=maxEnd;end>=minEnd;end--){
+    // Candidate length grows with the current session. No arbitrary minimum
+    // such as 40 candles; the first usable candidates begin at 5 candles.
+    const lens=[];
+    for(let n=5;n<=maxEnd+1;n++){
+      if(n<=24||n%4===0||n===maxEnd+1)lens.push(n);
+    }
+
+    for(let end=maxEnd;end>=4;end--){
       for(const len of lens){
-        if(len>MIN_CANDLES && bars.length<MIN_CANDLES) continue;
         const start=end-len+1;
-        if(start<0) continue;
+        if(start<0||len<5)continue;
 
-        const hs=H.slice(start,end+1);
-        const ls=L.slice(start,end+1);
-        const cs=C.slice(start,end+1);
-        const vs=V.slice(start,end+1);
-        const hi=Math.max(...hs);
-        const lo=Math.min(...ls);
-        const mid=(hi+lo)/2;
-        if(!(mid>0&&hi>lo)) continue;
-
-        // Explicit high/low presence: the range must contain both sides of price.
-        const hasHigh=Number.isFinite(hi) && hi>price*0.995;
-        const hasLow=Number.isFinite(lo) && lo<price*1.005;
-        if(!hasHigh || !hasLow) continue;
+        const hs=H.slice(start,end+1),ls=L.slice(start,end+1),cs=C.slice(start,end+1),vs=V.slice(start,end+1);
+        const hi=Math.max(...hs),lo=Math.min(...ls),mid=(hi+lo)/2;
+        if(!(mid>0&&hi>lo))continue;
 
         const rangePct=pct(hi,lo);
-        if(rangePct>30) continue;
+        if(rangePct<=0||rangePct>30)continue;
 
-        const tol=Math.max(rangePct*0.12,0.6);
+        const tol=Math.max(rangePct*0.12,0.35);
         const highTouches=hs.filter(x=>near(x,hi,tol)).length;
         const lowTouches=ls.filter(x=>near(x,lo,tol)).length;
-        if(highTouches<2 || lowTouches<2) continue;
-
-        const half=Math.max(8,Math.floor(cs.length/2));
-        const firstH=Math.max(...hs.slice(0,half));
-        const firstL=Math.min(...ls.slice(0,half));
-        const secondH=Math.max(...hs.slice(half));
-        const secondL=Math.min(...ls.slice(half));
-        const firstRange=pct(firstH,firstL);
-        const secondRange=pct(secondH,secondL);
-        const contraction=firstRange>0 ? Math.max(0,Math.min(1,(firstRange-secondRange)/firstRange)) : 0;
-
-        const ph=pivotHighs(hs,2), pl=pivotLows(ls,2);
-        const lastPH=ph.slice(-4), lastPL=pl.slice(-4);
-        let hh=0,lh=0,hl=0,ll=0;
-        for(let i=1;i<lastPH.length;i++){
-          if(lastPH[i].v>lastPH[i-1].v*1.002) hh++;
-          else if(lastPH[i].v<lastPH[i-1].v*0.998) lh++;
-        }
-        for(let i=1;i<lastPL.length;i++){
-          if(lastPL[i].v>lastPL[i-1].v*1.002) hl++;
-          else if(lastPL[i].v<lastPL[i-1].v*0.998) ll++;
-        }
-
-        const relSD=mid?stdev(cs)/mid*100:99;
-        const volMA=Math.max(smaLocal(vs,Math.min(8,vs.length)),1e-12);
-        const recentVol=avg(vs.slice(-Math.min(8,vs.length)));
-        const earlyVol=avg(vs.slice(0,Math.min(8,vs.length)));
-        const volumeQuiet=earlyVol>0?Math.max(0,Math.min(1,1-recentVol/earlyVol)):0;
+        if(highTouches<2||lowTouches<2)continue;
 
         const insideCount=cs.filter(x=>x>=lo*(1-0.004)&&x<=hi*(1+0.004)).length;
         const containment=insideCount/cs.length;
-        if(containment<0.72) continue;
+        if(containment<0.70)continue;
+
+        const half=Math.max(2,Math.floor(cs.length/2));
+        const firstH=Math.max(...hs.slice(0,half)),firstL=Math.min(...ls.slice(0,half));
+        const secondH=Math.max(...hs.slice(half)),secondL=Math.min(...ls.slice(half));
+        const firstRange=pct(firstH,firstL),secondRange=pct(secondH,secondL);
+        const contraction=firstRange>0?Math.max(0,Math.min(1,(firstRange-secondRange)/firstRange)):0;
+
+        const ph=pivotHighs(hs,2),pl=pivotLows(ls,2);
+        const lastPH=ph.slice(-4),lastPL=pl.slice(-4);
+        let hh=0,lh=0,hl=0,ll=0;
+        for(let i=1;i<lastPH.length;i++){
+          if(lastPH[i].v>lastPH[i-1].v*1.002)hh++;
+          else if(lastPH[i].v<lastPH[i-1].v*0.998)lh++;
+        }
+        for(let i=1;i<lastPL.length;i++){
+          if(lastPL[i].v>lastPL[i-1].v*1.002)hl++;
+          else if(lastPL[i].v<lastPL[i-1].v*0.998)ll++;
+        }
+
+        const relSD=mid?stdev(cs)/mid*100:99;
+        const earlyVol=avg(vs.slice(0,Math.min(5,vs.length)));
+        const recentVol=avg(vs.slice(-Math.min(5,vs.length)));
+        const volumeQuiet=earlyVol>0?Math.max(0,Math.min(1,1-recentVol/earlyVol)):0;
+
+        // EMA formation is calculated ONLY from this same 08:00 session.
+        const e14=ema14Series.slice(start,end+1),e21=ema21Series.slice(start,end+1),e50=ema50Series.slice(start,end+1);
+        if(e14.length<5||e21.length<5||e50.length<5)continue;
+
+        const eMid=i=>Math.max(1e-12,(e14[i]+e21[i]+e50[i])/3);
+        const stackBullAt=i=>e14[i]>=e21[i]&&e21[i]>=e50[i];
+        const stackBearAt=i=>e14[i]<=e21[i]&&e21[i]<=e50[i];
+        const envelope=i=>{
+          const a=Math.max(e14[i],e21[i],e50[i]),b=Math.min(e14[i],e21[i],e50[i]);
+          return (a-b)/eMid(i)*100;
+        };
+        const emaSpreadStart=envelope(0),emaSpreadEnd=envelope(e14.length-1);
+        const emaCompression=emaSpreadStart>0?Math.max(0,Math.min(1,(emaSpreadStart-emaSpreadEnd)/emaSpreadStart)):0;
+        const emaNet=a=>a[0]?((a.at(-1)-a[0])/a[0])*100:0;
+        const ema14Net=emaNet(e14),ema21Net=emaNet(e21),ema50Net=emaNet(e50);
+        const recentN=Math.min(4,e14.length-1);
+        const ema14Recent=slope(e14,recentN),ema21Recent=slope(e21,recentN),ema50Recent=slope(e50,recentN);
+        const startBull=stackBullAt(0),startBear=stackBearAt(0),endBull=stackBullAt(e14.length-1),endBear=stackBearAt(e14.length-1);
+
+        /*
+          Formation gate:
+          - directional backbone may be visible at the start, end, or through
+            the net EMA50 direction;
+          - compression shows the lines coming together inside the box;
+          - recent slope/stack shows stabilization and turn toward expansion.
+        */
+        const bullishBackbone=ema50Net>0||ema21Net>0||ema14Net>0;
+        const bearishBackbone=ema50Net<0||ema21Net<0||ema14Net<0;
+        const bullishTurn=ema14Recent>=0&&ema21Recent>=-0.08&&ema50Recent>=-0.08;
+        const bearishTurn=ema14Recent<=0&&ema21Recent<=0.08&&ema50Recent<=0.08;
+        const compressionGate=emaCompression>=0.03||emaSpreadEnd<=Math.max(0.25,emaSpreadStart*0.97);
+        const bullishFormation=(startBull||endBull||bullishEMA)&&bullishBackbone&&bullishTurn&&compressionGate;
+        const bearishFormation=(startBear||endBear||bearishEMA)&&bearishBackbone&&bearishTurn&&compressionGate;
+        if(!bullishFormation&&!bearishFormation)continue;
+
+        const candidateBullish=bullishFormation&&!bearishFormation;
+        const candidateBearish=bearishFormation&&!bullishFormation;
+        if(!candidateBullish&&!candidateBearish)continue;
 
         const rangeQuality=Math.max(0,Math.min(1,(30-rangePct)/22));
         const touchQuality=Math.min(1,(highTouches+lowTouches)/10);
-        const structureQuality=Math.max(0,Math.min(1,(hl*0.22+hh*0.12+(ll===0?0.18:0)+(lh<=1?0.10:0))));
-        const compressionQuality=Math.max(0,Math.min(1,contraction/0.55));
+        const structureQuality=Math.max(0,Math.min(1,(hl*0.20+hh*0.12+(ll===0?0.16:0)+(lh<=1?0.10:0))));
+        const compressionQuality=Math.max(0,Math.min(1,emaCompression/0.55));
         const volatilityQuality=Math.max(0,Math.min(1,(8-relSD)/8));
+        let score=Math.round(rangeQuality*20+containment*18+touchQuality*14+structureQuality*18+compressionQuality*16+volatilityQuality*8+volumeQuiet*6);
+        if(candidateBullish||candidateBearish)score+=5;
+        if(emaCompression>=0.20)score+=4;
+        if(hl>0&&candidateBullish)score+=3;
+        if(lh>0&&candidateBearish)score+=3;
 
-        /*
-          EMA FORMATION TEST — this is the key part of the drawn blue box.
-          We evaluate the EMAs over the candidate itself instead of requiring
-          every EMA to slope in one direction on every candle.
-
-          Desired bullish shape:
-            rising EMA backbone -> EMAs converge/compress -> stabilize/turn up.
-          Desired bearish shape:
-            falling EMA backbone -> EMAs converge/compress -> stabilize/turn down.
-        */
-        const e14=ema14Series.slice(start,end+1);
-        const e21=ema21Series.slice(start,end+1);
-        const e50=ema50Series.slice(start,end+1);
-        if(e14.length<8 || e21.length<8 || e50.length<8) continue;
-
-        const eMid=i=>Math.max(1e-12,(e14[i]+e21[i]+e50[i])/3);
-        const stackBullAt=i=>e14[i]>e21[i] && e21[i]>e50[i];
-        const stackBearAt=i=>e14[i]<e21[i] && e21[i]<e50[i];
-        const emaNet=(arr)=>{
-          const a=arr[0], b=arr.at(-1);
-          return a?((b-a)/a)*100:0;
-        };
-        const emaRecentSlope=(arr,n=4)=>{
-          if(arr.length<=n) return 0;
-          const a=arr.at(-1), b=arr.at(-(n+1));
-          return b?((a-b)/b)*100:0;
-        };
-        const envelope=(i)=>{
-          const hiE=Math.max(e14[i],e21[i],e50[i]);
-          const loE=Math.min(e14[i],e21[i],e50[i]);
-          return ((hiE-loE)/eMid(i))*100;
-        };
-        const emaSpreadStart=envelope(0);
-        const emaSpreadEnd=envelope(e14.length-1);
-        const emaCompression=emaSpreadStart>0
-          ?Math.max(0,Math.min(1,(emaSpreadStart-emaSpreadEnd)/emaSpreadStart))
-          :0;
-        const ema14Net=emaNet(e14), ema21Net=emaNet(e21), ema50Net=emaNet(e50);
-        const ema14Recent=emaRecentSlope(e14), ema21Recent=emaRecentSlope(e21), ema50Recent=emaRecentSlope(e50);
-        const startBull=stackBullAt(0), startBear=stackBearAt(0);
-        const endBull=stackBullAt(e14.length-1), endBear=stackBearAt(e14.length-1);
-        const bullishBackbone=ema50Net>0 && ema21Net>0 && ema14Net>-0.20;
-        const bearishBackbone=ema50Net<0 && ema21Net<0 && ema14Net<0.20;
-        const bullishTurn=ema14Recent>0 && ema21Recent>=-0.03 && ema50Recent>0;
-        const bearishTurn=ema14Recent<0 && ema21Recent<=0.03 && ema50Recent<0;
-        const bullishFormation=(startBull || bullishEMA || endBull) &&
-          bullishBackbone && bullishTurn && (emaCompression>=0.05 || endBull);
-        const bearishFormation=(startBear || bearishEMA || endBear) &&
-          bearishBackbone && bearishTurn && (emaCompression>=0.05 || endBear);
-
-        const trendGate=bullishFormation || bearishFormation;
-        if(!trendGate) continue;
-        const candidateBullish=bullishFormation;
-        const candidateBearish=bearishFormation;
-
-        let score=Math.round(
-          rangeQuality*20+
-          containment*18+
-          touchQuality*14+
-          structureQuality*18+
-          compressionQuality*14+
-          volatilityQuality*10+
-          volumeQuiet*6
-        );
-
-        if(candidateBullish) score+=5;
-        if(candidateBearish) score+=5;
-        if(emaCompression>=0.20) score+=4;
-        if(hl>0 && candidateBullish) score+=3;
-        if(lh>0 && candidateBearish) score+=3;
-
-        let breakIndex=-1;
-        let breakDirection=null;
-        const breakoutLevelHigh=hi;
-        const breakoutLevelLow=lo;
-
-        for(let j=end+1;j<bars.length;j++){
-          if(candidateBullish && C[j]>breakoutLevelHigh*1.0035){
-            breakIndex=j; breakDirection='UP'; break;
-          }
-          if(candidateBearish && C[j]<breakoutLevelLow*0.9965){
-            breakIndex=j; breakDirection='DOWN'; break;
-          }
+        let breakIndex=-1,breakDirection=null;
+        for(let j=end+1;j<completed;j++){
+          if(candidateBullish&&C[j]>hi*1.0035){breakIndex=j;breakDirection='UP';break;}
+          if(candidateBearish&&C[j]<lo*0.9965){breakIndex=j;breakDirection='DOWN';break;}
         }
 
-        let breakoutVolumeRatio=0, breakoutHeld=false, retest=false;
-        let expansionPct=0, expansionMultiple=0, postBreakExtreme=null;
-
+        let breakoutVolumeRatio=0,breakoutHeld=false,retest=false,expansionPct=0,expansionMultiple=0,postBreakExtreme=null;
         if(breakIndex>=0){
           const baseVol=avg(V.slice(Math.max(start,breakIndex-8),breakIndex));
           breakoutVolumeRatio=baseVol>0?V[breakIndex]/baseVol:0;
-
           if(breakDirection==='UP'){
             postBreakExtreme=Math.max(...H.slice(breakIndex));
-            expansionPct=pct(postBreakExtreme,breakoutLevelHigh);
-            const holdBars=C.slice(breakIndex).filter(x=>x>breakoutLevelHigh*1.001).length;
-            breakoutHeld=holdBars>=Math.min(3,Math.max(1,bars.length-breakIndex));
-            retest=L.slice(breakIndex+1).some(x=>x>=breakoutLevelHigh*(1-0.012)&&x<=breakoutLevelHigh*(1+0.012));
+            expansionPct=pct(postBreakExtreme,hi);
+            const holdBars=C.slice(breakIndex).filter(x=>x>hi*1.001).length;
+            breakoutHeld=holdBars>=Math.min(3,Math.max(1,completed-breakIndex));
+            retest=L.slice(breakIndex+1).some(x=>x>=hi*(1-0.012)&&x<=hi*(1+0.012));
           }else{
             postBreakExtreme=Math.min(...L.slice(breakIndex));
-            expansionPct=Math.abs(pct(postBreakExtreme,breakoutLevelLow));
-            const holdBars=C.slice(breakIndex).filter(x=>x<breakoutLevelLow*0.999).length;
-            breakoutHeld=holdBars>=Math.min(3,Math.max(1,bars.length-breakIndex));
-            retest=H.slice(breakIndex+1).some(x=>x>=breakoutLevelLow*(1-0.012)&&x<=breakoutLevelLow*(1+0.012));
+            expansionPct=Math.abs(pct(postBreakExtreme,lo));
+            const holdBars=C.slice(breakIndex).filter(x=>x<lo*0.999).length;
+            breakoutHeld=holdBars>=Math.min(3,Math.max(1,completed-breakIndex));
+            retest=H.slice(breakIndex+1).some(x=>x>=lo*(1-0.012)&&x<=lo*(1+0.012));
           }
           expansionMultiple=rangePct>0?expansionPct/rangePct:0;
         }
@@ -9728,124 +9701,98 @@ function calculateBoxBaseFound(item){
         const currentNearTop=price>=lo+(hi-lo)*0.78;
         const currentNearBottom=price<=lo+(hi-lo)*0.22;
         const currentInside=price>=lo*0.99&&price<=hi*1.01;
-
-        const quality=Math.max(
-          0,
-          Math.min(
-            100,
-            score +
-            (breakIndex>=0?8:0) +
-            (breakoutVolumeRatio>=1.4?4:0) +
-            (breakoutHeld?4:0)
-          )
-        );
+        const quality=Math.max(0,Math.min(100,score+(breakIndex>=0?8:0)+(breakoutVolumeRatio>=1.4?4:0)+(breakoutHeld?4:0)));
 
         const candidate={
-          start,end,len,hi,lo,mid,rangePct,highTouches,lowTouches,
-          firstRange,secondRange,contraction,relSD,containment,
-          hh,hl,lh,ll,volumeQuiet,score:quality,
-          breakIndex,breakDirection,breakoutVolumeRatio,breakoutHeld,
-          retest,expansionPct,expansionMultiple,postBreakExtreme,
+          start,end,len,hi,lo,mid,rangePct,highTouches,lowTouches,firstRange,secondRange,contraction,relSD,containment,
+          hh,hl,lh,ll,volumeQuiet,score:quality,breakIndex,breakDirection,breakoutVolumeRatio,breakoutHeld,retest,expansionPct,expansionMultiple,postBreakExtreme,
           currentNearTop,currentNearBottom,currentInside,
-          trendDirection:bullishFormation?'BULLISH FORMATION':bearishFormation?'BEARISH FORMATION':trendDirection,
+          trendDirection:candidateBullish?'BULLISH FORMATION':'BEARISH FORMATION',
           bullishTrend:candidateBullish,bearishTrend:candidateBearish,
-          emaCompression,emaSpreadStart,emaSpreadEnd,ema14Net,ema21Net,ema50Net,
-          ema14Recent,ema21Recent,ema50Recent,startBull,startBear,endBull,endBear
+          emaCompression,emaSpreadStart,emaSpreadEnd,ema14Net,ema21Net,ema50Net,ema14Recent,ema21Recent,ema50Recent,startBull,startBear,endBull,endBear
         };
 
-        // Prefer the most recent qualifying box; quality wins when recency is similar.
-        const recencyBonus=(end/maxEnd)*8;
+        // Prefer the most recent qualifying formation. A modest quality bonus
+        // prevents an old, higher-scoring box from masking today's current box.
+        const recencyBonus=(end/maxEnd)*10;
         candidate.rank=quality+recencyBonus;
-        if(!best||candidate.rank>best.rank) best=candidate;
+        if(!best||candidate.rank>best.rank)best=candidate;
       }
     }
 
     if(!best){
-      const trendText=bullishTrend
-        ? 'Bullish EMA trend is present, but no compact high/low box has met the containment and touch requirements yet.'
-        : bearishTrend
-          ? 'Bearish EMA trend is present, but no compact high/low box has met the containment and touch requirements yet.'
-          : 'At least 40 candles exist, but EMA14/EMA21/EMA50 are not all aligned and moving in the same direction.';
+      const hi=Math.max(...H),lo=Math.min(...L);
       return {
-        state:'⚪ NO BOX BASE FOUND',
-        code:'NONE',
-        score:0,
-        confidence:0,
-        reasons:[trendText],
-        trigger:'Continue monitoring each completed 15m candle for a qualifying high/low box.',
+        state:'⚪ NO BOX BASE FOUND — MONITORING SESSION',
+        code:'NONE',score:0,confidence:0,
+        reasons:[
+          `${completed} completed 15m candles evaluated from 08:00 only`,
+          `Session high ${hi.toPrecision(8)} / low ${lo.toPrecision(8)}`,
+          `EMA14 ${ema14.toPrecision(8)} • EMA21 ${ema21.toPrecision(8)} • EMA50 ${ema50.toPrecision(8)}`,
+          'Waiting for the high/low range plus the EMA compression → stabilization formation.'
+        ],
+        trigger:'Continue evaluating each completed 15m candle within the current 08:00–08:00 session. Previous sessions are excluded.',
         timeframe:'15m',
-        box:{candles:bars.length},
-        structure:{},
-        breakout:{},
-        expansion:{},
-        meta:{
-          price,trendDirection,bullishTrend,bearishTrend,
-          ema14,ema21,ema50,ema14Slope,ema21Slope,ema50Slope
-        }
+        box:{high:hi,low:lo,rangePct:pct(hi,lo),candles:completed,sessionStart,sessionEnd},
+        structure:{},breakout:{},expansion:{},
+        meta:{sessionStart,sessionEnd,sessionLabel,sessionCandles:completed,price,ema14,ema21,ema50,ema14Slope,ema21Slope,ema50Slope,bullishTrend,bearishTrend,trendDirection}
       };
     }
 
     const accum=Number(r.accumCombined?.confidence||0);
-    const emaBull=ema14>ema21 && ema21>ema50;
-    const emaTurning=ema14>=ema21 || ema14Slope>0;
-    const accumSupport=accum>=45;
-
+    const emaBull=ema14>ema21&&ema21>ema50;
+    const emaTurning=ema14>=ema21||ema14Slope>0;
     let score=best.score;
-    if(accumSupport) score=Math.min(100,score+5);
-    if(best.bullishTrend||best.bearishTrend) score=Math.min(100,score+5);
-    else if(emaTurning) score=Math.min(100,score+2);
+    if(accum>=45)score=Math.min(100,score+5);
+    if(best.bullishTrend||best.bearishTrend)score=Math.min(100,score+5);
+    else if(emaTurning)score=Math.min(100,score+2);
 
     const reasons=[];
+    reasons.push(`Session ${sessionLabel} • 08:00–08:00 local`);
+    reasons.push(`${best.len} completed 15m candles in detected box`);
     reasons.push(`Box range ${best.rangePct.toFixed(2)}%`);
     reasons.push(`${best.highTouches} resistance touches / ${best.lowTouches} support touches`);
     reasons.push(`${best.trendDirection} EMA formation confirmed`);
     reasons.push(`EMA compression ${(best.emaCompression*100).toFixed(0)}% (${best.emaSpreadStart.toFixed(2)}% → ${best.emaSpreadEnd.toFixed(2)}%)`);
     reasons.push(`EMA net direction: 14 ${best.ema14Net>=0?'+':''}${best.ema14Net.toFixed(2)}% • 21 ${best.ema21Net>=0?'+':''}${best.ema21Net.toFixed(2)}% • 50 ${best.ema50Net>=0?'+':''}${best.ema50Net.toFixed(2)}%`);
-    if(best.hl>0) reasons.push(`Higher-low structure (${best.hl})`);
-    if(best.hh>0) reasons.push(`Higher-high structure (${best.hh})`);
-    if(best.lh>0) reasons.push(`Lower-high structure (${best.lh})`);
-    if(best.ll>0) reasons.push(`Lower-low structure (${best.ll})`);
-    if(best.contraction>=0.12) reasons.push(`Range contraction ${(best.contraction*100).toFixed(0)}%`);
-    if(best.relSD<=4) reasons.push(`Volatility compressed (${best.relSD.toFixed(2)}% relSD)`);
-    if(accumSupport) reasons.push(`Accumulation context ${Math.round(accum)}%`);
+    if(best.hl>0)reasons.push(`Higher-low structure (${best.hl})`);
+    if(best.hh>0)reasons.push(`Higher-high structure (${best.hh})`);
+    if(best.lh>0)reasons.push(`Lower-high structure (${best.lh})`);
+    if(best.ll>0)reasons.push(`Lower-low structure (${best.ll})`);
+    if(best.contraction>=0.12)reasons.push(`Range contraction ${(best.contraction*100).toFixed(0)}%`);
+    if(best.relSD<=4)reasons.push(`Volatility compressed (${best.relSD.toFixed(2)}% relSD)`);
+    if(accum>=45)reasons.push(`Accumulation context ${Math.round(accum)}%`);
 
-    let state='🟡 BOX BASE FOUND — DEVELOPING';
-    let code='DEVELOPING';
+    let state='🟡 BOX BASE FOUND — DEVELOPING',code='DEVELOPING';
     let trigger=best.bullishTrend
-      ? 'Watch for a completed 15m close above Box High.'
-      : 'Watch for a completed 15m close below Box Low.';
+      ?`Watch for a completed 15m close above Box High ${best.hi.toPrecision(8)}.`
+      :`Watch for a completed 15m close below Box Low ${best.lo.toPrecision(8)}.`;
 
     if(best.breakIndex>=0){
-      if(best.breakoutHeld && (best.expansionPct>=Math.max(5,best.rangePct*0.5) || best.expansionMultiple>=0.75)){
-        state=best.breakDirection==='UP'
-          ? '🟢 BOX BASE FOUND — BULLISH BREAKOUT + EXPANSION'
-          : '🔴 BOX BASE FOUND — BEARISH BREAKDOWN + EXPANSION';
+      if(best.breakoutHeld&&(best.expansionPct>=Math.max(5,best.rangePct*0.5)||best.expansionMultiple>=0.75)){
+        state=best.breakDirection==='UP'?'🟢 BOX BASE FOUND — BULLISH BREAKOUT + EXPANSION':'🔴 BOX BASE FOUND — BEARISH BREAKDOWN + EXPANSION';
         code=best.breakDirection==='UP'?'EXPANSION_CONFIRMED_UP':'EXPANSION_CONFIRMED_DOWN';
         trigger=best.breakDirection==='UP'
-          ? `Box High ${best.hi.toPrecision(8)} was broken and price expanded ${best.expansionPct.toFixed(2)}% beyond the box.`
-          : `Box Low ${best.lo.toPrecision(8)} was broken and price expanded ${best.expansionPct.toFixed(2)}% below the box.`;
+          ?`Box High ${best.hi.toPrecision(8)} was broken and price expanded ${best.expansionPct.toFixed(2)}% beyond the box.`
+          :`Box Low ${best.lo.toPrecision(8)} was broken and price expanded ${best.expansionPct.toFixed(2)}% below the box.`;
       }else if(best.breakoutHeld){
-        state=best.breakDirection==='UP'
-          ? '🟢 BOX BASE FOUND — BULLISH BREAKOUT CONFIRMED'
-          : '🔴 BOX BASE FOUND — BEARISH BREAKDOWN CONFIRMED';
+        state=best.breakDirection==='UP'?'🟢 BOX BASE FOUND — BULLISH BREAKOUT CONFIRMED':'🔴 BOX BASE FOUND — BEARISH BREAKDOWN CONFIRMED';
         code=best.breakDirection==='UP'?'BREAKOUT_CONFIRMED_UP':'BREAKDOWN_CONFIRMED_DOWN';
         trigger=best.breakDirection==='UP'
-          ? `15m close above Box High ${best.hi.toPrecision(8)} with price holding above the range.`
-          : `15m close below Box Low ${best.lo.toPrecision(8)} with price holding below the range.`;
+          ?`15m close above Box High ${best.hi.toPrecision(8)} with price holding above the range.`
+          :`15m close below Box Low ${best.lo.toPrecision(8)} with price holding below the range.`;
       }else{
-        state=best.breakDirection==='UP'
-          ? '🟠 BOX BASE FOUND — BULLISH BREAKOUT / RETEST DEVELOPING'
-          : '🟠 BOX BASE FOUND — BEARISH BREAKDOWN / RETEST DEVELOPING';
+        state=best.breakDirection==='UP'?'🟠 BOX BASE FOUND — BULLISH BREAKOUT / RETEST DEVELOPING':'🟠 BOX BASE FOUND — BEARISH BREAKDOWN / RETEST DEVELOPING';
         code=best.breakDirection==='UP'?'BREAKOUT_DEVELOPING_UP':'BREAKDOWN_DEVELOPING_DOWN';
         trigger=best.breakDirection==='UP'
-          ? `Breakout detected above ${best.hi.toPrecision(8)}; wait for acceptance/retest.`
-          : `Breakdown detected below ${best.lo.toPrecision(8)}; wait for acceptance/retest.`;
+          ?`Breakout detected above ${best.hi.toPrecision(8)}; wait for acceptance/retest.`
+          :`Breakdown detected below ${best.lo.toPrecision(8)}; wait for acceptance/retest.`;
       }
-    }else if(best.currentInside && best.currentNearTop && best.bullishTrend){
+    }else if(best.currentInside&&best.currentNearTop&&best.bullishTrend){
       state='🟡 BOX BASE FOUND — UPPER-BOUNDARY WATCH';
       code='BREAKOUT_WATCH_UP';
       trigger=`Price is in the upper box area. Watch for a completed 15m close above ${best.hi.toPrecision(8)}.`;
-    }else if(best.currentInside && best.currentNearBottom && best.bearishTrend){
+    }else if(best.currentInside&&best.currentNearBottom&&best.bearishTrend){
       state='🟡 BOX BASE FOUND — LOWER-BOUNDARY WATCH';
       code='BREAKDOWN_WATCH_DOWN';
       trigger=`Price is in the lower box area. Watch for a completed 15m close below ${best.lo.toPrecision(8)}.`;
@@ -9854,69 +9801,35 @@ function calculateBoxBaseFound(item){
     const confidence=Math.max(10,Math.min(98,Math.round(score)));
     return {
       state,code,score:confidence,confidence,
-      reasons:reasons.slice(0,10),
-      trigger,
-      timeframe:'15m',
+      reasons:reasons.slice(0,10),trigger,timeframe:'15m',
       box:{
-        high:best.hi,
-        low:best.lo,
-        rangePct:best.rangePct,
-        candles:best.len,
-        startIndex:best.start,
-        endIndex:best.end,
-        highTouches:best.highTouches,
-        lowTouches:best.lowTouches,
-        containmentPct:best.containment*100,
-        contractionPct:best.contraction*100,
-        relativeSD:best.relSD
+        high:best.hi,low:best.lo,rangePct:best.rangePct,candles:best.len,
+        startIndex:best.start,endIndex:best.end,highTouches:best.highTouches,lowTouches:best.lowTouches,
+        containmentPct:best.containment*100,contractionPct:best.contraction*100,relativeSD:best.relSD,
+        sessionStart,sessionEnd,sessionLabel,sessionCandles:completed
       },
       structure:{hh:best.hh,hl:best.hl,lh:best.lh,ll:best.ll},
-      breakout:{
-        detected:best.breakIndex>=0,
-        direction:best.breakDirection,
-        index:best.breakIndex,
-        price:best.breakIndex>=0?C[best.breakIndex]:null,
-        volumeRatio:best.breakoutVolumeRatio,
-        held:best.breakoutHeld,
-        retest:best.retest
-      },
-      expansion:{
-        pct:best.expansionPct,
-        multiple:best.expansionMultiple,
-        postBreakExtreme:best.postBreakExtreme
-      },
+      breakout:{detected:best.breakIndex>=0,direction:best.breakDirection,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
+      expansion:{pct:best.expansionPct,multiple:best.expansionMultiple,postBreakExtreme:best.postBreakExtreme},
       meta:{
-        price,
-        accumulationConfidence:accum,
-        ema14,ema21,ema50,
-        ema14Slope,ema21Slope,ema50Slope,
-        emaBull,
-        bullishTrend,
-        bearishTrend,
-        trendDirection
+        price,sessionStart,sessionEnd,sessionLabel,sessionCandles:completed,
+        accumulationConfidence:accum,ema14,ema21,ema50,ema14Slope,ema21Slope,ema50Slope,
+        emaBull,emaTurning,bullishTrend,bearishTrend,trendDirection
       }
     };
   }catch(e){
     return {
-      state:'⚪ BOX BASE — ENGINE ERROR',
-      code:'ERROR',
-      score:0,
-      confidence:0,
-      reasons:[`Box detector error: ${e.message}`],
-      trigger:'No box trigger available.',
-      box:{},
-      structure:{},
-      breakout:{},
-      expansion:{}
+      state:'⚪ BOX BASE — ENGINE ERROR',code:'ERROR',score:0,confidence:0,
+      reasons:[`Box detector error: ${e.message}`],trigger:'Check the 15m market data and retry.',timeframe:'15m',
+      box:{},structure:{},breakout:{},expansion:{}
     };
   }
 }
-
 window.calculateBoxBaseFound=calculateBoxBaseFound;
 
 function renderBoxBaseFound(item){
   const b=calculateBoxBaseFound(item||{}), box=b.box||{}, st=b.structure||{}, br=b.breakout||{}, ex=b.expansion||{}, m=b.meta||{};
-  const tone=b.code==='EXPANSION_CONFIRMED'||b.code==='BREAKOUT_CONFIRMED'?'#2dd4bf':b.code==='BREAKOUT_DEVELOPING'?'#ff9f43':b.code==='ERROR'||b.code==='NONE'?'#9fb3cc':'#ffd966';
+  const tone=/EXPANSION_CONFIRMED|BREAKOUT_CONFIRMED|BREAKDOWN_CONFIRMED/.test(String(b.code))?'#2dd4bf':/DEVELOPING|WATCH/.test(String(b.code))?'#ff9f43':b.code==='ERROR'||b.code==='NONE'||b.code==='INSUFFICIENT'?'#9fb3cc':'#ffd966';
   const fmt=v=>Number.isFinite(Number(v))?(Number(v)<1?Number(v).toPrecision(7):Number(v).toFixed(6)):'—';
   return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
     <div style="font-size:16px;font-weight:950">📦 BOX BASE FOUND — ${b.confidence||0}%</div>
@@ -9926,13 +9839,13 @@ function renderBoxBaseFound(item){
       <div style="margin-top:5px">🔺 <strong>Highest:</strong> ${fmt(box.high)}</div>
       <div style="margin-top:3px">🔻 <strong>Lowest:</strong> ${fmt(box.low)}</div>
       <div style="margin-top:3px">↕️ <strong>Total range:</strong> ${fmt(Number(box.high)-Number(box.low))} • ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}%</div>
-      <div class="small" style="margin-top:3px;color:var(--muted)">${box.candles||'—'} completed 15m candles inside the detected box</div>
+      <div class="small" style="margin-top:3px;color:var(--muted)">${box.candles||'—'} completed 15m candles inside the detected box • Session ${box.sessionLabel||'—'} • 08:00–08:00</div>
     </div>
     <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
     <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
     <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
     <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
-    <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% beyond Box High • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
+    <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% ${br.direction==='DOWN'?'below Box Low':'beyond Box High'} • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
     <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${mspEscape(b.trigger||'Wait for structural confirmation.')}</div>
     <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(b.reasons||[]).join(' • ')||'No box evidence available.'}</div>
     <div class="small" style="margin-top:6px;color:var(--muted)">This detector describes price structure. It does not treat a box or breakout as a guaranteed outcome.</div>
