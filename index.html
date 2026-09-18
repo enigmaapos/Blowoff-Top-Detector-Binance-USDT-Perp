@@ -9604,14 +9604,14 @@ function renderBoxBaseFound(item){
   const fmt=v=>Number.isFinite(Number(v))?(Number(v)<1?Number(v).toPrecision(7):Number(v).toFixed(6)):'—';
   return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
     <div style="font-size:16px;font-weight:950">📦 BOX BASE FOUND — ${b.confidence||0}%</div>
-    <div style="font-size:18px;font-weight:950;color:${tone};margin-top:3px">${esc(b.state||'⚪ UNKNOWN')}</div>
+    <div style="font-size:18px;font-weight:950;color:${tone};margin-top:3px">${mspEscape(b.state||'⚪ UNKNOWN')}</div>
     <div style="margin-top:8px"><strong>Box:</strong> ${fmt(box.low)} → ${fmt(box.high)} • Range ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}% • ${box.candles||'—'} completed 15m candles</div>
     <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
     <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
     <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
     <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
     <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% beyond Box High • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
-    <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${esc(b.trigger||'Wait for structural confirmation.')}</div>
+    <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${mspEscape(b.trigger||'Wait for structural confirmation.')}</div>
     <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(b.reasons||[]).join(' • ')||'No box evidence available.'}</div>
     <div class="small" style="margin-top:6px;color:var(--muted)">This detector describes price structure. It does not treat a box or breakout as a guaranteed outcome.</div>
   </div>`;
