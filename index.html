@@ -9420,10 +9420,14 @@ function calculateBoxBaseFound(item){
     const r=item||{};
     const raw=Array.isArray(r.k15m)?r.k15m:[];
     const now=Date.now();
-    const bars=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
-    if(bars.length<40){
-      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:['At least 40 completed 15m candles are required.'],trigger:'Collect more completed 15m candles.',box:{},structure:{},breakout:{},expansion:{}};
+    // STRICT BOX WINDOW: only the latest 96 completed 15m candles (24 hours)
+    // may participate in this detector. Older candles are deliberately
+    // excluded so a stale/historical box cannot remain flagged as fresh.
+    const completedBars=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
+    if(completedBars.length<96){
+      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:[`At least 96 completed 15m candles (24 hours) are required; ${completedBars.length} available.`],trigger:'Collect the full latest 24-hour 15m window.',box:{},structure:{},breakout:{},expansion:{}};
     }
+    const bars=completedBars.slice(-96);
 
     const O=bars.map(k=>Number(k[1])), H=bars.map(k=>Number(k[2])), L=bars.map(k=>Number(k[3])), C=bars.map(k=>Number(k[4])), V=bars.map(k=>Number(k[5]));
     if(![...H,...L,...C,...V].every(Number.isFinite)) throw new Error('Invalid 15m OHLCV data');
@@ -9454,8 +9458,11 @@ function calculateBoxBaseFound(item){
     }
 
     let best=null;
+    // Candidate boxes must also live entirely inside the same strict 24h
+    // window. A candidate may end before the latest candle so the detector
+    // can recognize a breakout that occurred later in the same 24h window.
     const maxEnd=bars.length-1;
-    const minEnd=Math.max(32,bars.length-80);
+    const minEnd=32;
     const lens=[32,40,48,64,80,96];
 
     for(let end=maxEnd;end>=minEnd;end--){
