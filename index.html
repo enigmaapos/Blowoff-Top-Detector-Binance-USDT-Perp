@@ -923,16 +923,19 @@ body.authLocked{overflow:hidden}
       </div>
       <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">📐 Structure Label Filter</label>
+          <label class="controlLabel">🧭 Unified Market-Cycle Trend Filter</label>
           <select id="marketStructureFilter">
-            <option value="ALL">All Structure Labels</option>
-            <option value="BULLISH">🟢 Structure: BULLISH</option>
-            <option value="BULLISH SUPPORT">🟢 Structure: BULLISH SUPPORT</option>
-            <option value="BEARISH">🔴 Structure: BEARISH</option>
-            <option value="BEARISH RISK">🔴 Structure: BEARISH RISK</option>
-            <option value="MIXED">🟡 Structure: MIXED</option>
+            <option value="ALL">All Unified Market-Cycle Trends</option>
+            <option value="BULLISH">🟢 BULLISH</option>
+            <option value="15M STRONG BULLISH">🟢 15m STRONG BULLISH</option>
+            <option value="BEARISH">🔴 BEARISH</option>
+            <option value="15M STRONG BEARISH / CORRECTION">🔴 15m STRONG BEARISH / CORRECTION</option>
+            <option value="15M STRONG BEARISH CONTINUATION">🔴 15m STRONG BEARISH CONTINUATION</option>
+            <option value="RECOVERING">🟣 RECOVERING</option>
+            <option value="MIXED">🟡 MIXED</option>
+            <option value="UNKNOWN">⚪ UNKNOWN</option>
           </select>
-          <div class="dashboardHint">Exact 4H chart label filter — includes BEARISH RISK and BULLISH SUPPORT.</div>
+          <div class="dashboardHint">Uses the <strong>trend</strong> returned by the authoritative 🧭 <strong>UNIFIED MARKET-CYCLE</strong> engine — not the separate 4H chart Structure Label. This keeps the filter aligned with the trend shown in the Unified Market-Cycle result.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">📈 EMA Structure Filter</label>
@@ -6605,17 +6608,23 @@ function filterResultsForDist(results) {
     });
   }
 
-  // Structure Label Filter — EXACTLY mirrors the label drawn on the 4H chart.
-  // The chart uses the last 180 visible 4H candles, so the filter must use
-  // those same candles. This fixes BEARISH RISK / BULLISH SUPPORT mismatches.
+  // Unified Market-Cycle Trend Filter.
+  // IMPORTANT: this no longer reads the independent 4H chart Structure Label.
+  // It reads the exact `trend` returned by calculateUnifiedMarketCycle(), which
+  // is also the trend displayed by the Unified Market-Cycle panel.
   const marketStructureFilter = el.marketStructureFilter ? el.marketStructureFilter.value : 'ALL';
   if (marketStructureFilter !== 'ALL') {
     const wanted = String(marketStructureFilter).trim().toUpperCase();
     filtered = filtered.filter(r => {
       try {
-        return chartStructureLabelForResult(r, '4h') === wanted;
+        let u=r?.unifiedMarketCycle;
+        if(!u || u.code==='ERROR' || u.code==='INSUFFICIENT_DATA' || u.state==='⚪ MARKET-CYCLE UNAVAILABLE' || u.state==='⚪ MARKET-CYCLE DATA INSUFFICIENT'){
+          if(typeof calculateUnifiedMarketCycle==='function') u=calculateUnifiedMarketCycle(r||{});
+        }
+        const actual=String(u?.trend||'UNKNOWN').trim().toUpperCase();
+        return actual===wanted;
       } catch (_) {
-        return false;
+        return wanted==='UNKNOWN';
       }
     });
   }
@@ -6693,7 +6702,7 @@ function filterResultsForDist(results) {
 function getActiveResultFilterSummary(){
   const labels=[];
   const fields=[
-    ['correctionAuthorityFilter','Correction authority'],['biasFilter','Bias'],['marketStructureFilter','Structure'],
+    ['correctionAuthorityFilter','Correction authority'],['biasFilter','Bias'],['marketStructureFilter','Unified Trend'],
     ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
     ['trendTransitionFilter','Trend Transition'],['traderDecisionFilter','Trader Decision'],
     ['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
