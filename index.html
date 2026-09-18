@@ -9420,13 +9420,30 @@ function calculateBoxBaseFound(item){
     const r=item||{};
     const raw=Array.isArray(r.k15m)?r.k15m:[];
     const now=Date.now();
-    // STRICT BOX WINDOW: only the latest 96 completed 15m candles (24 hours)
-    // may participate in this detector. Older candles are deliberately
-    // excluded so a stale/historical box cannot remain flagged as fresh.
-    const completedBars=raw.filter(k=>Number(k?.[6])>0 ? Number(k[6])<=now : true);
-    if(completedBars.length<96){
-      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:[`At least 96 completed 15m candles (24 hours) are required; ${completedBars.length} available.`],trigger:'Collect the full latest 24-hour 15m window.',box:{},structure:{},breakout:{},expansion:{}};
+    // FIXED DAILY BOX SESSION: 08:00 local time -> 08:00 local time next day.
+    // Only completed 15m candles from the current 08:00-08:00 session may
+    // participate. This resets the Box Base detector at every 08:00 local.
+    const getSessionStart=(ts)=>{
+      const d=new Date(ts);
+      const s=new Date(d);
+      s.setHours(8,0,0,0);
+      if(d.getTime()<s.getTime()) s.setDate(s.getDate()-1);
+      return s.getTime();
+    };
+    const sessionStart=getSessionStart(now);
+    const sessionEnd=sessionStart+24*60*60*1000;
+    const completedBars=raw.filter(k=>{
+      const openTs=Number(k?.[0]);
+      const closeTs=Number(k?.[6]);
+      if(!Number.isFinite(openTs)||!Number.isFinite(closeTs)) return false;
+      return closeTs<=now && openTs>=sessionStart && openTs<sessionEnd;
+    });
+    if(completedBars.length<40){
+      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:[`The current 08:00-08:00 session has only ${completedBars.length} completed 15m candles; at least 40 are required.`],trigger:'Collect more completed 15m candles in the current 08:00-08:00 session.',box:{},structure:{},breakout:{},expansion:{}};
     }
+    // Keep the session strictly bounded. A complete 08:00-08:00 session
+    // contains exactly 96 x 15m candles; partial sessions use only candles
+    // that have completed so far.
     const bars=completedBars.slice(-96);
 
     const O=bars.map(k=>Number(k[1])), H=bars.map(k=>Number(k[2])), L=bars.map(k=>Number(k[3])), C=bars.map(k=>Number(k[4])), V=bars.map(k=>Number(k[5]));
@@ -9458,9 +9475,9 @@ function calculateBoxBaseFound(item){
     }
 
     let best=null;
-    // Candidate boxes must also live entirely inside the same strict 24h
-    // window. A candidate may end before the latest candle so the detector
-    // can recognize a breakout that occurred later in the same 24h window.
+    // Candidate boxes must also live entirely inside the same strict
+    // 08:00-08:00 session. A candidate may end before the latest candle so
+    // the detector can recognize a breakout that occurred later in the same session.
     const maxEnd=bars.length-1;
     const minEnd=32;
     const lens=[32,40,48,64,80,96];
