@@ -436,6 +436,8 @@
 .compactSignals{width:100%;line-height:1.35}
 .exhaustionCompact,.correctionCompact,.phaseTag{min-width:0}
 .exhaustionCompact strong{font-size:15px}
+.reversalChanceCompact strong{font-size:14px}
+.reversalChanceCompact{flex:1 1 100%;width:100%}
 .correctionCompactTitle{font-weight:800}
 .correctionCompactStatus{font-weight:900;margin-top:2px}
 .coinDetails{display:block}
@@ -9951,7 +9953,7 @@ function renderCards(results){
 
         <div class="compactSignals decisionOnly" style="margin-top:8px;display:flex;flex-wrap:wrap;align-items:center;gap:6px">
           ${badge} ${accBadge}
-          ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div></div>`}
+          ${(r.preCrash && Number.isFinite(Number(r.preCrash.confidence)))?`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning ${Math.round(Number(r.preCrash.confidence))}%</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div>${(() => { const ex = explainBlowoff(r); const rp = Number(ex?.prob); return Number.isFinite(rp) ? `<div class="reversalChanceCompact" style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.08)"><strong>↩ Reversal Chance ${Math.round(rp)}%</strong><div class="small" style="margin-top:2px;color:var(--muted)">Estimated reversal probability from exhaustion signals</div></div>` : ''; })()}</div>`:`<div class="exhaustionCompact" style="flex:1 1 100%;margin-top:2px"><strong>⚠ Exhaustion Warning —</strong><div class="small" style="margin-top:2px;color:#ffd966">Strong warning evidence — not a crash probability</div>${(() => { const ex = explainBlowoff(r); const rp = Number(ex?.prob); return Number.isFinite(rp) ? `<div class="reversalChanceCompact" style="margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.08)"><strong>↩ Reversal Chance ${Math.round(rp)}%</strong><div class="small" style="margin-top:2px;color:var(--muted)">Estimated reversal probability from exhaustion signals</div></div>` : ''; })()}</div>`}
         </div>
 
 <div class="binanceChartPanel" data-symbol="${String(r.symbol||'').replace(/"/g,'&quot;')}" data-tf="4h">
