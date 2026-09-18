@@ -10605,7 +10605,12 @@ function updateUnifiedScanCountdown(){
 // promise 24/7 execution. It records the intended next-run time and performs
 // one safe catch-up scan when the page becomes active again. Missed intervals
 // are never replayed as a burst.
-const BG_SCAN_STATE_KEY = 'magmaBackgroundScanStateV1';
+const BG_SCAN_STATE_KEY = 'magmaBackgroundScanStateV2';
+const BG_SCAN_UI_ID = 'magmaBackgroundRefreshStatus';
+let bgResumeGuardUntil = 0;
+let bgResumeInFlight = false;
+let bgLastLifecycleEventAt = 0;
+
 function readBackgroundScanState(){
   try{
     const x = JSON.parse(localStorage.getItem(BG_SCAN_STATE_KEY) || '{}');
@@ -10618,41 +10623,10 @@ function writeBackgroundScanState(patch){
     localStorage.setItem(BG_SCAN_STATE_KEY, JSON.stringify(state));
   }catch(e){}
 }
-function markScannerRefreshCompleted(mode){
-  const m = mode || activeScannerMode || 'main';
-  writeBackgroundScanState({
-    mode: m,
-    lastCompletedAt: Date.now(),
-    autoEnabled: !!marketAutoEnabled
-  });
-}
 function getScannerIntervalMs(){
   const sec = Math.max(10, Math.min(3600, parseInt(el.interval?.value,10) || 120));
   return sec * 1000;
 }
-function scannerBackgroundCatchUpNeeded(){
-  if(activeViewMode !== 'scan' || !marketAutoEnabled || running) return false;
-  const state = readBackgroundScanState();
-  const interval = getScannerIntervalMs();
-  const last = Number(state.lastCompletedAt || 0);
-  return !last || (Date.now() - last >= interval);
-}
-
-function scheduleMarketAutoRefresh(delayMs){
-  return scheduleUnifiedScannerAutoRefresh(delayMs, 'main');
-}
-
-function pauseMarketAutoRefresh(){
-  if(activeViewMode === 'scan' && marketNextScanAt){
-    marketAutoRemainingMs = Math.max(0, marketNextScanAt - Date.now());
-  }
-  if(autoTimer) clearTimeout(autoTimer);
-  if(countdownTimer) clearInterval(countdownTimer);
-  autoTimer = null;
-  countdownTimer = null;
-  writeBackgroundScanState({autoEnabled:false, nextScanAt:0});
-}
-
 function getActiveScannerLabel(){
   const mode = String(activeScannerMode || el.scanMode?.value || 'main');
   if(mode === 'topGreen') return 'Top30 Gainers';
@@ -10661,159 +10635,275 @@ function getActiveScannerLabel(){
   return 'Market Scan';
 }
 
+function ensureBackgroundRefreshUI(){
+  if(!el.countdown) return null;
+  let badge = document.getElementById(BG_SCAN_UI_ID);
+  if(!badge){
+    badge = document.createElement('div');
+    badge.id = BG_SCAN_UI_ID;
+    badge.className = 'small';
+    badge.style.cssText = 'margin-top:4px;font-weight:600;opacity:.9;';
+    el.countdown.insertAdjacentElement('afterend', badge);
+  }
+  return badge;
+}
+function setBackgroundRefreshStatus(kind, detail){
+  const badge = ensureBackgroundRefreshUI();
+  if(!badge) return;
+  const labels = {
+    live:'🟢 LIVE — auto-refresh armed',
+    background:'🔵 BACKGROUND — timer may be throttled; return check armed',
+    catchup:'🟠 CATCH-UP — refresh due after return',
+    running:'🟡 REFRESHING — new scan in progress',
+    paused:'⚪ PAUSED — auto-refresh off',
+    error:'🔴 RETRY — last refresh failed; will retry',
+    waiting:'🟢 WAITING — next refresh scheduled'
+  };
+  badge.textContent = detail ? `${labels[kind] || kind} • ${detail}` : (labels[kind] || kind);
+}
+function formatRefreshTime(ts){
+  if(!ts) return '—';
+  try{return new Date(ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}catch(e){return '—';}
+}
+function persistBackgroundLifecycle(reason){
+  if(activeViewMode !== 'scan' || !marketAutoEnabled) return;
+  const now = Date.now();
+  const next = Number(marketNextScanAt || 0);
+  writeBackgroundScanState({
+    mode: activeScannerMode || el.scanMode?.value || 'main',
+    autoEnabled:true,
+    nextScanAt:next,
+    remainingMs:next ? Math.max(0,next-now) : 0,
+    lifecycle:reason,
+    lifecycleAt:now,
+    hidden:!!document.hidden
+  });
+}
+function markScannerRefreshStarted(mode){
+  writeBackgroundScanState({
+    mode: mode || activeScannerMode || 'main',
+    autoEnabled:!!marketAutoEnabled,
+    lastAttemptAt:Date.now(),
+    lastError:'',
+    running:true,
+    hiddenAtAttempt:!!document.hidden
+  });
+  setBackgroundRefreshStatus('running', document.hidden ? 'running while hidden' : 'active');
+}
+function markScannerRefreshCompleted(mode){
+  const m = mode || activeScannerMode || 'main';
+  const now = Date.now();
+  writeBackgroundScanState({
+    mode:m,
+    lastCompletedAt:now,
+    lastSuccessfulAt:now,
+    lastError:'',
+    running:false,
+    autoEnabled:!!marketAutoEnabled,
+    hiddenAtAttempt:false,
+    nextScanAt:marketNextScanAt || 0
+  });
+  setBackgroundRefreshStatus('waiting', `last completed ${formatRefreshTime(now)}`);
+}
+function markScannerRefreshFailed(mode, err){
+  const m = mode || activeScannerMode || 'main';
+  const now = Date.now();
+  const msg = String(err?.message || err || 'Unknown error').slice(0,180);
+  writeBackgroundScanState({mode:m,running:false,lastAttemptAt:now,lastError:msg,failCount:Number(readBackgroundScanState().failCount||0)+1});
+  setBackgroundRefreshStatus('error', msg);
+}
+function scannerBackgroundCatchUpNeeded(){
+  if(activeViewMode !== 'scan' || !marketAutoEnabled || running) return false;
+  const state = readBackgroundScanState();
+  const interval = getScannerIntervalMs();
+  const last = Number(state.lastCompletedAt || 0);
+  const next = Number(state.nextScanAt || 0);
+  return !!(next && Date.now() >= next) || (!next && (!last || Date.now()-last >= interval));
+}
+
+function scheduleMarketAutoRefresh(delayMs){
+  return scheduleUnifiedScannerAutoRefresh(delayMs, 'main');
+}
+function pauseMarketAutoRefresh(){
+  if(activeViewMode === 'scan' && marketNextScanAt)
+    marketAutoRemainingMs = Math.max(0, marketNextScanAt-Date.now());
+  if(autoTimer) clearTimeout(autoTimer);
+  if(countdownTimer) clearInterval(countdownTimer);
+  autoTimer=null; countdownTimer=null;
+  marketNextScanAt=0;
+  writeBackgroundScanState({autoEnabled:false,nextScanAt:0,remainingMs:0,running:false});
+  setBackgroundRefreshStatus('paused');
+}
 function updateUnifiedScanCountdown(){
   if(!el.countdown || activeViewMode !== 'scan') return;
-  if(running) return;
+  if(running){
+    setBackgroundRefreshStatus('running', document.hidden ? 'background analysis' : 'foreground analysis');
+    return;
+  }
   if(!marketAutoEnabled){
     el.countdown.innerText = `${getActiveScannerLabel()} auto-refresh paused`;
+    setBackgroundRefreshStatus('paused');
     return;
   }
   if(marketNextScanAt){
-    const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
-    el.countdown.innerText = `Next ${getActiveScannerLabel()} in: ${left}s`;
+    const left=Math.max(0,Math.ceil((marketNextScanAt-Date.now())/1000));
+    el.countdown.innerText=`${document.hidden?'Background: ':''}Next ${getActiveScannerLabel()} in: ${left}s`;
+  }else if(scannerBackgroundCatchUpNeeded()){
+    el.countdown.innerText=`${getActiveScannerLabel()} refresh due — returning…`;
   }
 }
 
 function scheduleUnifiedScannerAutoRefresh(delayMs, scannerMode){
   if(autoTimer) clearTimeout(autoTimer);
   if(countdownTimer) clearInterval(countdownTimer);
-  autoTimer = null;
-  countdownTimer = null;
+  autoTimer=null; countdownTimer=null;
   if(activeViewMode !== 'scan' || !marketAutoEnabled) return;
 
-  const delay = Math.max(1000, Number(delayMs) || 1000);
-  const session = modeSession;
-  activeScannerMode = scannerMode || activeScannerMode || 'main';
-  marketNextScanAt = Date.now() + delay;
-  marketAutoRemainingMs = delay;
-  writeBackgroundScanState({
-    mode: activeScannerMode,
-    autoEnabled: true,
-    nextScanAt: marketNextScanAt
-  });
+  const delay=Math.max(1000,Number(delayMs)||1000);
+  const session=modeSession;
+  activeScannerMode=scannerMode || activeScannerMode || 'main';
+  marketNextScanAt=Date.now()+delay;
+  marketAutoRemainingMs=delay;
+  writeBackgroundScanState({mode:activeScannerMode,autoEnabled:true,nextScanAt:marketNextScanAt,remainingMs:delay,running:false,scheduledAt:Date.now()});
+  setBackgroundRefreshStatus(document.hidden?'background':'live', `next ${formatRefreshTime(marketNextScanAt)}`);
 
-  countdownTimer = setInterval(()=>{
-    if(session !== modeSession || activeViewMode !== 'scan' || !marketAutoEnabled){
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-      return;
+  countdownTimer=setInterval(()=>{
+    if(session!==modeSession || activeViewMode!=='scan' || !marketAutoEnabled){
+      clearInterval(countdownTimer); countdownTimer=null; return;
     }
-    const left = Math.max(0, Math.ceil((marketNextScanAt - Date.now())/1000));
-    marketAutoRemainingMs = Math.max(0, marketNextScanAt - Date.now());
-    if(el.countdown) el.countdown.innerText = document.hidden
-      ? `Background: next ${getActiveScannerLabel()} in: ${left}s`
-      : `Next ${getActiveScannerLabel()} in: ${left}s`;
-    if(left <= 0){
-      clearInterval(countdownTimer);
-      countdownTimer = null;
-      if(el.countdown) el.countdown.innerText = `Starting ${getActiveScannerLabel()}…`;
-    }
-  }, 250);
+    const left=Math.max(0,Math.ceil((marketNextScanAt-Date.now())/1000));
+    marketAutoRemainingMs=Math.max(0,marketNextScanAt-Date.now());
+    if(el.countdown) el.countdown.innerText=`${document.hidden?'Background: ':''}Next ${getActiveScannerLabel()} in: ${left}s`;
+    setBackgroundRefreshStatus(document.hidden?'background':'live', `next ${formatRefreshTime(marketNextScanAt)}`);
+    if(left<=0){clearInterval(countdownTimer); countdownTimer=null; if(el.countdown) el.countdown.innerText=`Starting ${getActiveScannerLabel()}…`;}
+  },500);
 
-  autoTimer = setTimeout(async ()=>{
-    autoTimer = null;
-    marketNextScanAt = 0;
-    marketAutoRemainingMs = 0;
-    writeBackgroundScanState({nextScanAt:0});
-    if(session !== modeSession || activeViewMode !== 'scan' || running) return;
-    const mode = scannerMode || activeScannerMode || 'main';
+  autoTimer=setTimeout(async()=>{
+    autoTimer=null;
+    marketNextScanAt=0; marketAutoRemainingMs=0;
+    writeBackgroundScanState({nextScanAt:0,remainingMs:0});
+    if(session!==modeSession || activeViewMode!=='scan' || running) return;
+    const mode=scannerMode || activeScannerMode || 'main';
+    markScannerRefreshStarted(mode);
     try{
-      if(mode === 'topGreen') await runTop30Scan({positive:true, mode:'resistance', session});
-      else if(mode === 'topRed') await runTop30Scan({positive:false, mode:'bearish', session});
-      else if(mode === 'below50'){
-        if(typeof window.runBelow50ScanUI === 'function') await window.runBelow50ScanUI({session});
-        else if(typeof runBelow50Scan === 'function') await runBelow50Scan({session});
-        else if(typeof runBelow50 === 'function') await runBelow50({session});
-      }else await runScan(false, session);
+      if(mode==='topGreen') await runTop30Scan({positive:true,mode:'resistance',session});
+      else if(mode==='topRed') await runTop30Scan({positive:false,mode:'bearish',session});
+      else if(mode==='below50'){
+        if(typeof window.runBelow50ScanUI==='function') await window.runBelow50ScanUI({session});
+        else if(typeof runBelow50Scan==='function') await runBelow50Scan({session});
+        else if(typeof runBelow50==='function') await runBelow50({session});
+        else throw new Error('Below-50 scanner function was not found.');
+      }else await runScan(false,session);
 
-      if(session === modeSession && activeViewMode === 'scan' && !running){
+      if(session===modeSession && activeViewMode==='scan' && !running){
         markScannerRefreshCompleted(mode);
-        const intervalSec = Math.max(10, Math.min(3600, parseInt(el.interval.value,10) || 120));
-        scheduleUnifiedScannerAutoRefresh(intervalSec * 1000, mode);
+        const interval=getScannerIntervalMs();
+        scheduleUnifiedScannerAutoRefresh(interval,mode);
       }
     }catch(e){
-      console.warn(`${getActiveScannerLabel()} auto-refresh failed:`, e);
-      if(session === modeSession && activeViewMode === 'scan') scheduleUnifiedScannerAutoRefresh(5000, mode);
+      markScannerRefreshFailed(mode,e);
+      console.warn(`${getActiveScannerLabel()} auto-refresh failed:`,e);
+      if(session===modeSession && activeViewMode==='scan') scheduleUnifiedScannerAutoRefresh(Math.min(30000,Math.max(5000,getScannerIntervalMs()/4)),mode);
     }
-  }, delay);
-
+  },delay);
   updateUnifiedScanCountdown();
 }
 
 function resumeBackgroundScannerIfNeeded(reason='resume'){
-  if(activeViewMode !== 'scan' || !marketAutoEnabled || running) return;
-  const mode = activeScannerMode || el.scanMode?.value || 'main';
-  const state = readBackgroundScanState();
-  const interval = getScannerIntervalMs();
-  const now = Date.now();
-  const last = Number(state.lastCompletedAt || 0);
-  const next = Number(state.nextScanAt || 0);
-
-  // If a timer was throttled while hidden, the recorded target tells us that
-  // the scan is due. Run exactly one catch-up; never replay missed intervals.
-  if((next && now >= next) || (!next && (!last || now - last >= interval))){
-    if(el.countdown) el.countdown.innerText = reason === 'visibility'
-      ? `Resuming ${getActiveScannerLabel()}…`
-      : `Catching up ${getActiveScannerLabel()}…`;
-    scheduleUnifiedScannerAutoRefresh(1000, mode);
-  }else if(next){
-    scheduleUnifiedScannerAutoRefresh(Math.max(1000, next - now), mode);
+  if(activeViewMode!=='scan' || !marketAutoEnabled || running) return;
+  const now=Date.now();
+  if(bgResumeInFlight || now<bgResumeGuardUntil) return;
+  bgResumeInFlight=true; bgResumeGuardUntil=now+1500;
+  try{
+    const state=readBackgroundScanState();
+    const mode=state.mode || activeScannerMode || el.scanMode?.value || 'main';
+    activeScannerMode=mode;
+    if(el.scanMode && el.scanMode.value!==mode) el.scanMode.value=mode;
+    const interval=getScannerIntervalMs();
+    const last=Number(state.lastCompletedAt||0);
+    const next=Number(state.nextScanAt||0);
+    const due=!!(next && now>=next) || (!next && (!last || now-last>=interval));
+    if(due){
+      if(el.countdown) el.countdown.innerText=`${reason==='visibility'?'Returning':'Catching up'} — refreshing ${getActiveScannerLabel()}…`;
+      setBackgroundRefreshStatus('catchup', `due since ${formatRefreshTime(next || last+interval)}`);
+      scheduleUnifiedScannerAutoRefresh(1000,mode);
+    }else if(next){
+      const remaining=Math.max(1000,next-now);
+      marketAutoRemainingMs=remaining;
+      if(el.countdown) el.countdown.innerText=`Next ${getActiveScannerLabel()} in: ${Math.ceil(remaining/1000)}s`;
+      scheduleUnifiedScannerAutoRefresh(remaining,mode);
+    }else{
+      scheduleUnifiedScannerAutoRefresh(interval,mode);
+    }
+  }finally{
+    bgResumeInFlight=false;
   }
 }
 
-document.addEventListener('visibilitychange', ()=>{
+function persistActiveScannerLifecycle(reason){
+  persistBackgroundLifecycle(reason);
+  if(activeViewMode==='scan' && marketAutoEnabled){
+    setBackgroundRefreshStatus(document.hidden?'background':'live', reason);
+    updateUnifiedScanCountdown();
+  }
+}
+
+document.addEventListener('visibilitychange',()=>{
+  const now=Date.now();
+  if(now-bgLastLifecycleEventAt<200) return;
+  bgLastLifecycleEventAt=now;
   if(document.hidden){
-    // Do not launch work here. Keep the absolute target timestamp so a
-    // throttled background timer can be reconciled when the page returns.
-    if(activeViewMode === 'scan' && marketAutoEnabled && marketNextScanAt){
-      marketAutoRemainingMs = Math.max(0, marketNextScanAt - Date.now());
-      writeBackgroundScanState({nextScanAt:marketNextScanAt, autoEnabled:true, mode:activeScannerMode});
-    }
-    if(el.countdown && activeViewMode === 'scan' && marketAutoEnabled)
-      el.countdown.innerText = 'Background refresh active — browser may throttle timers';
+    persistActiveScannerLifecycle('page hidden');
   }else{
+    persistActiveScannerLifecycle('page visible');
     resumeBackgroundScannerIfNeeded('visibility');
   }
 });
+window.addEventListener('pageshow',()=>{
+  persistActiveScannerLifecycle('pageshow');
+  resumeBackgroundScannerIfNeeded('pageshow');
+});
+window.addEventListener('focus',()=>resumeBackgroundScannerIfNeeded('focus'));
+window.addEventListener('online',()=>resumeBackgroundScannerIfNeeded('online'));
+window.addEventListener('pagehide',()=>persistActiveScannerLifecycle('pagehide'));
+window.addEventListener('beforeunload',()=>persistActiveScannerLifecycle('beforeunload'));
 
-window.addEventListener('pageshow', ()=>resumeBackgroundScannerIfNeeded('pageshow'));
-window.addEventListener('focus', ()=>resumeBackgroundScannerIfNeeded('focus'));
-
-// Startup restoration with background-aware auto-refresh.
 (function restoreActiveModeOnLoad(){
   try{
-    if(el.prefilter) el.prefilter.value = '15';
-    const savedFavView = localStorage.getItem('magmaFavoritesView') === '1';
-    const savedMode = localStorage.getItem('magmaActiveViewMode') || 'idle';
-    const savedScanner = localStorage.getItem('magmaActiveScannerMode') || 'main';
-    activeScannerMode = savedScanner;
+    if(el.prefilter) el.prefilter.value='15';
+    const savedFavView=localStorage.getItem('magmaFavoritesView')==='1';
+    const savedMode=localStorage.getItem('magmaActiveViewMode')||'idle';
+    const bgState=readBackgroundScanState();
+    const savedScanner=bgState.mode || localStorage.getItem('magmaActiveScannerMode') || 'main';
+    activeScannerMode=savedScanner;
+    if(el.scanMode && savedScanner) el.scanMode.value=savedScanner;
 
     if(savedFavView && favoriteSymbols.size){
-      showFavoritesOnly = true;
-      activeViewMode = 'favorite';
-      favoriteViewResults = restoreFavoriteResultSnapshots();
-      renderActiveView();
-      updateFavoritesButton();
-      updateFavoritesLiveStatus();
-      scheduleFavoritesLiveUpdate();
-      return;
+      showFavoritesOnly=true; activeViewMode='favorite'; favoriteViewResults=restoreFavoriteResultSnapshots(); renderActiveView(); updateFavoritesButton(); updateFavoritesLiveStatus(); scheduleFavoritesLiveUpdate(); return;
     }
-
-    showFavoritesOnly = false;
-    activeViewMode = savedMode === 'single' ? 'single' : (savedMode === 'scan' ? 'scan' : 'idle');
-    singleViewLocked = activeViewMode === 'single';
-
-    if(activeViewMode === 'single'){
+    showFavoritesOnly=false;
+    activeViewMode=savedMode==='single'?'single':(savedMode==='scan'?'scan':'idle');
+    singleViewLocked=activeViewMode==='single';
+    if(activeViewMode==='single'){
+      renderActiveView(); scheduleSingleLiveUpdate();
+    }else if(activeViewMode==='scan'){
       renderActiveView();
-      scheduleSingleLiveUpdate();
-    }else if(activeViewMode === 'scan'){
-      renderActiveView();
-      const bgState = readBackgroundScanState();
-      marketAutoEnabled = bgState.autoEnabled === true;
-      if(marketAutoEnabled) resumeBackgroundScannerIfNeeded('startup');
+      marketAutoEnabled=bgState.autoEnabled===true;
+      if(marketAutoEnabled){
+        const last=Number(bgState.lastCompletedAt||0);
+        const next=Number(bgState.nextScanAt||0);
+        if(next && Date.now()<next){
+          marketNextScanAt=next;
+          marketAutoRemainingMs=Math.max(0,next-Date.now());
+          setBackgroundRefreshStatus('waiting',`restored; next ${formatRefreshTime(next)}`);
+        }else{
+          setBackgroundRefreshStatus('catchup','restored session is due');
+        }
+        resumeBackgroundScannerIfNeeded('startup');
+      }
     }
     updateFavoritesButton();
-  }catch(e){ console.warn('Could not restore active mode:', e); }
+  }catch(e){ console.warn('Could not restore active mode:',e); }
 })();
 
 function commitScannerSurface(surface){
