@@ -454,6 +454,9 @@
 .topDetHvdBlock{margin-top:3px}
 
 </style>
+<style id="single-refresh-timer-ui">
+  #singleNextRefresh{letter-spacing:.02em;opacity:.95}
+</style>
 <style id="scanner-ui-cleanup">
   #startBtn, #oneShot { display:none !important; }
 </style>
@@ -857,6 +860,7 @@ body.authLocked{overflow:hidden}
         <div class="dashboardStatusValue">
           <button id="singleLiveBtn" class="alt" title="Pause/resume Single Analyze automatic updates">⏸ Live Updates</button>
           <span id="singleLiveStatus" style="display:block;margin-top:4px;color:var(--muted);font-size:10px">Live: ON • 60s</span>
+          <span id="singleNextRefresh" style="display:block;margin-top:4px;color:#cfe8ff;font-size:10px;font-weight:800">Next refresh: —</span>
           <button id="favoritesLiveBtn" class="alt" title="Pause/resume Favorites automatic updates" style="margin-top:6px">⏸ Favorites Live</button>
           <span id="favoritesLiveStatus" style="display:block;margin-top:4px;color:var(--muted);font-size:10px">Favorites Live: ON • 60s</span>
         </div>
@@ -3144,11 +3148,29 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
 function updateSingleLiveStatus(extra=''){
   const btn = document.getElementById('singleLiveBtn');
   const st = document.getElementById('singleLiveStatus');
+  const next = document.getElementById('singleNextRefresh');
   if(btn) btn.innerText = singleLiveEnabled ? '⏸ Live Updates' : '▶ Resume Live';
+
   if(st){
     if(!singleLiveEnabled) st.innerText = 'Live: PAUSED';
     else if(singleLiveUpdating) st.innerText = 'Live: updating…';
     else st.innerText = `Live: ON • ${Math.round(getSingleLiveIntervalMs()/1000)}s${extra ? ' • '+extra : ''}`;
+  }
+
+  if(next){
+    if(!singleLiveEnabled || !singleViewLocked){
+      next.innerText = 'Next refresh: —';
+    }else if(singleLiveUpdating){
+      next.innerText = 'Next refresh: updating now…';
+    }else if(singleNextRefreshAt){
+      const remaining = Math.max(0, singleNextRefreshAt - Date.now());
+      const totalSec = Math.ceil(remaining / 1000);
+      const mm = Math.floor(totalSec / 60);
+      const ss = totalSec % 60;
+      next.innerText = `Next refresh in: ${mm}:${String(ss).padStart(2,'0')}`;
+    }else{
+      next.innerText = 'Next refresh: scheduled';
+    }
   }
 }
 
@@ -3177,12 +3199,31 @@ function updateLiveModeUI(){
 
 function clearSingleLiveTimer(){
   if(singleLiveTimer){ clearTimeout(singleLiveTimer); singleLiveTimer=null; }
+  if(singleLiveCountdownTimer){ clearInterval(singleLiveCountdownTimer); singleLiveCountdownTimer=null; }
+  singleNextRefreshAt = 0;
 }
 
 function scheduleSingleLiveUpdate(){
   clearSingleLiveTimer();
-  if(!singleLiveEnabled || !singleViewLocked) return;
-  singleLiveTimer = setTimeout(refreshSingleWatchlist, getSingleLiveIntervalMs());
+  if(!singleLiveEnabled || !singleViewLocked){
+    updateSingleLiveStatus();
+    return;
+  }
+
+  const delayMs = getSingleLiveIntervalMs();
+  singleNextRefreshAt = Date.now() + delayMs;
+
+  singleLiveCountdownTimer = setInterval(() => {
+    if(!singleLiveEnabled || !singleViewLocked){
+      clearSingleLiveTimer();
+      updateSingleLiveStatus();
+      return;
+    }
+    updateSingleLiveStatus();
+  }, 1000);
+
+  updateSingleLiveStatus();
+  singleLiveTimer = setTimeout(refreshSingleWatchlist, delayMs);
 }
 
 // v8.1 Safe Batch Live Refresh
@@ -3241,6 +3282,7 @@ async function refreshSingleWatchlist(){
   if(!current.length){ scheduleSingleLiveUpdate(); return; }
 
   singleLiveUpdating = true;
+  singleNextRefreshAt = 0;
   updateSingleLiveStatus();
   try{
     // v8.1: refresh up to 5 symbols concurrently per controlled batch.
@@ -3474,6 +3516,8 @@ function restoreFavoriteResultSnapshots(){
 const MAX_SINGLE_RESULTS = 10;
 let singleViewLocked = false;
 let singleLiveTimer = null;
+let singleLiveCountdownTimer = null;
+let singleNextRefreshAt = 0;
 let singleLiveUpdating = false;
 let singleLiveEnabled = true;
 const SINGLE_LIVE_INTERVAL_MS = 60000;
