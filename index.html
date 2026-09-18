@@ -9512,14 +9512,13 @@ function calculateBoxBaseFound(item){
     const ema21Slope=slope(ema21Series);
     const ema50Slope=slope(ema50Series);
 
-    const bullishTrend=ema14>ema21 && ema21>ema50 &&
-      ema14Slope>0 && ema21Slope>0 && ema50Slope>0;
-    const bearishTrend=ema14<ema21 && ema21<ema50 &&
-      ema14Slope<0 && ema21Slope<0 && ema50Slope<0;
-
-    // A looser directional read is retained for explanation/fallback context.
+    // Do NOT require all three EMAs to be rising/falling at the exact current candle.
+    // The reference box shows the more useful formation: directional EMA backbone ->
+    // EMA compression/convergence inside the box -> stabilization/turn -> expansion.
     const bullishEMA=ema14>ema21 && ema21>ema50;
     const bearishEMA=ema14<ema21 && ema21<ema50;
+    const bullishTrend=bullishEMA && ema50Slope>0;
+    const bearishTrend=bearishEMA && ema50Slope<0;
     const trendDirection=bullishTrend?'BULLISH':bearishTrend?'BEARISH':
       bullishEMA?'BULLISH ALIGNMENT':
       bearishEMA?'BEARISH ALIGNMENT':'MIXED';
@@ -9618,11 +9617,60 @@ function calculateBoxBaseFound(item){
         const compressionQuality=Math.max(0,Math.min(1,contraction/0.55));
         const volatilityQuality=Math.max(0,Math.min(1,(8-relSD)/8));
 
-        // Trend is now a gate: the box is only promoted when the existing EMA
-        // direction agrees with the geometry. This prevents mixed EMA states from
-        // being treated as directional box setups.
-        const trendGate=bullishTrend || bearishTrend;
+        /*
+          EMA FORMATION TEST — this is the key part of the drawn blue box.
+          We evaluate the EMAs over the candidate itself instead of requiring
+          every EMA to slope in one direction on every candle.
+
+          Desired bullish shape:
+            rising EMA backbone -> EMAs converge/compress -> stabilize/turn up.
+          Desired bearish shape:
+            falling EMA backbone -> EMAs converge/compress -> stabilize/turn down.
+        */
+        const e14=ema14Series.slice(start,end+1);
+        const e21=ema21Series.slice(start,end+1);
+        const e50=ema50Series.slice(start,end+1);
+        if(e14.length<8 || e21.length<8 || e50.length<8) continue;
+
+        const eMid=i=>Math.max(1e-12,(e14[i]+e21[i]+e50[i])/3);
+        const stackBullAt=i=>e14[i]>e21[i] && e21[i]>e50[i];
+        const stackBearAt=i=>e14[i]<e21[i] && e21[i]<e50[i];
+        const emaNet=(arr)=>{
+          const a=arr[0], b=arr.at(-1);
+          return a?((b-a)/a)*100:0;
+        };
+        const emaRecentSlope=(arr,n=4)=>{
+          if(arr.length<=n) return 0;
+          const a=arr.at(-1), b=arr.at(-(n+1));
+          return b?((a-b)/b)*100:0;
+        };
+        const envelope=(i)=>{
+          const hiE=Math.max(e14[i],e21[i],e50[i]);
+          const loE=Math.min(e14[i],e21[i],e50[i]);
+          return ((hiE-loE)/eMid(i))*100;
+        };
+        const emaSpreadStart=envelope(0);
+        const emaSpreadEnd=envelope(e14.length-1);
+        const emaCompression=emaSpreadStart>0
+          ?Math.max(0,Math.min(1,(emaSpreadStart-emaSpreadEnd)/emaSpreadStart))
+          :0;
+        const ema14Net=emaNet(e14), ema21Net=emaNet(e21), ema50Net=emaNet(e50);
+        const ema14Recent=emaRecentSlope(e14), ema21Recent=emaRecentSlope(e21), ema50Recent=emaRecentSlope(e50);
+        const startBull=stackBullAt(0), startBear=stackBearAt(0);
+        const endBull=stackBullAt(e14.length-1), endBear=stackBearAt(e14.length-1);
+        const bullishBackbone=ema50Net>0 && ema21Net>0 && ema14Net>-0.20;
+        const bearishBackbone=ema50Net<0 && ema21Net<0 && ema14Net<0.20;
+        const bullishTurn=ema14Recent>0 && ema21Recent>=-0.03 && ema50Recent>0;
+        const bearishTurn=ema14Recent<0 && ema21Recent<=0.03 && ema50Recent<0;
+        const bullishFormation=(startBull || bullishEMA || endBull) &&
+          bullishBackbone && bullishTurn && (emaCompression>=0.05 || endBull);
+        const bearishFormation=(startBear || bearishEMA || endBear) &&
+          bearishBackbone && bearishTurn && (emaCompression>=0.05 || endBear);
+
+        const trendGate=bullishFormation || bearishFormation;
         if(!trendGate) continue;
+        const candidateBullish=bullishFormation;
+        const candidateBearish=bearishFormation;
 
         let score=Math.round(
           rangeQuality*20+
@@ -9634,10 +9682,11 @@ function calculateBoxBaseFound(item){
           volumeQuiet*6
         );
 
-        if(bullishTrend) score+=5;
-        if(bearishTrend) score+=5;
-        if(hl>0 && bullishTrend) score+=3;
-        if(lh>0 && bearishTrend) score+=3;
+        if(candidateBullish) score+=5;
+        if(candidateBearish) score+=5;
+        if(emaCompression>=0.20) score+=4;
+        if(hl>0 && candidateBullish) score+=3;
+        if(lh>0 && candidateBearish) score+=3;
 
         let breakIndex=-1;
         let breakDirection=null;
@@ -9645,10 +9694,10 @@ function calculateBoxBaseFound(item){
         const breakoutLevelLow=lo;
 
         for(let j=end+1;j<bars.length;j++){
-          if(bullishTrend && C[j]>breakoutLevelHigh*1.0035){
+          if(candidateBullish && C[j]>breakoutLevelHigh*1.0035){
             breakIndex=j; breakDirection='UP'; break;
           }
-          if(bearishTrend && C[j]<breakoutLevelLow*0.9965){
+          if(candidateBearish && C[j]<breakoutLevelLow*0.9965){
             breakIndex=j; breakDirection='DOWN'; break;
           }
         }
@@ -9698,7 +9747,10 @@ function calculateBoxBaseFound(item){
           breakIndex,breakDirection,breakoutVolumeRatio,breakoutHeld,
           retest,expansionPct,expansionMultiple,postBreakExtreme,
           currentNearTop,currentNearBottom,currentInside,
-          trendDirection,bullishTrend,bearishTrend
+          trendDirection:bullishFormation?'BULLISH FORMATION':bearishFormation?'BEARISH FORMATION':trendDirection,
+          bullishTrend:candidateBullish,bearishTrend:candidateBearish,
+          emaCompression,emaSpreadStart,emaSpreadEnd,ema14Net,ema21Net,ema50Net,
+          ema14Recent,ema21Recent,ema50Recent,startBull,startBear,endBull,endBear
         };
 
         // Prefer the most recent qualifying box; quality wins when recency is similar.
@@ -9746,8 +9798,9 @@ function calculateBoxBaseFound(item){
     const reasons=[];
     reasons.push(`Box range ${best.rangePct.toFixed(2)}%`);
     reasons.push(`${best.highTouches} resistance touches / ${best.lowTouches} support touches`);
-    reasons.push(`${best.trendDirection} EMA trend confirmed`);
-    reasons.push(`EMA slopes: 14 ${best.bullishTrend?'+':''}${ema14Slope.toFixed(3)}% • 21 ${best.bullishTrend?'+':''}${ema21Slope.toFixed(3)}% • 50 ${best.bullishTrend?'+':''}${ema50Slope.toFixed(3)}%`);
+    reasons.push(`${best.trendDirection} EMA formation confirmed`);
+    reasons.push(`EMA compression ${(best.emaCompression*100).toFixed(0)}% (${best.emaSpreadStart.toFixed(2)}% → ${best.emaSpreadEnd.toFixed(2)}%)`);
+    reasons.push(`EMA net direction: 14 ${best.ema14Net>=0?'+':''}${best.ema14Net.toFixed(2)}% • 21 ${best.ema21Net>=0?'+':''}${best.ema21Net.toFixed(2)}% • 50 ${best.ema50Net>=0?'+':''}${best.ema50Net.toFixed(2)}%`);
     if(best.hl>0) reasons.push(`Higher-low structure (${best.hl})`);
     if(best.hh>0) reasons.push(`Higher-high structure (${best.hh})`);
     if(best.lh>0) reasons.push(`Lower-high structure (${best.lh})`);
