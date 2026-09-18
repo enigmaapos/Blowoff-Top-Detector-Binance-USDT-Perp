@@ -9480,9 +9480,13 @@ function calculateBoxBaseFound(item){
     // Candidate boxes must also live entirely inside the same strict 24h
     // window. A candidate may end before the latest candle so the detector
     // can recognize a breakout that occurred later in the same 24h window.
+    // Every candidate is at least 40 completed 15m candles.
     const maxEnd=bars.length-1;
-    const minEnd=32;
-    const lens=[32,40,48,64,80,96];
+    const minEnd=39;
+    // A detected box must contain at least the same 40 completed candles
+    // that unlock the detector. This prevents a 32-candle box from being
+    // reported after the 40-candle threshold is reached.
+    const lens=[40,48,64,80,96];
 
     for(let end=maxEnd;end>=minEnd;end--){
       for(const len of lens){
@@ -9570,17 +9574,23 @@ function calculateBoxBaseFound(item){
     }
 
     const accum=Number(r.accumCombined?.confidence||0);
-    const ema14=ema(C,14), ema21=ema(C,21), ema50=ema(C,50);
+    // EMA direction uses all completed 15m history available up to the
+    // current session, while the box itself remains strictly inside the
+    // current 08:00→08:00 session. This makes EMA50 meaningful even when
+    // the detector first activates at 40 session candles.
+    const emaHistory=completedBars.filter(k=>Number(k[0])<sessionEnd);
+    const emaCloses=emaHistory.map(k=>Number(k[4])).filter(Number.isFinite);
+    const emaLookback=4;
+    const ema14=ema(emaCloses,14), ema21=ema(emaCloses,21), ema50=ema(emaCloses,50);
+    const emaPrev14=ema(emaCloses.slice(0,-emaLookback),14);
+    const emaPrev21=ema(emaCloses.slice(0,-emaLookback),21);
+    const emaPrev50=ema(emaCloses.slice(0,-emaLookback),50);
 
     // Trend-direction gate: a box is eligible only when the EMA structure
     // already has a clear directional slope. Bullish boxes require the major
     // EMAs to be stacked upward AND rising; bearish boxes require the reverse
     // stack AND falling. This keeps a flat/mixed EMA environment from being
     // labeled as a directional box base.
-    const emaLookback=4;
-    const emaPrev14=ema(C.slice(0,-emaLookback),14);
-    const emaPrev21=ema(C.slice(0,-emaLookback),21);
-    const emaPrev50=ema(C.slice(0,-emaLookback),50);
     const emaBull=ema14>ema21 && ema21>ema50 && ema14>emaPrev14 && ema21>emaPrev21 && ema50>emaPrev50;
     const emaBear=ema14<ema21 && ema21<ema50 && ema14<emaPrev14 && ema21<emaPrev21 && ema50<emaPrev50;
     const emaTurning=!(emaBull||emaBear);
