@@ -9612,7 +9612,13 @@ function renderBoxBaseFound(item){
   return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
     <div style="font-size:16px;font-weight:950">📦 BOX BASE FOUND — ${b.confidence||0}%</div>
     <div style="font-size:18px;font-weight:950;color:${tone};margin-top:3px">${mspEscape(b.state||'⚪ UNKNOWN')}</div>
-    <div style="margin-top:8px"><strong>Box:</strong> ${fmt(box.low)} → ${fmt(box.high)} • Range ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}% • ${box.candles||'—'} completed 15m candles</div>
+    <div style="margin-top:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(0,0,0,.12)">
+      <div><strong>📦 Box Price Range</strong></div>
+      <div style="margin-top:5px">🔺 <strong>Highest:</strong> ${fmt(box.high)}</div>
+      <div style="margin-top:3px">🔻 <strong>Lowest:</strong> ${fmt(box.low)}</div>
+      <div style="margin-top:3px">↕️ <strong>Total range:</strong> ${fmt(Number(box.high)-Number(box.low))} • ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}%</div>
+      <div class="small" style="margin-top:3px;color:var(--muted)">${box.candles||'—'} completed 15m candles inside the detected box</div>
+    </div>
     <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
     <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
     <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
