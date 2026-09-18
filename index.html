@@ -9420,33 +9420,31 @@ function calculateBoxBaseFound(item){
     const r=item||{};
     const raw=Array.isArray(r.k15m)?r.k15m:[];
     const now=Date.now();
-
-    // SESSION WINDOW: use the current local 08:00 -> next-day 08:00 session.
-    // The detector is allowed to start as soon as 40 completed 15m candles
-    // exist (40 x 15m = 10 hours). It does NOT wait for the full 24h session.
-    // Older candles are excluded so a previous day's box cannot leak into the
-    // current session. Binance 15m klines are uniquely identified by their
-    // open time and expose a close time, so only completed bars are admitted.
-    const completedBars=raw
-      .filter(k=>Array.isArray(k) && Number.isFinite(Number(k[0])) && Number.isFinite(Number(k[6])) && Number(k[6])<=now)
-      .sort((a,b)=>Number(a[0])-Number(b[0]));
-
-    const d=new Date(now);
-    const sessionEnd=new Date(d);
-    sessionEnd.setHours(8,0,0,0);
-    if(d.getTime()<sessionEnd.getTime()) sessionEnd.setDate(sessionEnd.getDate()-1);
-    const sessionStart=new Date(sessionEnd);
-    sessionStart.setDate(sessionStart.getDate()-1);
-    const sessionBars=completedBars.filter(k=>Number(k[0])>=sessionStart.getTime() && Number(k[0])<sessionEnd.getTime());
-
-    if(sessionBars.length<40){
-      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:[`The current 08:00-08:00 session has only ${sessionBars.length} completed 15m candles; at least 40 are required.`],trigger:'Collect more completed 15m candles in the current 08:00-08:00 session.',box:{},structure:{},breakout:{},expansion:{},meta:{sessionStart:sessionStart.getTime(),sessionEnd:sessionEnd.getTime(),sessionCandles:sessionBars.length}};
+    // FIXED DAILY BOX SESSION: 08:00 local time -> 08:00 local time next day.
+    // Only completed 15m candles from the current 08:00-08:00 session may
+    // participate. This resets the Box Base detector at every 08:00 local.
+    const getSessionStart=(ts)=>{
+      const d=new Date(ts);
+      const s=new Date(d);
+      s.setHours(8,0,0,0);
+      if(d.getTime()<s.getTime()) s.setDate(s.getDate()-1);
+      return s.getTime();
+    };
+    const sessionStart=getSessionStart(now);
+    const sessionEnd=sessionStart+24*60*60*1000;
+    const completedBars=raw.filter(k=>{
+      const openTs=Number(k?.[0]);
+      const closeTs=Number(k?.[6]);
+      if(!Number.isFinite(openTs)||!Number.isFinite(closeTs)) return false;
+      return closeTs<=now && openTs>=sessionStart && openTs<sessionEnd;
+    });
+    if(completedBars.length<40){
+      return {state:'⚪ BOX BASE — INSUFFICIENT DATA',code:'INSUFFICIENT',score:0,confidence:0,reasons:[`The current 08:00-08:00 session has only ${completedBars.length} completed 15m candles; at least 40 are required.`],trigger:'Collect more completed 15m candles in the current 08:00-08:00 session.',box:{},structure:{},breakout:{},expansion:{}};
     }
-
-    // Start analyzing immediately at candle 40, then keep extending the same
-    // session as new completed 15m candles arrive. Up to the full 24h session
-    // is available, but no minimum beyond 40 is imposed.
-    const bars=sessionBars.slice(-96);
+    // Keep the session strictly bounded. A complete 08:00-08:00 session
+    // contains exactly 96 x 15m candles; partial sessions use only candles
+    // that have completed so far.
+    const bars=completedBars.slice(-96);
 
     const O=bars.map(k=>Number(k[1])), H=bars.map(k=>Number(k[2])), L=bars.map(k=>Number(k[3])), C=bars.map(k=>Number(k[4])), V=bars.map(k=>Number(k[5]));
     if(![...H,...L,...C,...V].every(Number.isFinite)) throw new Error('Invalid 15m OHLCV data');
@@ -9477,16 +9475,12 @@ function calculateBoxBaseFound(item){
     }
 
     let best=null;
-    // Candidate boxes must also live entirely inside the same strict 24h
-    // window. A candidate may end before the latest candle so the detector
-    // can recognize a breakout that occurred later in the same 24h window.
-    // Every candidate is at least 40 completed 15m candles.
+    // Candidate boxes must also live entirely inside the same strict
+    // 08:00-08:00 session. A candidate may end before the latest candle so
+    // the detector can recognize a breakout that occurred later in the same session.
     const maxEnd=bars.length-1;
-    const minEnd=39;
-    // A detected box must contain at least the same 40 completed candles
-    // that unlock the detector. This prevents a 32-candle box from being
-    // reported after the 40-candle threshold is reached.
-    const lens=[40,48,64,80,96];
+    const minEnd=32;
+    const lens=[32,40,48,64,80,96];
 
     for(let end=maxEnd;end>=minEnd;end--){
       for(const len of lens){
@@ -9574,37 +9568,14 @@ function calculateBoxBaseFound(item){
     }
 
     const accum=Number(r.accumCombined?.confidence||0);
-    // EMA direction uses all completed 15m history available up to the
-    // current session, while the box itself remains strictly inside the
-    // current 08:00→08:00 session. This makes EMA50 meaningful even when
-    // the detector first activates at 40 session candles.
-    const emaHistory=completedBars.filter(k=>Number(k[0])<sessionEnd);
-    const emaCloses=emaHistory.map(k=>Number(k[4])).filter(Number.isFinite);
-    const emaLookback=4;
-    const ema14=ema(emaCloses,14), ema21=ema(emaCloses,21), ema50=ema(emaCloses,50);
-    const emaPrev14=ema(emaCloses.slice(0,-emaLookback),14);
-    const emaPrev21=ema(emaCloses.slice(0,-emaLookback),21);
-    const emaPrev50=ema(emaCloses.slice(0,-emaLookback),50);
-
-    // Trend-direction gate: a box is eligible only when the EMA structure
-    // already has a clear directional slope. Bullish boxes require the major
-    // EMAs to be stacked upward AND rising; bearish boxes require the reverse
-    // stack AND falling. This keeps a flat/mixed EMA environment from being
-    // labeled as a directional box base.
-    const emaBull=ema14>ema21 && ema21>ema50 && ema14>emaPrev14 && ema21>emaPrev21 && ema50>emaPrev50;
-    const emaBear=ema14<ema21 && ema21<ema50 && ema14<emaPrev14 && ema21<emaPrev21 && ema50<emaPrev50;
-    const emaTurning=!(emaBull||emaBear);
+    const ema14=ema(C,14), ema21=ema(C,21), ema50=ema(C,50);
+    const emaBull=ema14>ema21 && ema21>ema50;
+    const emaTurning=ema14>=ema21 || ema14>ema(C.slice(0,-4),14);
     const accumSupport=accum>=45;
-
-    // Require an established directional EMA context before accepting the
-    // candidate. The box itself already supplies a defined high and low.
-    if(!emaBull && !emaBear){
-      return {state:'⚪ BOX BASE — WAITING FOR EMA DIRECTION',code:'EMA_MIXED',score:0,confidence:0,reasons:['Box-range evidence exists, but EMA14/21/50 are not yet consistently rising or falling.'],trigger:'Wait for EMA14/21/50 to align and slope in one direction.',box:{high:best.hi,low:best.lo,rangePct:best.rangePct,candles:best.len,startIndex:best.start,endIndex:best.end,highTouches:best.highTouches,lowTouches:best.lowTouches,containmentPct:best.containment*100,contractionPct:best.contraction*100,relativeSD:best.relSD},structure:{hh:best.hh,hl:best.hl,lh:best.lh,ll:best.ll},breakout:{detected:best.breakIndex>=0,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},expansion:{pct:best.expansionPct,multiple:best.expansionMultiple,postBreakHigh:best.breakIndex>=0?Math.max(...H.slice(best.breakIndex)):null},meta:{price,accumulationConfidence:accum,ema14,ema21,ema50,emaBull,emaBear,emaTurning,sessionStart:sessionStart.getTime(),sessionEnd:sessionEnd.getTime(),sessionCandles:bars.length}};
-    }
-
     let score=best.score;
     if(accumSupport) score=Math.min(100,score+5);
-    if(emaBull || emaBear) score=Math.min(100,score+5);
+    if(emaBull) score=Math.min(100,score+5);
+    else if(emaTurning) score=Math.min(100,score+2);
 
     const reasons=[];
     reasons.push(`Box range ${best.rangePct.toFixed(2)}%`);
@@ -9614,8 +9585,7 @@ function calculateBoxBaseFound(item){
     if(best.contraction>=0.12) reasons.push(`Range contraction ${(best.contraction*100).toFixed(0)}%`);
     if(best.relSD<=4) reasons.push(`Volatility compressed (${best.relSD.toFixed(2)}% relSD)`);
     if(accumSupport) reasons.push(`Accumulation context ${Math.round(accum)}%`);
-    if(emaBull) reasons.push('Bullish EMA direction: EMA14 > EMA21 > EMA50 and all three are rising');
-    if(emaBear) reasons.push('Bearish EMA direction: EMA14 < EMA21 < EMA50 and all three are falling');
+    if(emaBull) reasons.push('EMA14 > EMA21 > EMA50');
 
     let state='🟡 BOX BASE FOUND — DEVELOPING', code='DEVELOPING', trigger='Watch for a completed 15m close above Box High.';
     if(best.breakIndex>=0){
@@ -9644,7 +9614,7 @@ function calculateBoxBaseFound(item){
       structure:{hh:best.hh,hl:best.hl,lh:best.lh,ll:best.ll},
       breakout:{detected:best.breakIndex>=0,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
       expansion:{pct:best.expansionPct,multiple:best.expansionMultiple,postBreakHigh:best.breakIndex>=0?Math.max(...H.slice(best.breakIndex)):null},
-      meta:{price,accumulationConfidence:accum,ema14,ema21,ema50,emaBull,emaBear,emaTurning,sessionStart:sessionStart.getTime(),sessionEnd:sessionEnd.getTime(),sessionCandles:bars.length}
+      meta:{price,accumulationConfidence:accum,ema14,ema21,ema50,emaBull,emaTurning}
     };
   }catch(e){
     return {state:'⚪ BOX BASE — ENGINE ERROR',code:'ERROR',score:0,confidence:0,reasons:[`Box detector error: ${e.message}`],trigger:'No box trigger available.',box:{},structure:{},breakout:{},expansion:{}};
@@ -9659,14 +9629,19 @@ function renderBoxBaseFound(item){
   return `<div class="recBox" style="margin-top:10px;border-left:4px solid ${tone};background:rgba(255,255,255,.035)">
     <div style="font-size:16px;font-weight:950">📦 BOX BASE FOUND — ${b.confidence||0}%</div>
     <div style="font-size:18px;font-weight:950;color:${tone};margin-top:3px">${mspEscape(b.state||'⚪ UNKNOWN')}</div>
-    <div style="margin-top:8px"><strong>Box:</strong> ${fmt(box.low)} → ${fmt(box.high)} • Range ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}% • ${box.candles||'—'} completed 15m candles</div>
+    <div style="margin-top:8px;padding:8px 10px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(0,0,0,.12)">
+      <div><strong>📦 Box Price Range</strong></div>
+      <div style="margin-top:5px">🔺 <strong>Highest:</strong> ${fmt(box.high)}</div>
+      <div style="margin-top:3px">🔻 <strong>Lowest:</strong> ${fmt(box.low)}</div>
+      <div style="margin-top:3px">↕️ <strong>Total range:</strong> ${fmt(Number(box.high)-Number(box.low))} • ${Number.isFinite(Number(box.rangePct))?Number(box.rangePct).toFixed(2):'—'}%</div>
+      <div class="small" style="margin-top:3px;color:var(--muted)">${box.candles||'—'} completed 15m candles inside the detected box</div>
+    </div>
     <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
     <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
-    <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 Bullish • EMA14 > EMA21 > EMA50 • all rising':m.emaBear?'🔴 Bearish • EMA14 < EMA21 < EMA50 • all falling':'🟡 Mixed / transitioning'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
+    <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
     <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
     <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% beyond Box High • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
     <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${mspEscape(b.trigger||'Wait for structural confirmation.')}</div>
-    <div class="small" style="margin-top:6px;color:var(--muted)">Session: 08:00 → 08:00 • Analysis starts after 40 completed 15m candles (10h) and continues updating as new candles complete.</div>
     <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(b.reasons||[]).join(' • ')||'No box evidence available.'}</div>
     <div class="small" style="margin-top:6px;color:var(--muted)">This detector describes price structure. It does not treat a box or breakout as a guaranteed outcome.</div>
   </div>`;
