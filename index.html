@@ -3148,7 +3148,7 @@ function updateSingleLiveStatus(extra=''){
   if(st){
     if(!singleLiveEnabled) st.innerText = 'Live: PAUSED';
     else if(singleLiveUpdating) st.innerText = 'Live: updating…';
-    else st.innerText = `Live: ON • ${Math.round(SINGLE_LIVE_INTERVAL_MS/1000)}s${extra ? ' • '+extra : ''}`;
+    else st.innerText = `Live: ON • ${Math.round(getSingleLiveIntervalMs()/1000)}s${extra ? ' • '+extra : ''}`;
   }
 }
 
@@ -3182,7 +3182,7 @@ function clearSingleLiveTimer(){
 function scheduleSingleLiveUpdate(){
   clearSingleLiveTimer();
   if(!singleLiveEnabled || !singleViewLocked) return;
-  singleLiveTimer = setTimeout(refreshSingleWatchlist, SINGLE_LIVE_INTERVAL_MS);
+  singleLiveTimer = setTimeout(refreshSingleWatchlist, getSingleLiveIntervalMs());
 }
 
 // v8.1 Safe Batch Live Refresh
@@ -3232,7 +3232,7 @@ async function analyzeSingleLiveBatch(items, session){
 }
 
 async function refreshSingleWatchlist(){
-  if(!singleLiveEnabled || !singleViewLocked || singleLiveUpdating || running){
+  if(!singleLiveEnabled || !singleViewLocked || singleLiveUpdating){
     scheduleSingleLiveUpdate();
     return;
   }
@@ -3275,7 +3275,7 @@ if(singleLiveBtn){
       updateSingleLiveStatus();
       scheduleSingleLiveUpdate();
       // If the list is already present, perform an immediate refresh when resumed.
-      if(singleViewLocked && Array.isArray(window.lastScanResults) && window.lastScanResults.length){
+      if(singleViewLocked && singleSearchResults.length){
         refreshSingleWatchlist();
       }
     }else{
@@ -3336,7 +3336,7 @@ el.symbolSearchBtn.addEventListener('click', async () => {
     quickTradingInterpretationEnabled = true;
     if(activeViewMode !== 'single') return;
     renderActiveView();
-    updateSingleLiveStatus();
+    updateSingleLiveStatus('next refresh scheduled');
     scheduleSingleLiveUpdate();
   } catch(e) {
     console.warn('symbol analysis error', e);
@@ -3477,6 +3477,11 @@ let singleLiveTimer = null;
 let singleLiveUpdating = false;
 let singleLiveEnabled = true;
 const SINGLE_LIVE_INTERVAL_MS = 60000;
+function getSingleLiveIntervalMs(){
+  const configured = el.interval ? parseInt(el.interval.value,10) : NaN;
+  const seconds = Math.max(10, Math.min(3600, Number.isFinite(configured) ? configured : 60));
+  return seconds * 1000;
+}
 const FAVORITES_LIVE_INTERVAL_MS = 60000;
 let favoritesLiveEnabled = true;
 let favoritesLiveTimer = null;
