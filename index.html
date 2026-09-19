@@ -987,12 +987,24 @@ body.authLocked{overflow:hidden}
         </div>
       </div>      <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">🟢 Box Base Filter</label>
+          <label class="controlLabel">📦 Box Base Filter</label>
           <select id="boxBaseFilter">
             <option value="ALL">All Box Base States</option>
-            <option value="BULLISH_EXPANSION">🟢 BOX BASE FOUND — BULLISH BREAKOUT + EXPANSION</option>
+            <option value="SESSION_START">⚪ BOX BASE — SESSION STARTING</option>
+            <option value="FORMING">⚪ BOX BASE — FORMING</option>
+            <option value="NONE">⚪ NO BOX BASE FOUND — MONITORING SESSION</option>
+            <option value="DEVELOPING">🟡 BOX BASE FOUND — DEVELOPING</option>
+            <option value="BREAKOUT_WATCH_UP">🟢 BOX BASE — BULLISH BREAKOUT WATCH</option>
+            <option value="BREAKDOWN_WATCH_DOWN">🔴 BOX BASE — BEARISH BREAKDOWN WATCH</option>
+            <option value="BREAKOUT_DEVELOPING_UP">🟠 BOX BASE FOUND — BULLISH BREAKOUT / RETEST DEVELOPING</option>
+            <option value="BREAKDOWN_DEVELOPING_DOWN">🟠 BOX BASE FOUND — BEARISH BREAKDOWN / RETEST DEVELOPING</option>
+            <option value="BREAKOUT_CONFIRMED_UP">🟢 BOX BASE FOUND — BULLISH BREAKOUT CONFIRMED</option>
+            <option value="BREAKDOWN_CONFIRMED_DOWN">🔴 BOX BASE FOUND — BEARISH BREAKDOWN CONFIRMED</option>
+            <option value="EXPANSION_CONFIRMED_UP">🟢 BOX BASE FOUND — BULLISH BREAKOUT + EXPANSION</option>
+            <option value="EXPANSION_CONFIRMED_DOWN">🔴 BOX BASE FOUND — BEARISH BREAKDOWN + EXPANSION</option>
+            <option value="ERROR">⚪ BOX BASE — ENGINE ERROR</option>
           </select>
-          <div class="dashboardHint">Uses the same Box Base Found engine shown on each result. Filters the most recent bullish breakout + expansion only. Local filter only.</div>
+          <div class="dashboardHint">Filters every Box Base state produced by the same Box Base Found engine. Breakout states use the most recent qualifying breakout in the current session. Local filter only.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">🧹 Filter Controls</label>
@@ -6662,10 +6674,11 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
   }
 
-  // Dedicated Box Base breakout filter. It uses the exact same Box Base Found
+  // Dedicated Box Base state filter. It uses the exact same Box Base Found
   // engine rendered inside each result, so the filter cannot drift from the
-  // displayed state. Only the latest qualifying breakout returned by the
-  // detector is considered; no extra Binance request is made.
+  // displayed state. Every detector state is selectable. Breakout states use
+  // the detector's most recent qualifying breakout in the current session.
+  // No extra Binance request is made.
   const boxBaseFilter = el.boxBaseFilter ? el.boxBaseFilter.value : 'ALL';
   if (boxBaseFilter !== 'ALL') {
     filtered = filtered.filter(r => {
@@ -6674,7 +6687,7 @@ function filterResultsForDist(results) {
           ? calculateBoxBaseFound(r || {})
           : null;
         const code = String(b?.code || '').toUpperCase();
-        return boxBaseFilter === 'BULLISH_EXPANSION' && code === 'EXPANSION_CONFIRMED_UP';
+        return code === String(boxBaseFilter).toUpperCase();
       } catch (_) {}
       return false;
     });
