@@ -2685,7 +2685,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
   // quick check and safety
   if(!looksLikeUSDTPerp(sym)) {
     // try to still proceed but warn user
-    el.symbolStatus.innerText = `Warning: "${sym}" does not end with USDT — will attempt fetch anyway.`;
+    if(activeViewMode === 'single') el.symbolStatus.innerText = `Warning: "${sym}" does not end with USDT — will attempt fetch anyway.`;
   }
   
   // Manual Analyze may use the 5-minute cache. Market scans explicitly
@@ -2737,7 +2737,7 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
         cached.finalRec=getFinalRecommendation(cached);
         cached.shortRec=getShortTermRecommendation(cached);
       }catch(e){ console.warn('Cached Trader Decision refresh failed',sym,e.message); }
-      el.symbolStatus.innerText = `Loaded ${sym} from cache • live price refreshed (${Math.round((Date.now()-cached._cachedAt)/1000)}s old)`;
+      if(activeViewMode === 'single') el.symbolStatus.innerText = `Loaded ${sym} from cache • live price refreshed (${Math.round((Date.now()-cached._cachedAt)/1000)}s old)`;
       return cached;
     }
   }
@@ -2760,12 +2760,12 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     } else {
       // optional: ensure quoteAsset is USDT
       if(found.quoteAsset !== 'USDT') {
-        el.symbolStatus.innerText = `Symbol ${sym} found but quoteAsset=${found.quoteAsset}. Expected USDT. Proceeding anyway.`;
+        if(activeViewMode === 'single') el.symbolStatus.innerText = `Symbol ${sym} found but quoteAsset=${found.quoteAsset}. Expected USDT. Proceeding anyway.`;
       }
     }
   }
 
-  el.symbolStatus.innerText = `Fetching ${sym} data...`;
+  if(activeViewMode === 'single') el.symbolStatus.innerText = `Fetching ${sym} data...`;
 
   try {
     // Fetch only what's needed (4h, 8h, 1h, 15m, 1d klines + funding)
@@ -3144,11 +3144,16 @@ async function analyzeSymbol(symbol, opts = { allowIfNotRunning: true }) {
     result._cachedAt = Date.now();
     setCachedSymbol(sym, result);
 
-    el.symbolStatus.innerText = `Analyzed ${sym} • ${result.correctionGuide.label}${result.correctionGuide.severity ? ' — '+result.correctionGuide.severity : ''} (${result.correctionGuide.confidence}%) • accum ${result.accumCombined.confidence}% • rsi4h ${Math.round(result.rsi4h||0)}`;
+    // IMPORTANT: this status belongs only to Single Search. Market/Top30/Below-50
+    // scanner jobs also call analyzeSymbol(), but must never write into the
+    // Single Search status area.
+    if(activeViewMode === 'single'){
+      el.symbolStatus.innerText = `Analyzed ${sym} • ${result.correctionGuide.label}${result.correctionGuide.severity ? ' — '+result.correctionGuide.severity : ''} (${result.correctionGuide.confidence}%) • accum ${result.accumCombined.confidence}% • rsi4h ${Math.round(result.rsi4h||0)}`;
+    }
     applyAccumulationSemantics(result);
     return result;
   } catch(err){
-    el.symbolStatus.innerText = `Analyze ${sym} failed: ${err.message}`;
+    if(activeViewMode === 'single') el.symbolStatus.innerText = `Analyze ${sym} failed: ${err.message}`;
     throw err;
   }
 }
