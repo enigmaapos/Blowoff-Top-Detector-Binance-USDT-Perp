@@ -6662,9 +6662,10 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
   }
 
-  // Dedicated Box Base Found filter. This uses the exact same Box Base Found
+  // Dedicated Box Base breakout filter. It uses the exact same Box Base Found
   // engine rendered inside each result, so the filter cannot drift from the
-  // displayed BOX BASE FOUND state. This is a local result filter only.
+  // displayed state. Only the latest qualifying breakout returned by the
+  // detector is considered; no extra Binance request is made.
   const boxBaseFilter = el.boxBaseFilter ? el.boxBaseFilter.value : 'ALL';
   if (boxBaseFilter !== 'ALL') {
     filtered = filtered.filter(r => {
@@ -6673,7 +6674,7 @@ function filterResultsForDist(results) {
           ? calculateBoxBaseFound(r || {})
           : null;
         const code = String(b?.code || '').toUpperCase();
-        return boxBaseFilter === 'FOUND' && code !== 'NONE' && code !== 'FORMING' && code !== 'SESSION_START' && code !== 'ERROR' && code !== 'INSUFFICIENT';
+        return boxBaseFilter === 'BULLISH_EXPANSION' && code === 'EXPANSION_CONFIRMED_UP';
       } catch (_) {}
       return false;
     });
@@ -9984,11 +9985,24 @@ function calculateBoxBaseFound(item){
           emaCompression,emaSpreadStart,emaSpreadEnd,ema14Net,ema21Net,ema50Net,ema14Recent,ema21Recent,ema50Recent,startBull,startBear,endBull,endBear
         };
 
-        // Prefer the most recent qualifying formation. A modest quality bonus
-        // prevents an old, higher-scoring box from masking today's current box.
-        const recencyBonus=(end/maxEnd)*10;
-        candidate.rank=quality+recencyBonus;
-        if(!best||candidate.rank>best.rank)best=candidate;
+        // Prefer the MOST RECENT actual breakout. If several candidates broke
+        // on the same 15m candle, use quality as the tie-breaker. If there is
+        // no breakout yet, fall back to the most recent qualifying formation.
+        // This prevents an older, higher-scoring box from masking a newer
+        // breakout in the same session.
+        const breakoutRecency = candidate.breakIndex>=0 ? candidate.breakIndex : -1;
+        const bestBreakoutRecency = best && best.breakIndex>=0 ? best.breakIndex : -1;
+        if(!best){
+          best=candidate;
+        }else if(candidate.breakIndex>=0 && bestBreakoutRecency<0){
+          best=candidate;
+        }else if(candidate.breakIndex>=0 && bestBreakoutRecency>=0){
+          if(breakoutRecency>bestBreakoutRecency || (breakoutRecency===bestBreakoutRecency && quality>best.score)) best=candidate;
+        }else if(bestBreakoutRecency<0){
+          const recencyBonus=(end/maxEnd)*10;
+          const bestRecencyBonus=(best.end/maxEnd)*10;
+          if(quality+recencyBonus>best.score+bestRecencyBonus) best=candidate;
+        }
       }
     }
 
@@ -10081,7 +10095,7 @@ function calculateBoxBaseFound(item){
         sessionStart,sessionEnd,sessionLabel,sessionCandles:completed
       },
       structure:{hh:best.hh,hl:best.hl,lh:best.lh,ll:best.ll},
-      breakout:{detected:best.breakIndex>=0,direction:best.breakDirection,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
+      breakout:{detected:best.breakIndex>=0,direction:best.breakDirection,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,time:best.breakIndex>=0&&sessionBars[best.breakIndex]?Number(sessionBars[best.breakIndex][6]||sessionBars[best.breakIndex][0]):null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
       expansion:{pct:best.expansionPct,multiple:best.expansionMultiple,postBreakExtreme:best.postBreakExtreme},
       meta:{
         price,sessionStart,sessionEnd,sessionLabel,sessionCandles:completed,
@@ -10116,7 +10130,7 @@ function renderBoxBaseFound(item){
     <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
     <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
     <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
-    <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
+    <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • ${br.time?new Date(Number(br.time)).toLocaleString():'time unavailable'} • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
     <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% ${br.direction==='DOWN'?'below Box Low':'beyond Box High'} • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
     <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${mspEscape(b.trigger||'Wait for structural confirmation.')}</div>
     <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(b.reasons||[]).join(' • ')||'No box evidence available.'}</div>
