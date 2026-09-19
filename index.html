@@ -914,6 +914,8 @@ body.authLocked{overflow:hidden}
             <option value="liquidityStrength">💧 Liquidity Strength</option><option value="liquidityDistance">💧 Liquidity Distance</option><option value="liquidityEvent">💧 Liquidity Event</option><option value="liquidityState">💧 Liquidity State</option><option value="smcStrength">🧩 SMC Breaker Strength</option>
             <option value="smcConfidence">🧩 SMC Confidence</option>
             <option value="smcStageRank">🧩 SMC Stage</option>
+            <option value="boxLatestDetection">📦 Box State — Latest Detection</option>
+            <option value="boxExpansionPct">📦 Box Expansion % — Highest</option>
           </select>
         </div>
         <div class="controlItem">
@@ -5832,6 +5834,47 @@ function getText(v) {
   return String(v).trim().toLowerCase();
 }
 
+// Box Base sorting metrics use the same authoritative detector that renders
+// the Box Base state. No network request is made. Results are cached per
+// current 15m snapshot so the comparator does not repeatedly recalculate it.
+function getBoxBaseSortMetrics(r){
+  if(!r) return {latestDetection:0, expansionPct:0, code:'NONE', state:''};
+  try{
+    const k=Array.isArray(r.k15m)?r.k15m:[];
+    const lastK=k.length ? k[k.length-1] : null;
+    const signature=`${k.length}|${Number(lastK?.[6] ?? lastK?.[0] ?? 0)}|${Number(r.closeNow||0)}`;
+    if(r.__boxBaseSortCache && r.__boxBaseSortCache.signature===signature) return r.__boxBaseSortCache.metrics;
+
+    const b=typeof calculateBoxBaseFound==='function' ? calculateBoxBaseFound(r) : null;
+    const box=b?.box || {};
+    const breakout=b?.breakout || {};
+
+    // Latest Detection = newest meaningful Box Base event: breakout time when
+    // a breakout exists; otherwise the end of the detected box/formation.
+    let latestDetection=Number(breakout?.time);
+    if(!Number.isFinite(latestDetection) || latestDetection<=0){
+      const idx=Number(box?.endIndex);
+      const candle=Number.isInteger(idx) && idx>=0 ? k[idx] : null;
+      latestDetection=Number(candle?.[6] ?? candle?.[0]);
+    }
+    if(!Number.isFinite(latestDetection)) latestDetection=0;
+
+    const expansionPct=Number(b?.expansion?.pct);
+    const metrics={
+      latestDetection,
+      expansionPct:Number.isFinite(expansionPct)?expansionPct:0,
+      code:String(b?.code||'NONE'),
+      state:String(b?.state||'')
+    };
+    try{
+      Object.defineProperty(r,'__boxBaseSortCache',{value:{signature,metrics},writable:true,configurable:true});
+    }catch(_){ r.__boxBaseSortCache={signature,metrics}; }
+    return metrics;
+  }catch(_){
+    return {latestDetection:0, expansionPct:0, code:'ERROR', state:''};
+  }
+}
+
 // Legacy sort keys are preserved. New keys are added only for the fields
 // introduced by the updated cycle / correction analysis.
 function getValueForKey(r, key) {
@@ -5944,6 +5987,8 @@ function getValueForKey(r, key) {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.stageRank, 0);
     }
+    case 'boxLatestDetection': return getNumeric(getBoxBaseSortMetrics(r).latestDetection, 0);
+    case 'boxExpansionPct': return getNumeric(getBoxBaseSortMetrics(r).expansionPct, 0);
     case 'longEntryStatus': return getEntryStatusRank(r, 'long');
     case 'shortEntryStatus': return getEntryStatusRank(r, 'short');
     // Final Decision / transition priority uses the same authoritative result
