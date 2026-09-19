@@ -832,7 +832,6 @@ body.authLocked{overflow:hidden}
               <option value="below50">Below-50 Accumulation / PreCrash</option>
             </select>
             <button id="unifiedScanBtn" title="Run the selected scanner">Scan</button>
-            <button id="scannerPowerBtn" class="alt" type="button" title="Turn automatic scanner refresh on or off">⏹ Scanner OFF</button>
           </div>
         </div>
       </div>
@@ -915,6 +914,8 @@ body.authLocked{overflow:hidden}
             <option value="liquidityStrength">💧 Liquidity Strength</option><option value="liquidityDistance">💧 Liquidity Distance</option><option value="liquidityEvent">💧 Liquidity Event</option><option value="liquidityState">💧 Liquidity State</option><option value="smcStrength">🧩 SMC Breaker Strength</option>
             <option value="smcConfidence">🧩 SMC Confidence</option>
             <option value="smcStageRank">🧩 SMC Stage</option>
+            <option value="boxLatestDetection">📦 Box State — Latest Detection</option>
+            <option value="boxExpansionPct">📦 Box Expansion % — Highest</option>
           </select>
         </div>
         <div class="controlItem">
@@ -988,15 +989,24 @@ body.authLocked{overflow:hidden}
         </div>
       </div>      <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">⭐ Trend Transition Filter</label>
-          <select id="trendTransitionFilter">
-            <option value="ALL">All Transition States</option>
-            <option value="WATCH">🟡 Vulnerability Increasing ≥45</option>
-            <option value="PRE_BREAKDOWN">🟠 Pre-Breakdown ≥60</option>
-            <option value="HIGH">🔴 High Priority ≥75</option>
-            <option value="CONFIRMED">🔴 Breakdown Confirmed</option>
+          <label class="controlLabel">📦 Box Base Filter</label>
+          <select id="boxBaseFilter">
+            <option value="ALL">All Box Base States</option>
+            <option value="SESSION_START">⚪ BOX BASE — SESSION STARTING</option>
+            <option value="FORMING">⚪ BOX BASE — FORMING</option>
+            <option value="NONE">⚪ NO BOX BASE FOUND — MONITORING SESSION</option>
+            <option value="DEVELOPING">🟡 BOX BASE FOUND — DEVELOPING</option>
+            <option value="BREAKOUT_WATCH_UP">🟢 BOX BASE — BULLISH BREAKOUT WATCH</option>
+            <option value="BREAKDOWN_WATCH_DOWN">🔴 BOX BASE — BEARISH BREAKDOWN WATCH</option>
+            <option value="BREAKOUT_DEVELOPING_UP">🟠 BOX BASE FOUND — BULLISH BREAKOUT / RETEST DEVELOPING</option>
+            <option value="BREAKDOWN_DEVELOPING_DOWN">🟠 BOX BASE FOUND — BEARISH BREAKDOWN / RETEST DEVELOPING</option>
+            <option value="BREAKOUT_CONFIRMED_UP">🟢 BOX BASE FOUND — BULLISH BREAKOUT CONFIRMED</option>
+            <option value="BREAKDOWN_CONFIRMED_DOWN">🔴 BOX BASE FOUND — BEARISH BREAKDOWN CONFIRMED</option>
+            <option value="EXPANSION_CONFIRMED_UP">🟢 BOX BASE FOUND — BULLISH BREAKOUT + EXPANSION</option>
+            <option value="EXPANSION_CONFIRMED_DOWN">🔴 BOX BASE FOUND — BEARISH BREAKDOWN + EXPANSION</option>
+            <option value="ERROR">⚪ BOX BASE — ENGINE ERROR</option>
           </select>
-          <div class="dashboardHint">Uses the same Trend Transition Priority engine shown on each result. Local filter only.</div>
+          <div class="dashboardHint">Filters every Box Base state produced by the same Box Base Found engine. Breakout states use the most recent qualifying breakout in the current session. Local filter only.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">🧹 Filter Controls</label>
@@ -1160,7 +1170,7 @@ const el = {
   reversalStateFilter: document.getElementById('reversalStateFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
   smcDirectionFilter: document.getElementById('smcDirectionFilter'),
-  trendTransitionFilter: document.getElementById('trendTransitionFilter'),
+  boxBaseFilter: document.getElementById('boxBaseFilter'),
   resetFiltersBtn: document.getElementById('resetFiltersBtn'),
   filterStatus: document.getElementById('filterStatus')
 };
@@ -2448,7 +2458,6 @@ async function scanAllPerpsForBelow50({minDelay=FULL_SCAN_MIN_DELAY_MS, batchSiz
 
   // wire button
   if (runBtn) runBtn.addEventListener('click', () => {
-    if(typeof setScannerEnabled === 'function') setScannerEnabled(true);
     const session = (typeof setActiveMode === 'function')
       ? setActiveMode('scan', 'below50')
       : (++modeSession, activeViewMode='scan', modeSession);
@@ -3421,8 +3430,7 @@ let singleSearchResults = [];
 let favoriteViewResults = []; // view-only projection of the underlying dataset
 
 // Market Scan auto-refresh state is intentionally separate from Single Analyze Live Updates.
-let marketAutoEnabled = localStorage.getItem('magmaScannerEnabled') === '1';
-let scannerEnabled = marketAutoEnabled;
+let marketAutoEnabled = true;
 let marketNextScanAt = 0;
 let marketAutoRemainingMs = 0;
 
@@ -5826,6 +5834,47 @@ function getText(v) {
   return String(v).trim().toLowerCase();
 }
 
+// Box Base sorting metrics use the same authoritative detector that renders
+// the Box Base state. No network request is made. Results are cached per
+// current 15m snapshot so the comparator does not repeatedly recalculate it.
+function getBoxBaseSortMetrics(r){
+  if(!r) return {latestDetection:0, expansionPct:0, code:'NONE', state:''};
+  try{
+    const k=Array.isArray(r.k15m)?r.k15m:[];
+    const lastK=k.length ? k[k.length-1] : null;
+    const signature=`${k.length}|${Number(lastK?.[6] ?? lastK?.[0] ?? 0)}|${Number(r.closeNow||0)}`;
+    if(r.__boxBaseSortCache && r.__boxBaseSortCache.signature===signature) return r.__boxBaseSortCache.metrics;
+
+    const b=typeof calculateBoxBaseFound==='function' ? calculateBoxBaseFound(r) : null;
+    const box=b?.box || {};
+    const breakout=b?.breakout || {};
+
+    // Latest Detection = newest meaningful Box Base event: breakout time when
+    // a breakout exists; otherwise the end of the detected box/formation.
+    let latestDetection=Number(breakout?.time);
+    if(!Number.isFinite(latestDetection) || latestDetection<=0){
+      const idx=Number(box?.endIndex);
+      const candle=Number.isInteger(idx) && idx>=0 ? k[idx] : null;
+      latestDetection=Number(candle?.[6] ?? candle?.[0]);
+    }
+    if(!Number.isFinite(latestDetection)) latestDetection=0;
+
+    const expansionPct=Number(b?.expansion?.pct);
+    const metrics={
+      latestDetection,
+      expansionPct:Number.isFinite(expansionPct)?expansionPct:0,
+      code:String(b?.code||'NONE'),
+      state:String(b?.state||'')
+    };
+    try{
+      Object.defineProperty(r,'__boxBaseSortCache',{value:{signature,metrics},writable:true,configurable:true});
+    }catch(_){ r.__boxBaseSortCache={signature,metrics}; }
+    return metrics;
+  }catch(_){
+    return {latestDetection:0, expansionPct:0, code:'ERROR', state:''};
+  }
+}
+
 // Legacy sort keys are preserved. New keys are added only for the fields
 // introduced by the updated cycle / correction analysis.
 function getValueForKey(r, key) {
@@ -5938,6 +5987,8 @@ function getValueForKey(r, key) {
       const b = r.smcBreakerBlock || {};
       return getNumeric(b.stageRank, 0);
     }
+    case 'boxLatestDetection': return getNumeric(getBoxBaseSortMetrics(r).latestDetection, 0);
+    case 'boxExpansionPct': return getNumeric(getBoxBaseSortMetrics(r).expansionPct, 0);
     case 'longEntryStatus': return getEntryStatusRank(r, 'long');
     case 'shortEntryStatus': return getEntryStatusRank(r, 'short');
     // Final Decision / transition priority uses the same authoritative result
@@ -6668,18 +6719,20 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
   }
 
-  // Trend-transition filter must live inside the real filter pipeline. A later
-  // window.* wrapper cannot replace the lexical function binding used by the
-  // scanner itself, so apply it here where renderActiveView actually reads it.
-  const trendTransitionFilter = el.trendTransitionFilter ? el.trendTransitionFilter.value : 'ALL';
-  if (trendTransitionFilter !== 'ALL') {
+  // Dedicated Box Base state filter. It uses the exact same Box Base Found
+  // engine rendered inside each result, so the filter cannot drift from the
+  // displayed state. Every detector state is selectable. Breakout states use
+  // the detector's most recent qualifying breakout in the current session.
+  // No extra Binance request is made.
+  const boxBaseFilter = el.boxBaseFilter ? el.boxBaseFilter.value : 'ALL';
+  if (boxBaseFilter !== 'ALL') {
     filtered = filtered.filter(r => {
       try {
-        const t = calculateTrendTransitionPriority(r || {});
-        if (trendTransitionFilter === 'WATCH') return Number(t?.score || 0) >= 45;
-        if (trendTransitionFilter === 'PRE_BREAKDOWN') return Number(t?.score || 0) >= 60;
-        if (trendTransitionFilter === 'HIGH') return Number(t?.score || 0) >= 75;
-        if (trendTransitionFilter === 'CONFIRMED') return String(t?.code || '') === 'CONFIRMED';
+        const b = typeof calculateBoxBaseFound === 'function'
+          ? calculateBoxBaseFound(r || {})
+          : null;
+        const code = String(b?.code || '').toUpperCase();
+        return code === String(boxBaseFilter).toUpperCase();
       } catch (_) {}
       return false;
     });
@@ -6707,7 +6760,7 @@ function getActiveResultFilterSummary(){
   const fields=[
     ['correctionAuthorityFilter','Correction authority'],['biasFilter','Bias'],['marketStructureFilter','Unified Trend'],
     ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
-    ['trendTransitionFilter','Trend Transition'],['traderDecisionFilter','Trader Decision'],
+    ['boxBaseFilter','Box Base'],['traderDecisionFilter','Trader Decision'],
     ['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
     ['hvdFilter','HVD'],['rsi15SessionFilter','15m RSI'],['rsi4h1wFilter','4H RSI'],
     ['rsi8h1mFilter','8H RSI'],['liquidityFilter','Liquidity'],['accumDoubleTopFilter','Double Top'],
@@ -6732,7 +6785,7 @@ function updateResultFilterStatus(){
 function resetAllResultFilters(){
   [
     'correctionAuthorityFilter','biasFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
-    'reversalStateFilter','trendTransitionFilter','traderDecisionFilter','srTestFilter',
+    'reversalStateFilter','boxBaseFilter','traderDecisionFilter','srTestFilter',
     'fundingFilter','marketExhaustionFilter','hvdFilter','rsi15SessionFilter','rsi4h1wFilter',
     'rsi8h1mFilter','liquidityFilter','accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter'
   ].forEach(id=>{const x=document.getElementById(id);if(x)x.value='ALL';});
@@ -7057,8 +7110,8 @@ if (el.unifiedCycleFilter) {
 if (el.reversalStateFilter) {
   el.reversalStateFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
-if (el.trendTransitionFilter) {
-  el.trendTransitionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
+if (el.boxBaseFilter) {
+  el.boxBaseFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.resetFiltersBtn) el.resetFiltersBtn.addEventListener('click', resetAllResultFilters);
 if (el.smcBreakerFilter) {
@@ -9990,11 +10043,24 @@ function calculateBoxBaseFound(item){
           emaCompression,emaSpreadStart,emaSpreadEnd,ema14Net,ema21Net,ema50Net,ema14Recent,ema21Recent,ema50Recent,startBull,startBear,endBull,endBear
         };
 
-        // Prefer the most recent qualifying formation. A modest quality bonus
-        // prevents an old, higher-scoring box from masking today's current box.
-        const recencyBonus=(end/maxEnd)*10;
-        candidate.rank=quality+recencyBonus;
-        if(!best||candidate.rank>best.rank)best=candidate;
+        // Prefer the MOST RECENT actual breakout. If several candidates broke
+        // on the same 15m candle, use quality as the tie-breaker. If there is
+        // no breakout yet, fall back to the most recent qualifying formation.
+        // This prevents an older, higher-scoring box from masking a newer
+        // breakout in the same session.
+        const breakoutRecency = candidate.breakIndex>=0 ? candidate.breakIndex : -1;
+        const bestBreakoutRecency = best && best.breakIndex>=0 ? best.breakIndex : -1;
+        if(!best){
+          best=candidate;
+        }else if(candidate.breakIndex>=0 && bestBreakoutRecency<0){
+          best=candidate;
+        }else if(candidate.breakIndex>=0 && bestBreakoutRecency>=0){
+          if(breakoutRecency>bestBreakoutRecency || (breakoutRecency===bestBreakoutRecency && quality>best.score)) best=candidate;
+        }else if(bestBreakoutRecency<0){
+          const recencyBonus=(end/maxEnd)*10;
+          const bestRecencyBonus=(best.end/maxEnd)*10;
+          if(quality+recencyBonus>best.score+bestRecencyBonus) best=candidate;
+        }
       }
     }
 
@@ -10087,7 +10153,7 @@ function calculateBoxBaseFound(item){
         sessionStart,sessionEnd,sessionLabel,sessionCandles:completed
       },
       structure:{hh:best.hh,hl:best.hl,lh:best.lh,ll:best.ll},
-      breakout:{detected:best.breakIndex>=0,direction:best.breakDirection,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
+      breakout:{detected:best.breakIndex>=0,direction:best.breakDirection,index:best.breakIndex,price:best.breakIndex>=0?C[best.breakIndex]:null,time:best.breakIndex>=0&&sessionBars[best.breakIndex]?Number(sessionBars[best.breakIndex][6]||sessionBars[best.breakIndex][0]):null,volumeRatio:best.breakoutVolumeRatio,held:best.breakoutHeld,retest:best.retest},
       expansion:{pct:best.expansionPct,multiple:best.expansionMultiple,postBreakExtreme:best.postBreakExtreme},
       meta:{
         price,sessionStart,sessionEnd,sessionLabel,sessionCandles:completed,
@@ -10122,7 +10188,7 @@ function renderBoxBaseFound(item){
     <div style="margin-top:5px"><strong>Boundary tests:</strong> Resistance ${box.highTouches||0} • Support ${box.lowTouches||0} • Containment ${Number.isFinite(Number(box.containmentPct))?Number(box.containmentPct).toFixed(0):'—'}% • Contraction ${Number.isFinite(Number(box.contractionPct))?Number(box.contractionPct).toFixed(0):'—'}%</div>
     <div style="margin-top:5px"><strong>Inside-box structure:</strong> HH ${st.hh||0} • HL ${st.hl||0} • LH ${st.lh||0} • LL ${st.ll||0}</div>
     <div style="margin-top:5px"><strong>EMA context:</strong> ${m.emaBull?'🟢 EMA14 > EMA21 > EMA50':m.emaTurning?'🟡 EMA turning / transitioning':'⚪ Mixed'} • Accumulation ${Number.isFinite(Number(m.accumulationConfidence))?Math.round(Number(m.accumulationConfidence)):'—'}%</div>
-    <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
+    <div style="margin-top:5px"><strong>Breakout:</strong> ${br.detected?'✅ Detected':'⏳ Not confirmed'}${br.detected?` • ${br.time?new Date(Number(br.time)).toLocaleString():'time unavailable'} • Volume ×${Number(br.volumeRatio||0).toFixed(2)} • Hold ${br.held?'Yes':'Developing'} • Retest ${br.retest?'Seen':'Not seen'}`:''}</div>
     <div style="margin-top:5px"><strong>Expansion:</strong> ${br.detected?`${Number(ex.pct||0).toFixed(2)}% ${br.direction==='DOWN'?'below Box Low':'beyond Box High'} • ${Number(ex.multiple||0).toFixed(2)}× box range`:'Awaiting breakout'}</div>
     <div style="margin-top:7px"><strong>🎯 Next check:</strong> ${mspEscape(b.trigger||'Wait for structural confirmation.')}</div>
     <div class="small" style="margin-top:7px"><strong>Evidence:</strong> ${(b.reasons||[]).join(' • ')||'No box evidence available.'}</div>
@@ -11149,25 +11215,6 @@ window.addEventListener('online',()=>resumeBackgroundScannerIfNeeded('online'));
 window.addEventListener('pagehide',()=>persistActiveScannerLifecycle('pagehide'));
 window.addEventListener('beforeunload',()=>persistActiveScannerLifecycle('beforeunload'));
 
-function setScannerEnabled(enabled){
-  scannerEnabled = !!enabled;
-  marketAutoEnabled = scannerEnabled;
-  try{ localStorage.setItem('magmaScannerEnabled', scannerEnabled ? '1' : '0'); }catch(e){}
-  if(!scannerEnabled){
-    if(autoTimer) clearTimeout(autoTimer);
-    if(countdownTimer) clearInterval(countdownTimer);
-    autoTimer=null; countdownTimer=null;
-    marketNextScanAt=0; marketAutoRemainingMs=0;
-    writeBackgroundScanState({autoEnabled:false,nextScanAt:0,remainingMs:0,running:false});
-    if(el.countdown) el.countdown.innerText='Scanner OFF — press Scan to start';
-    setBackgroundRefreshStatus('paused','manual scanner switch is OFF');
-  }
-  if(el.scannerPowerBtn){
-    el.scannerPowerBtn.textContent = scannerEnabled ? '▶ Scanner ON' : '⏹ Scanner OFF';
-    el.scannerPowerBtn.title = scannerEnabled ? 'Automatic scanner refresh is ON. Click to stop it.' : 'Automatic scanner refresh is OFF. Click to turn it on.';
-  }
-}
-
 (function restoreActiveModeOnLoad(){
   try{
     if(el.prefilter) el.prefilter.value='15';
@@ -11182,16 +11229,13 @@ function setScannerEnabled(enabled){
       showFavoritesOnly=true; activeViewMode='favorite'; favoriteViewResults=restoreFavoriteResultSnapshots(); renderActiveView(); updateFavoritesButton(); updateFavoritesLiveStatus(); scheduleFavoritesLiveUpdate(); return;
     }
     showFavoritesOnly=false;
-    const savedScannerEnabled = localStorage.getItem('magmaScannerEnabled') === '1';
-    scannerEnabled = savedScannerEnabled;
-    marketAutoEnabled = savedScannerEnabled;
-    activeViewMode=savedScannerEnabled && savedMode==='scan' ? 'scan' : (savedMode==='single'?'single':'idle');
+    activeViewMode=savedMode==='single'?'single':(savedMode==='scan'?'scan':'idle');
     singleViewLocked=activeViewMode==='single';
     if(activeViewMode==='single'){
       renderActiveView(); scheduleSingleLiveUpdate();
     }else if(activeViewMode==='scan'){
       renderActiveView();
-      marketAutoEnabled = scannerEnabled && bgState.autoEnabled===true;
+      marketAutoEnabled=bgState.autoEnabled===true;
       if(marketAutoEnabled){
         const last=Number(bgState.lastCompletedAt||0);
         const next=Number(bgState.nextScanAt||0);
@@ -11206,7 +11250,6 @@ function setScannerEnabled(enabled){
       }
     }
     updateFavoritesButton();
-    setScannerEnabled(scannerEnabled);
   }catch(e){ console.warn('Could not restore active mode:',e); }
 })();
 
@@ -11266,7 +11309,7 @@ function commitMarketScanResults(nextResults){
       const ids = [
         'correctionAuthorityFilter','biasFilter','traderDecisionFilter','fundingFilter','marketExhaustionFilter',
         'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
-        'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
+        'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','boxBaseFilter'
       ];
       const active = ids.some(id => {
         const x = document.getElementById(id);
@@ -11551,26 +11594,8 @@ async function runScan(once=false, suppliedSession=null){
 /* UI events */
   // wire buttons (call after DOM ready)
 el.unifiedScanBtn = document.getElementById('unifiedScanBtn');
-el.scannerPowerBtn = document.getElementById('scannerPowerBtn');
 el.scanMode = document.getElementById('scanMode');
 el.scanStatus = document.getElementById('scanStatus') || document.getElementById('message');
-
-if(el.scannerPowerBtn){
-  el.scannerPowerBtn.addEventListener('click', ()=>{
-    if(scannerEnabled){
-      modeSession++; activeViewMode='idle'; running=false; queue=[];
-      setScannerEnabled(false); persistActiveMode();
-      if(el.startBtn) el.startBtn.disabled=false;
-      if(el.stopBtn) el.stopBtn.disabled=true;
-      if(el.unifiedScanBtn) el.unifiedScanBtn.disabled=false;
-      if(el.message) el.message.innerText='Scanner OFF.';
-      return;
-    }
-    const mode=el.scanMode?.value || activeScannerMode || 'main';
-    setScannerEnabled(true);
-    if(el.unifiedScanBtn) el.unifiedScanBtn.click();
-  });
-}
 
 el.favoritesBtn.addEventListener('click', () => {
   const turningOn = !showFavoritesOnly;
@@ -11660,7 +11685,6 @@ el.unifiedScanBtn.addEventListener('click', async () => {
   // Selecting any scanner immediately stops Single Search/Favorites refreshes
   // and invalidates every older async operation.
   const session = setActiveMode('scan', mode);
-  setScannerEnabled(true);
   // Selecting any scanner starts a fresh countdown for that scanner only.
   if(autoTimer) clearTimeout(autoTimer);
   if(countdownTimer) clearInterval(countdownTimer);
@@ -11716,7 +11740,6 @@ el.unifiedScanBtn.addEventListener('click', async () => {
 el.startBtn.addEventListener('click', ()=>{ 
   if(running) return;
   const session = setActiveMode('scan', el.scanMode?.value || activeScannerMode || 'main');
-  setScannerEnabled(true);
   showFavoritesOnly = false;
   updateFavoritesButton();
   prevBlowoffSet = new Set();
@@ -11733,7 +11756,7 @@ el.stopBtn.addEventListener('click', ()=>{
   if(autoTimer) clearTimeout(autoTimer);
   if(countdownTimer) clearInterval(countdownTimer);
   autoTimer=null; countdownTimer=null;
-  setScannerEnabled(false);
+  marketAutoEnabled=false;
   marketNextScanAt=0;
   marketAutoRemainingMs=0;
   writeBackgroundScanState({autoEnabled:false,nextScanAt:0,mode:activeScannerMode});
@@ -11746,7 +11769,6 @@ el.stopBtn.addEventListener('click', ()=>{
 el.oneShot.addEventListener('click', ()=>{ 
   if(running) return;
   const session = setActiveMode('scan', el.scanMode?.value || activeScannerMode || 'main');
-  setScannerEnabled(false);
   showFavoritesOnly = false;
   updateFavoritesButton();
   runScan(true, session);
