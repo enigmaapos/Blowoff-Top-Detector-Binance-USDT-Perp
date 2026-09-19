@@ -987,15 +987,12 @@ body.authLocked{overflow:hidden}
         </div>
       </div>      <div class="controlGrid two" style="margin-top:10px">
         <div class="controlItem">
-          <label class="controlLabel">⭐ Trend Transition Filter</label>
-          <select id="trendTransitionFilter">
-            <option value="ALL">All Transition States</option>
-            <option value="WATCH">🟡 Vulnerability Increasing ≥45</option>
-            <option value="PRE_BREAKDOWN">🟠 Pre-Breakdown ≥60</option>
-            <option value="HIGH">🔴 High Priority ≥75</option>
-            <option value="CONFIRMED">🔴 Breakdown Confirmed</option>
+          <label class="controlLabel">📦 Box Base Filter</label>
+          <select id="boxBaseFilter">
+            <option value="ALL">All Box Base States</option>
+            <option value="FOUND">📦 BOX BASE FOUND</option>
           </select>
-          <div class="dashboardHint">Uses the same Trend Transition Priority engine shown on each result. Local filter only.</div>
+          <div class="dashboardHint">Uses the same Box Base Found engine shown on each result. Local filter only.</div>
         </div>
         <div class="controlItem">
           <label class="controlLabel">🧹 Filter Controls</label>
@@ -1159,7 +1156,7 @@ const el = {
   reversalStateFilter: document.getElementById('reversalStateFilter'),
   smcBreakerFilter: document.getElementById('smcBreakerFilter'),
   smcDirectionFilter: document.getElementById('smcDirectionFilter'),
-  trendTransitionFilter: document.getElementById('trendTransitionFilter'),
+  boxBaseFilter: document.getElementById('boxBaseFilter'),
   resetFiltersBtn: document.getElementById('resetFiltersBtn'),
   filterStatus: document.getElementById('filterStatus')
 };
@@ -6665,18 +6662,18 @@ function filterResultsForDist(results) {
     filtered = filtered.filter(r => String(r?.smcBreakerBlock?.direction || 'NONE').toUpperCase() === smcDirection);
   }
 
-  // Trend-transition filter must live inside the real filter pipeline. A later
-  // window.* wrapper cannot replace the lexical function binding used by the
-  // scanner itself, so apply it here where renderActiveView actually reads it.
-  const trendTransitionFilter = el.trendTransitionFilter ? el.trendTransitionFilter.value : 'ALL';
-  if (trendTransitionFilter !== 'ALL') {
+  // Dedicated Box Base Found filter. This uses the exact same Box Base Found
+  // engine rendered inside each result, so the filter cannot drift from the
+  // displayed BOX BASE FOUND state. This is a local result filter only.
+  const boxBaseFilter = el.boxBaseFilter ? el.boxBaseFilter.value : 'ALL';
+  if (boxBaseFilter !== 'ALL') {
     filtered = filtered.filter(r => {
       try {
-        const t = calculateTrendTransitionPriority(r || {});
-        if (trendTransitionFilter === 'WATCH') return Number(t?.score || 0) >= 45;
-        if (trendTransitionFilter === 'PRE_BREAKDOWN') return Number(t?.score || 0) >= 60;
-        if (trendTransitionFilter === 'HIGH') return Number(t?.score || 0) >= 75;
-        if (trendTransitionFilter === 'CONFIRMED') return String(t?.code || '') === 'CONFIRMED';
+        const b = typeof calculateBoxBaseFound === 'function'
+          ? calculateBoxBaseFound(r || {})
+          : null;
+        const code = String(b?.code || '').toUpperCase();
+        return boxBaseFilter === 'FOUND' && code !== 'NONE' && code !== 'FORMING' && code !== 'SESSION_START' && code !== 'ERROR' && code !== 'INSUFFICIENT';
       } catch (_) {}
       return false;
     });
@@ -6704,7 +6701,7 @@ function getActiveResultFilterSummary(){
   const fields=[
     ['correctionAuthorityFilter','Correction authority'],['biasFilter','Bias'],['marketStructureFilter','Unified Trend'],
     ['emaStructureFilter','EMA'],['unifiedCycleFilter','Market-Cycle'],['reversalStateFilter','Reversal'],
-    ['trendTransitionFilter','Trend Transition'],['traderDecisionFilter','Trader Decision'],
+    ['boxBaseFilter','Box Base'],['traderDecisionFilter','Trader Decision'],
     ['srTestFilter','S/R Test'],['fundingFilter','Funding'],['marketExhaustionFilter','Exhaustion'],
     ['hvdFilter','HVD'],['rsi15SessionFilter','15m RSI'],['rsi4h1wFilter','4H RSI'],
     ['rsi8h1mFilter','8H RSI'],['liquidityFilter','Liquidity'],['accumDoubleTopFilter','Double Top'],
@@ -6729,7 +6726,7 @@ function updateResultFilterStatus(){
 function resetAllResultFilters(){
   [
     'correctionAuthorityFilter','biasFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
-    'reversalStateFilter','trendTransitionFilter','traderDecisionFilter','srTestFilter',
+    'reversalStateFilter','boxBaseFilter','traderDecisionFilter','srTestFilter',
     'fundingFilter','marketExhaustionFilter','hvdFilter','rsi15SessionFilter','rsi4h1wFilter',
     'rsi8h1mFilter','liquidityFilter','accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter'
   ].forEach(id=>{const x=document.getElementById(id);if(x)x.value='ALL';});
@@ -7054,8 +7051,8 @@ if (el.unifiedCycleFilter) {
 if (el.reversalStateFilter) {
   el.reversalStateFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
-if (el.trendTransitionFilter) {
-  el.trendTransitionFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
+if (el.boxBaseFilter) {
+  el.boxBaseFilter.addEventListener('change', () => { updateResultFilterStatus(); renderActiveView(true); });
 }
 if (el.resetFiltersBtn) el.resetFiltersBtn.addEventListener('click', resetAllResultFilters);
 if (el.smcBreakerFilter) {
@@ -11240,7 +11237,7 @@ function commitMarketScanResults(nextResults){
       const ids = [
         'correctionAuthorityFilter','biasFilter','traderDecisionFilter','fundingFilter','marketExhaustionFilter',
         'hvdFilter','rsi15SessionFilter','rsi4h1wFilter','rsi8h1mFilter','liquidityFilter','marketStructureFilter','emaStructureFilter','unifiedCycleFilter',
-        'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','trendTransitionFilter'
+        'accumDoubleTopFilter','smcBreakerFilter','smcDirectionFilter','boxBaseFilter'
       ];
       const active = ids.some(id => {
         const x = document.getElementById(id);
